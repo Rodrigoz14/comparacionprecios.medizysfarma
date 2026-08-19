@@ -80,6 +80,22 @@ npm test
 npm run build
 ```
 
+## Importar listas de proveedores
+
+En `/proveedores/importar` puedes subir un archivo `.xlsx` o `.csv` de un
+proveedor: el sistema detecta encabezados y columnas, propone un mapeo y un
+formato de precio (editable), muestra una vista previa y, al confirmar,
+guarda las ofertas, mantiene el historial de precios y evita reprocesar el
+mismo archivo por accidente (detección por hash).
+
+Notas:
+
+- El formato `.xls` antiguo (Excel 97-2003) no está soportado; expórtalo como `.xlsx`.
+- Cada fila requiere una concentración y una presentación reconocibles en el
+  nombre del producto (p. ej. "500MG" y "X100"); si no se pueden determinar,
+  la fila se reporta como error en vez de adivinar.
+- Los archivos originales se guardan en `storage/` (no se sube a git).
+
 ## Estructura del proyecto
 
 ```text

@@ -21,6 +21,16 @@ async function main() {
     },
   });
 
+  await prisma.supplier.upsert({
+    where: { id: "seed-supplier-disfarma" },
+    update: {},
+    create: {
+      id: "seed-supplier-disfarma",
+      name: "Disfarma",
+      taxId: "900000000-2",
+    },
+  });
+
   const product = await prisma.product.upsert({
     where: { normalizedName: "acetaminofen-500-mg-tableta-100" },
     update: {},
