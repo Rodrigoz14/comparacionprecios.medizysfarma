@@ -28,7 +28,21 @@ Completa `DATABASE_URL` en `.env` con la conexión a tu base de datos local.
 El resto de variables (`CLAUDE_API_KEY`, `OPENAI_API_KEY`, etc.) solo son
 necesarias a partir de las fases que integran IA y correo electrónico.
 
-## Base de datos local con Docker
+## Base de datos local
+
+Este proyecto usa el servidor de desarrollo integrado de Prisma (no requiere
+Docker):
+
+```bash
+npx prisma dev -d -n medizys   # levanta Postgres local en segundo plano
+npx prisma dev ls              # muestra la URL de conexión real (el puerto varía)
+```
+
+Copia la URL "TCP" que muestre `prisma dev ls` a `DATABASE_URL` en tu `.env`.
+La base de datos `medizys` debe existir antes de migrar (créala una vez con
+cualquier cliente de Postgres apuntando al servidor que expone `prisma dev`).
+
+Alternativamente, si tienes Docker Desktop funcionando:
 
 ```bash
 docker run -d --name medizys-db \
@@ -38,7 +52,7 @@ docker run -d --name medizys-db \
   -p 5432:5432 postgres:16
 ```
 
-Esto coincide con el `DATABASE_URL` por defecto de `.env.example`.
+y usa `DATABASE_URL="postgresql://medizys:devpass@localhost:5432/medizys?schema=public"`.
 
 ## Ejecutar en desarrollo
 
@@ -52,7 +66,8 @@ Abre [http://localhost:3000](http://localhost:3000).
 
 ```bash
 npx prisma generate      # genera el cliente a partir de prisma/schema.prisma
-npx prisma migrate dev   # crea/aplica migraciones (cuando existan modelos)
+npx prisma migrate dev   # crea/aplica migraciones
+npx prisma db seed       # inserta datos de prueba (proveedor, laboratorio, producto, oferta)
 npx prisma studio        # explorador visual de datos
 ```
 

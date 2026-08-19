@@ -1,8 +1,6 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider = "prisma-client"
   output   = "../lib/generated/prisma"
@@ -10,4 +8,429 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+/// Estado genérico de conservación de un registro (nunca se elimina físicamente).
+enum RecordStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
+enum UserRole {
+  ADMIN
+  COMPRAS
+  CONSULTA
+}
+
+enum Availability {
+  AVAILABLE
+  PARTIAL
+  OUT_OF_STOCK
+  UNKNOWN
+}
+
+enum FileStatus {
+  RECEIVED
+  PROCESSING
+  PROCESSED
+  ERROR
+}
+
+enum CustomerRequestStatus {
+  RECEIVED
+  ANALYZING
+  REVIEW_REQUIRED
+  READY
+  CANCELLED
+}
+
+/// Estado de homologación de un ítem solicitado por el cliente (Sección 5).
+enum MatchStatus {
+  PENDING
+  MATCH
+  REVIEW
+  NO_MATCH
+}
+
+enum QuotationStatus {
+  BORRADOR
+  EN_REVISION
+  APROBADA
+  ENVIADA
+  ACEPTADA
+  RECHAZADA
+  CANCELADA
+}
+
+enum PurchaseOrderStatus {
+  BORRADOR
+  APROBADA
+  ENVIADA
+  RECIBIDA
+  CANCELADA
+}
+
+// ---------------------------------------------------------------------------
+// Usuarios y auditoría
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String       @id @default(cuid())
+  name         String
+  email        String       @unique
+  role         UserRole     @default(CONSULTA)
+  status       RecordStatus @default(ACTIVE)
+  createdAt    DateTime     @default(now()) @map("created_at")
+  lastAccessAt DateTime?    @map("last_access_at")
+
+  customerRequests CustomerRequest[]
+  quotations       Quotation[]
+  approvedOrders   PurchaseOrder[]
+  auditLogs        AuditLog[]
+
+  @@map("users")
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  userId      String?  @map("user_id")
+  action      String
+  entityType  String   @map("entity_type")
+  entityId    String   @map("entity_id")
+  beforeValue Json?    @map("before_value")
+  afterValue  Json?    @map("after_value")
+  reason      String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ---------------------------------------------------------------------------
+// Proveedores, laboratorios y productos
+// ---------------------------------------------------------------------------
+
+model Supplier {
+  id              String       @id @default(cuid())
+  name            String
+  taxId           String?      @map("tax_id")
+  internalCode    String?      @map("internal_code")
+  email           String?
+  phone           String?
+  status          RecordStatus @default(ACTIVE)
+  commercialTerms String?      @map("commercial_terms")
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+
+  offers           SupplierOffer[]
+  files            SupplierFile[]
+  emails           SupplierEmail[]
+  priceComparisons PriceComparison[]
+  purchaseOrders   PurchaseOrder[]
+
+  @@map("suppliers")
+}
+
+model Laboratory {
+  id             String       @id @default(cuid())
+  name           String
+  normalizedName String       @unique @map("normalized_name")
+  status         RecordStatus @default(ACTIVE)
+
+  products Product[]
+
+  @@map("laboratories")
+}
+
+model Product {
+  id                      String       @id @default(cuid())
+  internalCode            String?      @unique @map("internal_code")
+  standardName            String       @map("standard_name")
+  normalizedName          String       @unique @map("normalized_name")
+  activeIngredient        String       @map("active_ingredient")
+  concentration           String
+  concentrationUnit       String       @map("concentration_unit")
+  dosageForm              String       @map("dosage_form")
+  presentationType        String       @map("presentation_type")
+  presentationQuantity    Int          @map("presentation_quantity")
+  presentationUnit        String       @map("presentation_unit")
+  presentationDescription String?      @map("presentation_description")
+  laboratoryId            String?      @map("laboratory_id")
+  barcode                 String?      @unique
+  status                  RecordStatus @default(ACTIVE)
+  createdAt               DateTime     @default(now()) @map("created_at")
+  updatedAt               DateTime     @updatedAt @map("updated_at")
+
+  laboratory Laboratory? @relation(fields: [laboratoryId], references: [id])
+
+  offers               SupplierOffer[]
+  customerRequestItems CustomerRequestItem[]
+  priceComparisons     PriceComparison[]
+  quotationItems       QuotationItem[]
+  purchaseOrderItems   PurchaseOrderItem[]
+
+  @@index([activeIngredient, concentration, dosageForm])
+  @@index([laboratoryId])
+  @@map("products")
+}
+
+// ---------------------------------------------------------------------------
+// Ofertas de proveedores e historial de precios
+// ---------------------------------------------------------------------------
+
+model SupplierOffer {
+  id                  String       @id @default(cuid())
+  supplierId          String       @map("supplier_id")
+  productId           String       @map("product_id")
+  supplierProductCode String?      @map("supplier_product_code")
+  price               Decimal      @db.Decimal(14, 2)
+  currency            String       @default("COP")
+  tax                 Decimal?     @db.Decimal(14, 2)
+  finalPrice          Decimal?     @map("final_price") @db.Decimal(14, 2)
+  availability        Availability @default(UNKNOWN)
+  stockQuantity       Int?         @map("stock_quantity")
+  status              RecordStatus @default(ACTIVE)
+  sourceFileId        String?      @map("source_file_id")
+  updatedAt           DateTime     @updatedAt @map("updated_at")
+  createdAt           DateTime     @default(now()) @map("created_at")
+  offerExpiresAt      DateTime?    @map("offer_expires_at")
+
+  supplier   Supplier      @relation(fields: [supplierId], references: [id])
+  product    Product       @relation(fields: [productId], references: [id])
+  sourceFile SupplierFile? @relation(fields: [sourceFileId], references: [id])
+
+  priceHistory     PriceHistory[]
+  priceComparisons PriceComparison[]
+
+  @@unique([supplierId, productId])
+  @@index([productId])
+  @@index([availability])
+  @@map("supplier_offers")
+}
+
+/// Cada actualización de precio de una oferta se conserva aquí; supplier_offers
+/// solo guarda el precio vigente.
+model PriceHistory {
+  id              String   @id @default(cuid())
+  supplierOfferId String   @map("supplier_offer_id")
+  price           Decimal  @db.Decimal(14, 2)
+  sourceFileId    String?  @map("source_file_id")
+  recordedAt      DateTime @default(now()) @map("recorded_at")
+
+  supplierOffer SupplierOffer @relation(fields: [supplierOfferId], references: [id])
+  sourceFile    SupplierFile? @relation(fields: [sourceFileId], references: [id])
+
+  @@index([supplierOfferId, recordedAt])
+  @@map("price_history")
+}
+
+// ---------------------------------------------------------------------------
+// Archivos y correos de proveedores
+// ---------------------------------------------------------------------------
+
+model SupplierFile {
+  id              String     @id @default(cuid())
+  supplierId      String     @map("supplier_id")
+  supplierEmailId String?    @map("supplier_email_id")
+  originalName    String     @map("original_name")
+  fileType        String     @map("file_type")
+  storagePath     String     @map("storage_path")
+  fileHash        String     @map("file_hash")
+  status          FileStatus @default(RECEIVED)
+  totalRows       Int?       @map("total_rows")
+  successRows     Int?       @map("success_rows")
+  errorRows       Int?       @map("error_rows")
+  receivedAt      DateTime   @default(now()) @map("received_at")
+  processedAt     DateTime?  @map("processed_at")
+
+  supplier      Supplier       @relation(fields: [supplierId], references: [id])
+  supplierEmail SupplierEmail? @relation(fields: [supplierEmailId], references: [id])
+
+  offers       SupplierOffer[]
+  priceHistory PriceHistory[]
+
+  @@unique([supplierId, fileHash])
+  @@index([supplierId])
+  @@map("supplier_files")
+}
+
+model SupplierEmail {
+  id                String     @id @default(cuid())
+  supplierId        String     @map("supplier_id")
+  sender            String
+  subject           String?
+  externalMessageId String     @unique @map("external_message_id")
+  status            FileStatus @default(RECEIVED)
+  attachmentCount   Int        @default(0) @map("attachment_count")
+  receivedAt        DateTime   @default(now()) @map("received_at")
+  processedAt       DateTime?  @map("processed_at")
+
+  supplier Supplier       @relation(fields: [supplierId], references: [id])
+  files    SupplierFile[]
+
+  @@index([supplierId])
+  @@map("supplier_emails")
+}
+
+// ---------------------------------------------------------------------------
+// Solicitudes de clientes y comparaciones
+// ---------------------------------------------------------------------------
+
+model CustomerRequest {
+  id                String                @id @default(cuid())
+  customerName      String                @map("customer_name")
+  responsibleUserId String?               @map("responsible_user_id")
+  status            CustomerRequestStatus @default(RECEIVED)
+  originalFileUrl   String?               @map("original_file_url")
+  notes             String?
+  createdAt         DateTime              @default(now()) @map("created_at")
+
+  responsibleUser User? @relation(fields: [responsibleUserId], references: [id])
+
+  items      CustomerRequestItem[]
+  quotations Quotation[]
+
+  @@index([responsibleUserId])
+  @@map("customer_requests")
+}
+
+model CustomerRequestItem {
+  id                String      @id @default(cuid())
+  customerRequestId String      @map("customer_request_id")
+  originalText      String      @map("original_text")
+  matchedProductId  String?     @map("matched_product_id")
+  requestedQuantity Int         @map("requested_quantity")
+  notes             String?
+  matchStatus       MatchStatus @default(PENDING) @map("match_status")
+  matchConfidence   Decimal?    @map("match_confidence") @db.Decimal(5, 4)
+
+  customerRequest CustomerRequest @relation(fields: [customerRequestId], references: [id])
+  matchedProduct  Product?        @relation(fields: [matchedProductId], references: [id])
+
+  priceComparisons PriceComparison[]
+
+  @@index([customerRequestId])
+  @@index([matchedProductId])
+  @@map("customer_request_items")
+}
+
+model PriceComparison {
+  id                    String       @id @default(cuid())
+  customerRequestItemId String       @map("customer_request_item_id")
+  productId             String       @map("product_id")
+  supplierId            String       @map("supplier_id")
+  supplierOfferId       String       @map("supplier_offer_id")
+  price                 Decimal      @db.Decimal(14, 2)
+  availability          Availability
+  matchConfidence       Decimal      @map("match_confidence") @db.Decimal(5, 4)
+  selected              Boolean      @default(false)
+  discardReason         String?      @map("discard_reason")
+  createdAt             DateTime     @default(now()) @map("created_at")
+
+  customerRequestItem CustomerRequestItem @relation(fields: [customerRequestItemId], references: [id])
+  product             Product             @relation(fields: [productId], references: [id])
+  supplier            Supplier            @relation(fields: [supplierId], references: [id])
+  supplierOffer       SupplierOffer       @relation(fields: [supplierOfferId], references: [id])
+
+  @@index([customerRequestItemId])
+  @@index([productId])
+  @@index([supplierId])
+  @@map("price_comparisons")
+}
+
+// ---------------------------------------------------------------------------
+// Cotizaciones y órdenes de compra
+// ---------------------------------------------------------------------------
+
+model Quotation {
+  id                String          @id @default(cuid())
+  quotationNumber   String          @unique @map("quotation_number")
+  customerName      String          @map("customer_name")
+  customerRequestId String?         @map("customer_request_id")
+  status            QuotationStatus @default(BORRADOR)
+  subtotal          Decimal         @db.Decimal(14, 2)
+  tax               Decimal         @db.Decimal(14, 2)
+  total             Decimal         @db.Decimal(14, 2)
+  createdByUserId   String?         @map("created_by_user_id")
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
+
+  customerRequest CustomerRequest? @relation(fields: [customerRequestId], references: [id])
+  createdByUser   User?            @relation(fields: [createdByUserId], references: [id])
+
+  items          QuotationItem[]
+  purchaseOrders PurchaseOrder[]
+
+  @@index([customerRequestId])
+  @@index([status])
+  @@map("quotations")
+}
+
+model QuotationItem {
+  id                 String  @id @default(cuid())
+  quotationId        String  @map("quotation_id")
+  productId          String  @map("product_id")
+  quantity           Int
+  purchasePrice      Decimal @map("purchase_price") @db.Decimal(14, 2)
+  salePrice          Decimal @map("sale_price") @db.Decimal(14, 2)
+  margin             Decimal @db.Decimal(5, 4)
+  tax                Decimal @db.Decimal(14, 2)
+  total              Decimal @db.Decimal(14, 2)
+  selectedSupplierId String  @map("selected_supplier_id")
+
+  quotation Quotation @relation(fields: [quotationId], references: [id])
+  product   Product   @relation(fields: [productId], references: [id])
+
+  @@index([quotationId])
+  @@index([productId])
+  @@map("quotation_items")
+}
+
+model PurchaseOrder {
+  id               String              @id @default(cuid())
+  orderNumber      String              @unique @map("order_number")
+  supplierId       String              @map("supplier_id")
+  quotationId      String              @map("quotation_id")
+  status           PurchaseOrderStatus @default(BORRADOR)
+  total            Decimal             @db.Decimal(14, 2)
+  approvedByUserId String?             @map("approved_by_user_id")
+  approvedAt       DateTime?           @map("approved_at")
+  createdAt        DateTime            @default(now()) @map("created_at")
+
+  supplier       Supplier  @relation(fields: [supplierId], references: [id])
+  quotation      Quotation @relation(fields: [quotationId], references: [id])
+  approvedByUser User?     @relation(fields: [approvedByUserId], references: [id])
+
+  items PurchaseOrderItem[]
+
+  @@index([supplierId])
+  @@index([quotationId])
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderItem {
+  id                  String  @id @default(cuid())
+  purchaseOrderId     String  @map("purchase_order_id")
+  productId           String  @map("product_id")
+  quantity            Int
+  unitPrice           Decimal @map("unit_price") @db.Decimal(14, 2)
+  total               Decimal @db.Decimal(14, 2)
+  supplierProductCode String? @map("supplier_product_code")
+  notes               String?
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+  product       Product       @relation(fields: [productId], references: [id])
+
+  @@index([purchaseOrderId])
+  @@index([productId])
+  @@map("purchase_order_items")
 }
