@@ -3,7 +3,7 @@ import { detectColumns, detectHeaderRowIndex } from "@/lib/excel/detector";
 import { detectPriceFormat, normalizeAvailability, parsePrice } from "@/lib/excel/normalizer";
 import { parseWorkbook } from "@/lib/excel/parser";
 import { buildGenericKey, buildNormalizedName, normalizeText } from "@/lib/matching/normalize";
-import { extractProductAttributes } from "@/lib/matching/extract-attributes";
+import { extractProductAttributes, normalizeDosageForm } from "@/lib/matching/extract-attributes";
 import {
   hashBuffer,
   persistSupplierFile,
@@ -23,7 +23,8 @@ import { detectDuplicates } from "@/lib/excel/duplicate-detector";
 import { validateParsedRow } from "@/lib/excel/validator";
 
 const PREVIEW_ROW_COUNT = 10;
-const BATCH_SIZE = 200;
+const BATCH_SIZE = 100;
+const TRANSACTION_TIMEOUT_MS = 30000;
 
 export async function analyzeSupplierFile(
   buffer: Buffer,
@@ -110,14 +111,21 @@ function readMappedRow(
   }
 
   // Si el proveedor reporta la forma farmacéutica en su propia columna, es más
-  // confiable que adivinarla por palabras clave del nombre.
+  // confiable que adivinarla por palabras clave del nombre — pero igual hay que
+  // normalizarla al mismo vocabulario controlado (DOSAGE_FORM_MAP), o dos
+  // productos del mismo genérico dejan de coincidir por comparar texto crudo
+  // ("SOLUCION INYECTABLE") contra el valor normalizado ("Solución").
   const dosageFormRaw = mapping.dosageForm !== undefined ? row[mapping.dosageForm] : null;
   const dosageFormText = dosageFormRaw === null || dosageFormRaw === undefined ? "" : String(dosageFormRaw).trim();
   if (dosageFormText) {
-    extraction.attributes.dosageForm = dosageFormText;
-    extraction.warnings = extraction.warnings.filter(
-      (w) => !w.includes("forma farmacéutica"),
-    );
+    const normalizedDosageForm = normalizeDosageForm(dosageFormText);
+    extraction.attributes.dosageForm = normalizedDosageForm ?? dosageFormText;
+    extraction.warnings = extraction.warnings.filter((w) => !w.includes("forma farmacéutica"));
+    if (!normalizedDosageForm) {
+      extraction.warnings.push(
+        `Forma farmacéutica de la columna ("${dosageFormText}") no reconocida en el vocabulario controlado; se usó tal cual.`,
+      );
+    }
   }
 
   const priceRaw = mapping.price !== undefined ? row[mapping.price] : null;
@@ -243,6 +251,22 @@ export async function confirmSupplierImport(input: ConfirmImportInput): Promise<
     },
   });
 
+  // Resolver laboratorios una sola vez antes de procesar filas: con miles de
+  // filas repitiendo el mismo laboratorio, hacer upsert() por cada fila dentro
+  // de una transaccion por lotes provoca fallos intermitentes del motor de
+  // consultas de Prisma ("No record was found for an upsert").
+  const uniqueLabNames = [...new Set(unique.map((r) => r.laboratoryName).filter((n): n is string => Boolean(n)))];
+  const laboratoryIdByNormalizedName = new Map<string, string>();
+  for (const labName of uniqueLabNames) {
+    const normalizedLab = normalizeText(labName);
+    const laboratory = await prisma.laboratory.upsert({
+      where: { normalizedName: normalizedLab },
+      update: {},
+      create: { name: labName, normalizedName: normalizedLab },
+    });
+    laboratoryIdByNormalizedName.set(normalizedLab, laboratory.id);
+  }
+
   let newProducts = 0;
   let updatedOffers = 0;
 
@@ -250,33 +274,34 @@ export async function confirmSupplierImport(input: ConfirmImportInput): Promise<
     const batch = unique.slice(i, i + BATCH_SIZE);
     await prisma.$transaction(async (tx) => {
       for (const row of batch) {
-        let laboratoryId: string | undefined;
-        if (row.laboratoryName) {
-          const normalizedLab = normalizeText(row.laboratoryName);
-          const laboratory = await tx.laboratory.upsert({
-            where: { normalizedName: normalizedLab },
-            update: {},
-            create: { name: row.laboratoryName, normalizedName: normalizedLab },
-          });
-          laboratoryId = laboratory.id;
-        }
+        const laboratoryId = row.laboratoryName
+          ? laboratoryIdByNormalizedName.get(normalizeText(row.laboratoryName))
+          : undefined;
+
+        // normalizedName ya codifica ingrediente+concentracion+forma+presentacion+lab,
+        // asi que dos filas que coincidan en esa clave necesariamente coinciden en
+        // estos atributos: actualizarlos en cada reimportacion es seguro (idempotente)
+        // y corrige datos si una version anterior del archivo tenia un error.
+        const productAttributes = {
+          standardName: row.originalProductName,
+          activeIngredient: row.attributes.activeIngredient,
+          concentration: row.attributes.concentration,
+          concentrationUnit: row.attributes.concentrationUnit,
+          dosageForm: row.attributes.dosageForm,
+          presentationType: row.attributes.presentationType,
+          presentationQuantity: row.attributes.presentationQuantity,
+          presentationUnit: row.attributes.presentationUnit,
+          presentationDescription: row.originalProductName,
+          laboratoryId,
+        };
 
         const product = await tx.product.upsert({
           where: { normalizedName: row.normalizedName },
-          update: {},
+          update: productAttributes,
           create: {
-            standardName: row.originalProductName,
             normalizedName: row.normalizedName,
             genericKey: row.genericKey,
-            activeIngredient: row.attributes.activeIngredient,
-            concentration: row.attributes.concentration,
-            concentrationUnit: row.attributes.concentrationUnit,
-            dosageForm: row.attributes.dosageForm,
-            presentationType: row.attributes.presentationType,
-            presentationQuantity: row.attributes.presentationQuantity,
-            presentationUnit: row.attributes.presentationUnit,
-            presentationDescription: row.originalProductName,
-            laboratoryId,
+            ...productAttributes,
           },
         });
 
@@ -322,7 +347,7 @@ export async function confirmSupplierImport(input: ConfirmImportInput): Promise<
           }
         }
       }
-    });
+    }, { timeout: TRANSACTION_TIMEOUT_MS });
   }
 
   await prisma.supplierFile.update({

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db/client";
 import { resolveCustomerRequestItem } from "@/lib/matching/matching-service";
 import { selectBestOffer } from "@/lib/pricing/selection-engine";
+import { getVerifiedSession } from "@/lib/auth/dal";
 
 const bodySchema = z.object({
   customerName: z.string().min(1),
@@ -16,6 +17,11 @@ const bodySchema = z.object({
 });
 
 export async function POST(request: Request) {
+  const session = await getVerifiedSession();
+  if (!session) {
+    return Response.json({ error: "No autenticado." }, { status: 401 });
+  }
+
   const body = await request.json();
   const parsed = bodySchema.safeParse(body);
   if (!parsed.success) {
@@ -23,7 +29,7 @@ export async function POST(request: Request) {
   }
 
   const customerRequest = await prisma.customerRequest.create({
-    data: { customerName: parsed.data.customerName, status: "ANALYZING" },
+    data: { customerName: parsed.data.customerName, status: "ANALYZING", responsibleUserId: session.userId },
   });
 
   const results = [];

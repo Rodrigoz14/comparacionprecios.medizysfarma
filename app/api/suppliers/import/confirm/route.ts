@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { confirmSupplierImport } from "@/lib/excel/importer";
+import { getVerifiedSession } from "@/lib/auth/dal";
 
 const bodySchema = z.object({
   fileToken: z.string().min(1),
@@ -15,6 +16,10 @@ const bodySchema = z.object({
 });
 
 export async function POST(request: Request) {
+  if (!(await getVerifiedSession())) {
+    return Response.json({ error: "No autenticado." }, { status: 401 });
+  }
+
   const body = await request.json();
   const parsed = bodySchema.safeParse(body);
   if (!parsed.success) {

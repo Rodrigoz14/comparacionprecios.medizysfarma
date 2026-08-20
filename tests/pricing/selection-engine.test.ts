@@ -39,17 +39,55 @@ async function createRequestItem(text: string, quantity: number) {
   return { requestId: request.id, itemId: item.id };
 }
 
+// Fixtures propios en vez de datos del seed: el seed comparte el mismo espacio
+// de nombres normalizados que los datos reales importados de proveedores, así
+// que un producto "de ejemplo" puede terminar con precios reales encima.
 describe("selectBestOffer (integracion contra base de datos real)", () => {
-  it("elige el precio mas bajo entre laboratorios distintos del mismo generico (datos del seed)", async () => {
-    const { itemId } = await createRequestItem("ACETAMINOFEN TAB 500MG X100", 10);
+  const productIds: string[] = [];
+  const laboratoryIds: string[] = [];
+  const supplierIds: string[] = [];
+
+  beforeAll(async () => {
+    const genfarVariant = await createProduct("PRICETEST TAB 50MG X10", "TestLab Genfar Precio");
+    const pfizerVariant = await createProduct("PRICETEST TAB 50MG X10", "TestLab Pfizer Precio");
+    productIds.push(genfarVariant.id, pfizerVariant.id);
+    laboratoryIds.push(genfarVariant.laboratoryId!, pfizerVariant.laboratoryId!);
+
+    const supplierX = await prisma.supplier.create({ data: { name: "Proveedor Precio Test X" } });
+    const supplierY = await prisma.supplier.create({ data: { name: "Proveedor Precio Test Y" } });
+    supplierIds.push(supplierX.id, supplierY.id);
+
+    // X ofrece ambos laboratorios: el generico (Genfar) mas barato que el de marca (Pfizer).
+    await prisma.supplierOffer.create({
+      data: { supplierId: supplierX.id, productId: genfarVariant.id, price: 5000, availability: "AVAILABLE", stockQuantity: 200 },
+    });
+    await prisma.supplierOffer.create({
+      data: { supplierId: supplierX.id, productId: pfizerVariant.id, price: 20000, availability: "AVAILABLE", stockQuantity: 50 },
+    });
+    // Y tambien ofrece el generico, un poco mas caro que X.
+    await prisma.supplierOffer.create({
+      data: { supplierId: supplierY.id, productId: genfarVariant.id, price: 5300, availability: "AVAILABLE", stockQuantity: 80 },
+    });
+  });
+
+  afterAll(async () => {
+    await prisma.priceComparison.deleteMany({ where: { productId: { in: productIds } } });
+    await prisma.supplierOffer.deleteMany({ where: { productId: { in: productIds } } });
+    await prisma.supplier.deleteMany({ where: { id: { in: supplierIds } } });
+    await prisma.product.deleteMany({ where: { id: { in: productIds } } });
+    await prisma.laboratory.deleteMany({ where: { id: { in: laboratoryIds } } });
+  });
+
+  it("elige el precio mas bajo entre laboratorios distintos del mismo generico", async () => {
+    const { itemId } = await createRequestItem("PRICETEST TAB 50MG X10", 10);
     await resolveCustomerRequestItem(itemId);
 
     const result = await selectBestOffer(itemId);
 
     expect(result.status).toBe("SELECTED");
-    expect(result.selected?.unitPrice).toBe(5000); // Ramedicas + Genfar, el mas barato del seed
+    expect(result.selected?.unitPrice).toBe(5000); // Proveedor X + Genfar, el mas barato
     expect(result.totalPrice).toBe(50000);
-    expect(result.alternatives.length).toBeGreaterThanOrEqual(3); // Ramedicas/Genfar, Ramedicas/Pfizer, Disfarma/Genfar
+    expect(result.alternatives.length).toBeGreaterThanOrEqual(3); // X/Genfar, X/Pfizer, Y/Genfar
 
     const persisted = await prisma.priceComparison.findMany({ where: { customerRequestItemId: itemId } });
     expect(persisted.length).toBe(result.alternatives.length);
@@ -65,64 +103,21 @@ describe("selectBestOffer (integracion contra base de datos real)", () => {
     expect(result.selected).toBeNull();
   });
 
-  describe("con productos aislados de prueba", () => {
-    const productIds: string[] = [];
-    const laboratoryIds: string[] = [];
-    const supplierIds: string[] = [];
+  it("NO_STOCK cuando ninguna oferta tiene existencia suficiente", async () => {
+    const { itemId } = await createRequestItem("PRICETEST TAB 50MG X10", 500); // supera el stock de ambos proveedores
+    await resolveCustomerRequestItem(itemId);
 
-    beforeAll(async () => {
-      const productA = await createProduct("PRICETEST TAB 50MG X10", "TestLab Uno");
-      productIds.push(productA.id);
-      laboratoryIds.push(productA.laboratoryId!);
+    const result = await selectBestOffer(itemId);
+    expect(result.status).toBe("NO_STOCK");
+    expect(result.selected).toBeNull();
+    expect(result.alternatives.every((a) => !a.eligible)).toBe(true);
+  });
 
-      const supplierX = await prisma.supplier.create({ data: { name: "Proveedor Precio Test X" } });
-      const supplierY = await prisma.supplier.create({ data: { name: "Proveedor Precio Test Y" } });
-      supplierIds.push(supplierX.id, supplierY.id);
-
-      await prisma.supplierOffer.create({
-        data: {
-          supplierId: supplierX.id,
-          productId: productA.id,
-          price: 1000,
-          availability: "OUT_OF_STOCK",
-          stockQuantity: 0,
-        },
-      });
-      await prisma.supplierOffer.create({
-        data: {
-          supplierId: supplierY.id,
-          productId: productA.id,
-          price: 1500,
-          availability: "AVAILABLE",
-          stockQuantity: 2, // menos que lo solicitado (10) en el test de abajo
-        },
-      });
-    });
-
-    afterAll(async () => {
-      await prisma.priceComparison.deleteMany({ where: { productId: { in: productIds } } });
-      await prisma.supplierOffer.deleteMany({ where: { productId: { in: productIds } } });
-      await prisma.supplier.deleteMany({ where: { id: { in: supplierIds } } });
-      await prisma.product.deleteMany({ where: { id: { in: productIds } } });
-      await prisma.laboratory.deleteMany({ where: { id: { in: laboratoryIds } } });
-    });
-
-    it("NO_STOCK cuando ninguna oferta tiene existencia suficiente", async () => {
-      const { itemId } = await createRequestItem("PRICETEST TAB 50MG X10", 10);
-      await resolveCustomerRequestItem(itemId);
-
-      const result = await selectBestOffer(itemId);
-      expect(result.status).toBe("NO_STOCK");
-      expect(result.selected).toBeNull();
-      expect(result.alternatives.every((a) => !a.eligible)).toBe(true);
-    });
-
-    it("REVIEW cuando el item aun no fue homologado (MatchStatus PENDING)", async () => {
-      const { itemId } = await createRequestItem("PRICETEST TAB 50MG X10", 1);
-      // No se llama a resolveCustomerRequestItem: el item queda en PENDING.
-      const result = await selectBestOffer(itemId);
-      expect(result.status).toBe("REVIEW");
-      expect(result.selected).toBeNull();
-    });
+  it("REVIEW cuando el item aun no fue homologado (MatchStatus PENDING)", async () => {
+    const { itemId } = await createRequestItem("PRICETEST TAB 50MG X10", 1);
+    // No se llama a resolveCustomerRequestItem: el item queda en PENDING.
+    const result = await selectBestOffer(itemId);
+    expect(result.status).toBe("REVIEW");
+    expect(result.selected).toBeNull();
   });
 });

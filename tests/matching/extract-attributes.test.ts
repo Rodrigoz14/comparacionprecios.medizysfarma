@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractProductAttributes } from "@/lib/matching/extract-attributes";
+import { extractProductAttributes, normalizeDosageForm } from "@/lib/matching/extract-attributes";
 import { buildGenericKey, buildNormalizedName } from "@/lib/matching/normalize";
 
 describe("extractProductAttributes", () => {
@@ -91,6 +91,25 @@ describe("extractProductAttributes", () => {
 
   it("devuelve null cuando falta la unidad de concentracion (evita adivinar)", () => {
     expect(extractProductAttributes("AMOXICILINA 500/125 X21")).toBeNull();
+  });
+});
+
+describe("normalizeDosageForm", () => {
+  it("normaliza una forma compuesta reportada por columna al vocabulario controlado", () => {
+    expect(normalizeDosageForm("SOLUCION INYECTABLE")).toBe("Solución");
+    expect(normalizeDosageForm("TABLETA RECUBIERTA")).toBe("Tableta");
+  });
+
+  it("devuelve null cuando no reconoce ninguna palabra clave", () => {
+    expect(normalizeDosageForm("DISPOSITIVO INTRAUTERINO")).toBeNull();
+  });
+
+  it("produce el mismo valor que la extraccion por texto libre (evita romper genericKey)", () => {
+    // Un importador que reciba "SOLUCION INYECTABLE" en una columna aparte debe
+    // normalizarla igual que si viniera escrita dentro del nombre del producto,
+    // o dos filas del mismo generico terminan con genericKey distinto.
+    const fromText = extractProductAttributes("DICLOFENACO 75MG SOLUCION INYECTABLE X10");
+    expect(normalizeDosageForm("SOLUCION INYECTABLE")).toBe(fromText?.attributes.dosageForm);
   });
 });
 

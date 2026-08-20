@@ -140,12 +140,29 @@ en `PriceComparison` para poder auditarla después.
 Los cálculos (totales, ahorro) siempre los hace el backend con aritmética
 simple — nunca la IA (Sección 6.32).
 
+## Autenticación
+
+La aplicación entera requiere sesión (páginas y API). Sesión con cookie
+httpOnly firmada (JWT vía `jose`), sin librería externa de auth. `proxy.ts`
+hace un chequeo optimista (redirige a `/login` si no hay cookie) y cada
+página/ruta de API vuelve a verificar la sesión de verdad
+(`lib/auth/dal.ts`) — la redirección del proxy no es la única protección.
+
+El primer usuario (ADMIN) se crea en el seed (`npx prisma db seed`), que
+imprime el correo y una contraseña temporal una sola vez. Por ahora no hay
+pantalla para crear usuarios adicionales — se hace directamente en la base
+de datos (`role`: `ADMIN`, `COMPRAS` o `CONSULTA`).
+
+`AUTH_SECRET` es obligatorio (ver `.env.example` para generarlo) y debe ser
+distinto en cada entorno — nunca reutilices el de desarrollo en producción.
+
 ## Estructura del proyecto
 
 ```text
 app/            Páginas y rutas (App Router)
 components/     Componentes de UI reutilizables
 lib/db/         Cliente de Prisma
+lib/auth/       Sesión (JWT en cookie), contraseñas y verificación de acceso
 lib/ai/         Abstracción de proveedores de IA (Claude / OpenAI)
 lib/excel/      Importación y normalización de listas de proveedores
 lib/matching/   Homologación inteligente de productos

@@ -1,13 +1,18 @@
+import Link from "next/link";
+import { verifySession } from "@/lib/auth/dal";
+
 const MODULES = [
-  "Cotizaciones",
-  "Proveedores",
-  "Productos",
-  "Comparaciones",
-  "Órdenes de compra",
-  "Historial",
+  { label: "Proveedores — Importar lista", href: "/proveedores/importar" },
+  { label: "Nueva solicitud de cliente", href: "/solicitudes/nueva" },
+  { label: "Productos", href: null },
+  { label: "Órdenes de compra", href: null },
+  { label: "Historial", href: null },
+  { label: "Configuración", href: null },
 ] as const;
 
-export default function Home() {
+export default async function Home() {
+  await verifySession();
+
   return (
     <div className="flex flex-1 flex-col items-center bg-zinc-50 px-6 py-16 dark:bg-black">
       <div className="w-full max-w-3xl">
@@ -20,17 +25,25 @@ export default function Home() {
         </p>
 
         <div className="mt-10 grid grid-cols-2 gap-4 sm:grid-cols-3">
-          {MODULES.map((module) => (
-            <div
-              key={module}
-              className="rounded-lg border border-zinc-200 bg-white p-4 text-sm font-medium text-zinc-700 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300"
-            >
-              {module}
-              <span className="mt-1 block text-xs font-normal text-zinc-400">
-                Próximamente
-              </span>
-            </div>
-          ))}
+          {MODULES.map((module) =>
+            module.href ? (
+              <Link
+                key={module.label}
+                href={module.href}
+                className="rounded-lg border border-zinc-200 bg-white p-4 text-sm font-medium text-zinc-700 transition-colors hover:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:border-zinc-600"
+              >
+                {module.label}
+              </Link>
+            ) : (
+              <div
+                key={module.label}
+                className="rounded-lg border border-zinc-200 bg-white p-4 text-sm font-medium text-zinc-700 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300"
+              >
+                {module.label}
+                <span className="mt-1 block text-xs font-normal text-zinc-400">Próximamente</span>
+              </div>
+            ),
+          )}
         </div>
       </div>
     </div>

@@ -1,7 +1,9 @@
+import { randomBytes } from "node:crypto";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../lib/generated/prisma/client";
 import { extractProductAttributes } from "../lib/matching/extract-attributes";
 import { buildGenericKey, buildNormalizedName, normalizeText } from "../lib/matching/normalize";
+import { hashPassword } from "../lib/auth/password";
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
@@ -38,7 +40,29 @@ async function upsertProduct(rawName: string, laboratoryName: string) {
   });
 }
 
+async function upsertAdminUser() {
+  const email = "admin@medizysfarma.com";
+  const existing = await prisma.user.findUnique({ where: { email } });
+  if (existing) {
+    console.log(`Usuario admin ya existe (${email}); no se cambió la contraseña.`);
+    return;
+  }
+
+  const temporaryPassword = randomBytes(9).toString("base64url");
+  const passwordHash = await hashPassword(temporaryPassword);
+  await prisma.user.create({
+    data: { name: "Administrador", email, passwordHash, role: "ADMIN" },
+  });
+
+  console.log("\n=== USUARIO ADMINISTRADOR CREADO ===");
+  console.log(`Correo:      ${email}`);
+  console.log(`Contraseña:  ${temporaryPassword}`);
+  console.log("Guárdala ahora; no se volverá a mostrar. Cámbiala después del primer ingreso.\n");
+}
+
 async function main() {
+  await upsertAdminUser();
+
   const supplier = await prisma.supplier.upsert({
     where: { id: "seed-supplier-ramedicas" },
     update: {},

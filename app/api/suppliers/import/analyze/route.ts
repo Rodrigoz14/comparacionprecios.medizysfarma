@@ -1,9 +1,14 @@
 import { analyzeSupplierFile } from "@/lib/excel/importer";
+import { getVerifiedSession } from "@/lib/auth/dal";
 
 const MAX_FILE_SIZE_BYTES = 30 * 1024 * 1024; // 30 MB
 const ALLOWED_EXTENSIONS = [".xlsx", ".xlsm", ".csv"];
 
 export async function POST(request: Request) {
+  if (!(await getVerifiedSession())) {
+    return Response.json({ error: "No autenticado." }, { status: 401 });
+  }
+
   const formData = await request.formData();
   const file = formData.get("file");
   const supplierId = formData.get("supplierId");

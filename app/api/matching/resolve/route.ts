@@ -1,11 +1,16 @@
 import { z } from "zod";
 import { resolveProductMatch } from "@/lib/matching/matching-service";
+import { getVerifiedSession } from "@/lib/auth/dal";
 
 const bodySchema = z.object({
   text: z.string().min(1),
 });
 
 export async function POST(request: Request) {
+  if (!(await getVerifiedSession())) {
+    return Response.json({ error: "No autenticado." }, { status: 401 });
+  }
+
   const body = await request.json();
   const parsed = bodySchema.safeParse(body);
   if (!parsed.success) {

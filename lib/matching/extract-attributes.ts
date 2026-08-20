@@ -56,6 +56,21 @@ const PRESENTATION_UNIT_BY_FORM: Record<string, string> = {
 };
 
 /**
+ * Busca una forma farmacéutica conocida dentro de un texto (tokenizando por
+ * palabras) y la normaliza al vocabulario controlado (DOSAGE_FORM_MAP).
+ * Devuelve null si no reconoce ninguna palabra clave.
+ */
+export function normalizeDosageForm(rawText: string): string | null {
+  const upper = stripAccents(rawText).toUpperCase();
+  const tokens = upper.split(/[^A-ZÁÉÍÓÚÑ]+/).filter(Boolean);
+  for (const token of tokens) {
+    const mapped = DOSAGE_FORM_MAP[token];
+    if (mapped) return mapped;
+  }
+  return null;
+}
+
+/**
  * Extrae principio activo, concentración, forma farmacéutica y presentación a partir
  * de una descripción de producto en texto libre (nombre de un proveedor o el texto
  * escrito por un cliente). Devuelve null si no se puede determinar la concentración
