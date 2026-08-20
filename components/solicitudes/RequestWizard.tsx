@@ -320,7 +320,18 @@ export function RequestWizard() {
                 </div>
               )}
 
-              {!r.pricing.selected && <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">{r.pricing.reason}</p>}
+              {!r.pricing.selected && (
+                <div className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
+                  <p>{r.pricing.reason}</p>
+                  {r.match.reasons.length > 0 && (
+                    <ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs">
+                      {r.match.reasons.map((reason, i) => (
+                        <li key={i}>{reason}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
 
               {r.pricing.alternatives.length > 1 && (
                 <details className="mt-2">
