@@ -24,6 +24,16 @@ interface OfferOption {
   discardReason: string | null;
 }
 
+interface MatchCandidate {
+  product: {
+    id: string;
+    standardName: string;
+    dosageForm: string;
+    concentration: string;
+    concentrationUnit: string;
+  };
+}
+
 interface ItemResult {
   itemId: string;
   originalText: string;
@@ -32,6 +42,7 @@ interface ItemResult {
     decision: "MATCH" | "REVIEW" | "NO_MATCH";
     confidence: number;
     reasons: string[];
+    candidates: MatchCandidate[];
   };
   pricing: {
     status: "SELECTED" | "REVIEW" | "NOT_FOUND" | "NO_STOCK" | "NO_VALID_OFFER";
@@ -74,6 +85,7 @@ export function RequestWizard() {
   const [inputMode, setInputMode] = useState<InputMode>("manual");
   const [pasteText, setPasteText] = useState("");
   const [fileLoading, setFileLoading] = useState(false);
+  const [selectingItemId, setSelectingItemId] = useState<string | null>(null);
 
   function updateLine(index: number, patch: Partial<ItemLine>) {
     setLines((prev) => prev.map((l, i) => (i === index ? { ...l, ...patch } : l)));
@@ -129,6 +141,27 @@ export function RequestWizard() {
       setError(err instanceof Error ? err.message : "Error inesperado.");
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleSelectCandidate(itemId: string, productId: string) {
+    setSelectingItemId(itemId);
+    setError(null);
+    try {
+      const res = await fetch(`/api/customer-requests/items/${itemId}/select`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "No se pudo confirmar el producto elegido.");
+      setResults((prev) =>
+        prev ? prev.map((r) => (r.itemId === itemId ? { ...r, match: data.match, pricing: data.pricing } : r)) : prev,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error inesperado al confirmar el producto.");
+    } finally {
+      setSelectingItemId(null);
     }
   }
 
@@ -330,6 +363,29 @@ export function RequestWizard() {
                       ))}
                     </ul>
                   )}
+                </div>
+              )}
+
+              {r.match.candidates.length > 0 && (
+                <div className="mt-3 rounded border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/40">
+                  <p className="text-xs font-medium text-amber-800 dark:text-amber-300">
+                    ¿Cuál de estos es? Elige el correcto para cotizarlo:
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {r.match.candidates.map((c) => (
+                      <button
+                        key={c.product.id}
+                        onClick={() => handleSelectCandidate(r.itemId, c.product.id)}
+                        disabled={selectingItemId === r.itemId}
+                        className="rounded border border-amber-300 bg-white px-3 py-1.5 text-left text-xs font-medium text-zinc-800 hover:bg-amber-100 disabled:opacity-50 dark:border-amber-800 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-amber-950"
+                      >
+                        {c.product.dosageForm} — {c.product.concentration}
+                        {c.product.concentrationUnit}
+                        <span className="block text-[11px] font-normal text-zinc-500">{c.product.standardName}</span>
+                      </button>
+                    ))}
+                  </div>
+                  {selectingItemId === r.itemId && <p className="mt-2 text-xs text-amber-700">Confirmando...</p>}
                 </div>
               )}
 

@@ -62,11 +62,23 @@ export async function resolveProductMatch(rawText: string): Promise<MatchResult>
   }
 
   const scored: ScoredCandidate[] = found
-    .map(({ product, viaSynonym }) => {
+    .map(({ product, viaSynonym, viaFuzzyMatch }) => {
       const comparison = compareAttributes(extraction.attributes, product);
-      return { product, comparison, score: scoreComparison(comparison, !viaSynonym) };
+      return {
+        product,
+        comparison,
+        score: scoreComparison(comparison, !viaSynonym && !viaFuzzyMatch),
+        viaSynonym,
+        viaFuzzyMatch,
+      };
     })
     .sort((a, b) => b.score - a.score);
+
+  const fuzzyIngredientNote = scored.some((c) => c.viaFuzzyMatch)
+    ? [
+        `No se encontró "${extraction.attributes.activeIngredient}" tal cual en el catálogo; se muestran principios activos con escritura parecida por si hubo un error de tipeo — confírmalo antes de cotizar.`,
+      ]
+    : [];
 
   // El cliente no siempre dice la forma farmacéutica ("Ácido Valproico 250mg",
   // sin decir cápsula/jarabe/tableta). No especificarla no es lo mismo que una
@@ -80,8 +92,13 @@ export async function resolveProductMatch(rawText: string): Promise<MatchResult>
   if (extraction.attributes.dosageForm === "No especificada") {
     const concentrationMatches = scored.filter((c) => c.comparison.concentrationMatch);
     const distinctForms = new Set(concentrationMatches.map((c) => c.product.dosageForm));
+    // El atajo de "una sola forma disponible -> MATCH automático" solo es seguro
+    // si el ingrediente se identificó con certeza (texto exacto): si vino por
+    // sinónimo o por tolerancia a typos, la identidad del principio activo ya
+    // es incierta y no se debe sumar una segunda suposición (la forma) encima.
+    const allExactIngredient = concentrationMatches.every((c) => !c.viaSynonym && !c.viaFuzzyMatch);
 
-    if (distinctForms.size === 1) {
+    if (distinctForms.size === 1 && allExactIngredient) {
       return {
         decision: "MATCH",
         confidence: 1,
@@ -94,7 +111,7 @@ export async function resolveProductMatch(rawText: string): Promise<MatchResult>
       };
     }
 
-    if (distinctForms.size > 1) {
+    if (distinctForms.size >= 1) {
       const aiResult = await judgeWithAI(rawText, concentrationMatches.slice(0, 5));
 
       if (aiResult && aiResult.decision === "MATCH" && aiResult.candidateId) {
@@ -111,16 +128,20 @@ export async function resolveProductMatch(rawText: string): Promise<MatchResult>
         }
       }
 
+      const reasons = aiResult
+        ? aiResult.reasons
+        : distinctForms.size > 1
+          ? [
+              `El cliente no especificó la forma farmacéutica y hay varias disponibles (${[...distinctForms].join(", ")}); requiere revisión.`,
+            ]
+          : [`Se encontró una única forma farmacéutica (${[...distinctForms][0]}), pero el ingrediente no es una coincidencia exacta; requiere revisión.`];
+
       return {
         decision: "REVIEW",
         confidence: concentrationMatches[0].score,
         matchedProductIds: [],
         candidates: scored.slice(0, 5),
-        reasons: aiResult
-          ? aiResult.reasons
-          : [
-              `El cliente no especificó la forma farmacéutica y hay varias disponibles (${[...distinctForms].join(", ")}); requiere revisión.`,
-            ],
+        reasons: [...reasons, ...fuzzyIngredientNote],
         source: aiResult ? "ai" : "deterministic",
       };
     }
@@ -151,7 +172,7 @@ export async function resolveProductMatch(rawText: string): Promise<MatchResult>
       confidence: best.score,
       matchedProductIds: [],
       candidates: scored.slice(0, 5),
-      reasons: [describeMatch(best)],
+      reasons: [describeMatch(best), ...fuzzyIngredientNote],
       source: "deterministic",
     };
   }
@@ -182,7 +203,7 @@ export async function resolveProductMatch(rawText: string): Promise<MatchResult>
       confidence: aiResult.confidence,
       matchedProductIds: [],
       candidates: scored.slice(0, 5),
-      reasons: aiResult.reasons,
+      reasons: [...aiResult.reasons, ...fuzzyIngredientNote],
       source: "ai",
     };
   }
@@ -192,7 +213,7 @@ export async function resolveProductMatch(rawText: string): Promise<MatchResult>
     confidence: best.score,
     matchedProductIds: [],
     candidates: scored.slice(0, 5),
-    reasons: aiResult ? aiResult.reasons : [describeMatch(best), "Requiere revisión humana."],
+    reasons: aiResult ? aiResult.reasons : [describeMatch(best), "Requiere revisión humana.", ...fuzzyIngredientNote],
     source: aiResult ? "ai" : "deterministic",
   };
 }

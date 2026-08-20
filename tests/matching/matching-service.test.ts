@@ -182,3 +182,40 @@ describe("resolveProductMatch (orden de palabras del ingrediente activo)", () =>
     expect(result.matchedProductIds).toEqual([productIds[0]]);
   });
 });
+
+// Caso real reportado por el cliente: buscar "acido valprico" (typo, falta una
+// letra) en vez de "acido valproico" no encontraba nada. La tolerancia a
+// errores de tipeo nunca debe auto-confirmar: solo amplía qué se muestra para
+// que un humano confirme, porque una sustancia distinta con nombre parecido
+// no es intercambiable (a diferencia del orden de palabras o la presentación).
+describe("resolveProductMatch (tolerancia a errores de tipeo en el ingrediente)", () => {
+  const productIds: string[] = [];
+  const laboratoryIds: string[] = [];
+
+  beforeAll(async () => {
+    const product = await createProduct("ZOLTRAXOLIDINA 250MG TABLETA X30", "TestLab Zoltraxolidina");
+    productIds.push(product.id);
+    laboratoryIds.push(product.laboratoryId!);
+  });
+
+  afterAll(async () => {
+    await prisma.product.deleteMany({ where: { id: { in: productIds } } });
+    await prisma.laboratory.deleteMany({ where: { id: { in: laboratoryIds } } });
+  });
+
+  it("un typo de una letra encuentra el candidato pero nunca hace MATCH automatico", async () => {
+    const result = await resolveProductMatch("ZOLTRAXOLIDNA 250MG TABLETA X30");
+    expect(result.decision).toBe("REVIEW");
+    expect(result.matchedProductIds).toEqual([]);
+    expect(result.candidates.map((c) => c.product.id)).toContain(productIds[0]);
+    expect(result.reasons.join(" ")).toMatch(/error de tipeo/i);
+  });
+
+  it("un ingrediente totalmente distinto no encuentra nada por mas tolerancia que se de", async () => {
+    // Ficticio y muy distinto a cualquier ingrediente real del catalogo, para
+    // no depender de qué productos reales existan en la base de datos compartida.
+    const result = await resolveProductMatch("INGREDIENTEDESCONOCIDOPQZ 250MG TABLETA X30");
+    expect(result.decision).toBe("NO_MATCH");
+    expect(result.matchedProductIds).toEqual([]);
+  });
+});

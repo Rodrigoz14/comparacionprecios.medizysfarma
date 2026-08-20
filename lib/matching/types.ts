@@ -36,6 +36,10 @@ export interface ScoredCandidate {
   product: CandidateProduct;
   comparison: AttributeComparison;
   score: number;
+  /** true si se encontró por un sinónimo controlado (p. ej. paracetamol/acetaminofén), no por el mismo texto. */
+  viaSynonym: boolean;
+  /** true si se encontró tolerando un posible error de tipeo/OCR (p. ej. "valprico" por "valproico"), no por texto exacto ni sinónimo controlado. */
+  viaFuzzyMatch: boolean;
 }
 
 export interface MatchResult {
@@ -44,5 +48,5 @@ export interface MatchResult {
   matchedProductIds: string[];
   candidates: ScoredCandidate[];
   reasons: string[];
-  source: "deterministic" | "ai" | "none";
+  source: "deterministic" | "ai" | "manual" | "none";
 }
