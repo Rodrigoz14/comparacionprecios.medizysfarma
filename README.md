@@ -125,6 +125,20 @@ base de datos (`Product.normalizedName` incluye el laboratorio), pero
 comparten `Product.genericKey` para que el motor de precios (fase futura)
 pueda compararlos e ignorar el laboratorio, quedándose con el más barato.
 
+## Comparar precios para un cliente
+
+En `/solicitudes/nueva` escribes el nombre del cliente y los productos que
+pide (texto libre + cantidad). Por cada línea, el sistema homologa el
+producto (Sección 5) y, si lo encuentra, compara todas las ofertas del mismo
+genérico entre proveedores — de cualquier laboratorio — y selecciona la más
+barata que tenga disponibilidad suficiente (`lib/pricing`). Muestra el
+proveedor ganador, el total, las alternativas descartadas y por qué, y el
+ahorro estimado frente a la oferta más cara. Cada comparación queda guardada
+en `PriceComparison` para poder auditarla después.
+
+Los cálculos (totales, ahorro) siempre los hace el backend con aritmética
+simple — nunca la IA (Sección 6.32).
+
 ## Estructura del proyecto
 
 ```text
