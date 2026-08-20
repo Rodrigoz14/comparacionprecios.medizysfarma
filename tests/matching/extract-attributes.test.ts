@@ -35,6 +35,49 @@ describe("extractProductAttributes", () => {
     expect(result?.attributes.presentationQuantity).toBe(21);
   });
 
+  // Casos tomados de un archivo real de Ramedicas (.xlsm), donde la presentacion
+  // suele venir en su propia columna, separada del nombre del producto.
+  describe("presentaciones por volumen/peso (columna separada, sin espacio antes de la unidad)", () => {
+    it("convierte litros a mililitros", () => {
+      const result = extractProductAttributes("LOSARTAN 50MG SOLUCION ORAL FRASCO X 1.5L");
+      expect(result).not.toBeNull();
+      expect(result?.attributes.presentationQuantity).toBe(1500);
+      expect(result?.attributes.presentationUnit).toBe("ml");
+    });
+
+    it("reconoce mililitros pegados a la unidad (X 30ML)", () => {
+      const result = extractProductAttributes(
+        "RISPERIDONA 1MG/ML (0,1%) SOLUCION ORAL CAJA CON FRASCO X 30ML",
+      );
+      expect(result).not.toBeNull();
+      expect(result?.attributes.presentationQuantity).toBe(30);
+      expect(result?.attributes.presentationUnit).toBe("ml");
+    });
+
+    it("reconoce gramos pegados a la unidad (X 400G)", () => {
+      const result = extractProductAttributes(
+        "APME EN POLVO FORMULA POLIMERICA PARA NINOS LATA X 400G",
+      );
+      expect(result).not.toBeNull();
+      expect(result?.attributes.presentationQuantity).toBe(400);
+      expect(result?.attributes.presentationUnit).toBe("g");
+    });
+  });
+
+  it("asume cantidad 1 para envases de una sola unidad sin numero explicito (CAJA X VIAL)", () => {
+    const result = extractProductAttributes(
+      "TOXINA BOTULINICA TIPO A 100UI POLVO A SOLUCION INYECTABLE CAJA X VIAL",
+    );
+    expect(result).not.toBeNull();
+    expect(result?.attributes.presentationQuantity).toBe(1);
+    expect(result?.warnings.some((w) => w.includes("se asumió 1"))).toBe(true);
+  });
+
+  it("no confunde equipo medico sin concentracion farmacologica (correctamente null)", () => {
+    // "UNIDAD" no tiene ni concentracion ni un patron de cantidad reconocible.
+    expect(extractProductAttributes("LECTOR FRESTYLE LIBRE 2 UNIDAD")).toBeNull();
+  });
+
   it("no confunde presentaciones distintas del mismo producto", () => {
     const x100 = extractProductAttributes("ACETAMINOFEN TAB 500MG X100");
     const x20 = extractProductAttributes("ACETAMINOFEN 500MG X20");

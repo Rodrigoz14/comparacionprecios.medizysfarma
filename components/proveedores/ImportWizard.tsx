@@ -12,6 +12,8 @@ const TARGET_LABELS: Record<ColumnTarget | "none", string> = {
   none: "(no usar)",
   supplierProductCode: "Código del proveedor",
   productName: "Nombre del producto",
+  presentation: "Presentación",
+  dosageForm: "Forma farmacéutica",
   laboratory: "Laboratorio",
   price: "Precio",
   tax: "IVA",
@@ -22,6 +24,8 @@ const TARGET_LABELS: Record<ColumnTarget | "none", string> = {
 const TARGET_OPTIONS: (ColumnTarget | "none")[] = [
   "none",
   "productName",
+  "presentation",
+  "dosageForm",
   "price",
   "supplierProductCode",
   "laboratory",
@@ -162,7 +166,7 @@ export function ImportWizard() {
           <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Archivo</label>
           <input
             type="file"
-            accept=".xlsx,.csv"
+            accept=".xlsx,.xlsm,.csv"
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             className="mt-1 w-full text-sm"
           />

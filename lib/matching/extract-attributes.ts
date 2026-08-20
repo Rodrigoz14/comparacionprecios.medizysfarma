@@ -2,7 +2,12 @@ import { stripAccents } from "@/lib/matching/normalize";
 import type { ExtractedAttributes } from "@/lib/matching/types";
 
 const CONCENTRATION_RE = /(\d+(?:[.,]\d+)?(?:\s*\/\s*\d+(?:[.,]\d+)?)?)\s*(MG|MCG|UI|G|ML)\b/i;
-const PRESENTATION_QTY_RE = /X\s*(\d+)\b/i;
+// Cubre tanto conteos discretos ("X100" -> 100 tabletas) como volumen/peso por
+// envase pegado a la unidad, sin espacio ("X 30ML", "X400G", "X 1.5L").
+const PRESENTATION_QTY_RE = /X\s*(\d+(?:[.,]\d+)?)\s*(ML|L|G)?\b/i;
+// Envases de una sola unidad donde el proveedor no escribe "X1" (p. ej.
+// biológicos/oncológicos vendidos como "CAJA X VIAL"): se asume cantidad 1.
+const SINGLE_UNIT_CONTAINER_RE = /X\s*(VIAL|AMPOLLA|AMPOLLAS|JERINGA|FRASCO|TUBO|SOBRE)\b/i;
 
 const DOSAGE_FORM_MAP: Record<string, string> = {
   TAB: "Tableta",
@@ -66,9 +71,16 @@ export function extractProductAttributes(
 
   const concentrationMatch = CONCENTRATION_RE.exec(upper);
   const presentationMatch = PRESENTATION_QTY_RE.exec(upper);
+  const singleUnitMatch = presentationMatch ? null : SINGLE_UNIT_CONTAINER_RE.exec(upper);
 
-  if (!concentrationMatch || !presentationMatch) {
+  if (!concentrationMatch || (!presentationMatch && !singleUnitMatch)) {
     return null;
+  }
+
+  if (singleUnitMatch) {
+    warnings.push(
+      `No se encontró una cantidad explícita de presentación; se asumió 1 (envase "${singleUnitMatch[1]}").`,
+    );
   }
 
   const tokens = upper.split(/[^A-ZÁÉÍÓÚÑ]+/).filter(Boolean);
@@ -111,7 +123,28 @@ export function extractProductAttributes(
     return null;
   }
 
-  const presentationUnit = PRESENTATION_UNIT_BY_FORM[dosageForm] ?? "unidades";
+  let presentationQuantity: number;
+  let presentationUnit: string;
+  if (presentationMatch) {
+    const rawQuantity = Number.parseFloat(presentationMatch[1].replace(",", "."));
+    const volumeUnit = presentationMatch[2]?.toUpperCase();
+    if (volumeUnit === "L") {
+      presentationQuantity = Math.round(rawQuantity * 1000);
+      presentationUnit = "ml";
+    } else if (volumeUnit === "ML") {
+      presentationQuantity = Math.round(rawQuantity);
+      presentationUnit = "ml";
+    } else if (volumeUnit === "G") {
+      presentationQuantity = Math.round(rawQuantity);
+      presentationUnit = "g";
+    } else {
+      presentationQuantity = Math.round(rawQuantity);
+      presentationUnit = PRESENTATION_UNIT_BY_FORM[dosageForm] ?? "unidades";
+    }
+  } else {
+    presentationQuantity = 1;
+    presentationUnit = PRESENTATION_UNIT_BY_FORM[dosageForm] ?? "unidades";
+  }
 
   return {
     attributes: {
@@ -120,7 +153,7 @@ export function extractProductAttributes(
       concentrationUnit: concentrationMatch[2].toUpperCase(),
       dosageForm,
       presentationType,
-      presentationQuantity: Number.parseInt(presentationMatch[1], 10),
+      presentationQuantity,
       presentationUnit,
     },
     warnings,

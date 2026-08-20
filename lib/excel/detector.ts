@@ -4,8 +4,12 @@ import type { ColumnTarget, DetectedColumn, RawRow } from "@/lib/excel/types";
 const ALIASES: Record<ColumnTarget, string[]> = {
   supplierProductCode: ["codigo", "sku", "referencia", "ref", "cod"],
   productName: ["descripcion", "producto", "descripcion comercial", "nombre", "articulo"],
+  presentation: ["presentacion", "empaque"],
+  dosageForm: ["forma farmaceutica", "forma"],
   laboratory: ["laboratorio", "lab", "marca", "fabricante"],
-  price: ["precio", "valor", "precio unitario", "vlr", "vr"],
+  // Nota: se busca "precio x presentacion" antes que "precio x ud" (precio unitario)
+  // porque comparamos precio por presentación completa, no por unidad suelta.
+  price: ["precio x presentacion", "precio", "valor", "vlr", "vr"],
   tax: ["iva", "impuesto"],
   availability: ["disponible", "disponibilidad", "existencia", "stock", "cantidad disponible"],
   stock: ["stock", "existencia", "cantidad"],

@@ -93,13 +93,31 @@ function readMappedRow(
     return { row: null, error: "Fila sin nombre de producto.", warnings: [] };
   }
 
-  const extraction = extractProductAttributes(originalProductName);
+  // Algunos proveedores (p. ej. Ramédicas) reportan la presentación en su propia
+  // columna ("CAJA X 10 AMPOLLAS X 3ML") en vez de incluirla en la descripción del
+  // producto. Se concatena para que el extractor encuentre la cantidad ("X10").
+  const presentationRaw = mapping.presentation !== undefined ? row[mapping.presentation] : null;
+  const presentationText = presentationRaw === null || presentationRaw === undefined ? "" : String(presentationRaw).trim();
+  const extractionInput = presentationText ? `${originalProductName} ${presentationText}` : originalProductName;
+
+  const extraction = extractProductAttributes(extractionInput);
   if (!extraction) {
     return {
       row: null,
       error: `No se pudo determinar la concentración y/o presentación de "${originalProductName}".`,
       warnings: [],
     };
+  }
+
+  // Si el proveedor reporta la forma farmacéutica en su propia columna, es más
+  // confiable que adivinarla por palabras clave del nombre.
+  const dosageFormRaw = mapping.dosageForm !== undefined ? row[mapping.dosageForm] : null;
+  const dosageFormText = dosageFormRaw === null || dosageFormRaw === undefined ? "" : String(dosageFormRaw).trim();
+  if (dosageFormText) {
+    extraction.attributes.dosageForm = dosageFormText;
+    extraction.warnings = extraction.warnings.filter(
+      (w) => !w.includes("forma farmacéutica"),
+    );
   }
 
   const priceRaw = mapping.price !== undefined ? row[mapping.price] : null;

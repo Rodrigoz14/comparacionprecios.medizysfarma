@@ -102,7 +102,8 @@ mismo archivo por accidente (detección por hash).
 
 Notas:
 
-- El formato `.xls` antiguo (Excel 97-2003) no está soportado; expórtalo como `.xlsx`.
+- Soporta `.xlsx`, `.xlsm` (Excel con macros) y `.csv`. El formato `.xls` antiguo (Excel 97-2003) no está soportado; expórtalo como `.xlsx`.
+- Si la presentación viene en su propia columna (p. ej. "CAJA X 10 AMPOLLAS X 3ML"), mapéala al campo "Presentación": se combina con el nombre del producto para extraer la cantidad. Igual con "Forma farmacéutica" si el proveedor la reporta aparte — es más confiable que adivinarla del nombre.
 - Cada fila requiere una concentración y una presentación reconocibles en el
   nombre del producto (p. ej. "500MG" y "X100"); si no se pueden determinar,
   la fila se reporta como error en vez de adivinar.

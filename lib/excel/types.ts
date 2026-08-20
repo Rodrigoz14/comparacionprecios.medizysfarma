@@ -5,6 +5,8 @@ import type { ExtractedAttributes } from "@/lib/matching/types";
 export type ColumnTarget =
   | "supplierProductCode"
   | "productName"
+  | "presentation"
+  | "dosageForm"
   | "laboratory"
   | "price"
   | "tax"

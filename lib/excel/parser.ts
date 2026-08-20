@@ -28,14 +28,15 @@ export async function parseWorkbook(buffer: Buffer, originalName: string): Promi
 
   if (lowerName.endsWith(".csv")) {
     await workbook.csv.read(Readable.from(buffer));
-  } else if (lowerName.endsWith(".xlsx")) {
+  } else if (lowerName.endsWith(".xlsx") || lowerName.endsWith(".xlsm")) {
+    // .xlsm (Excel con macros) usa el mismo formato interno OOXML que .xlsx.
     // exceljs's bundled type for `Buffer` resolves against a different nested
     // @types/node (via @fast-csv) than this project's, so the two Buffer
     // generics don't structurally match even though they're identical at runtime.
     await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
   } else {
     throw new Error(
-      "Formato de archivo no soportado. Usa .xlsx o .csv (el formato .xls antiguo no está soportado; expórtalo como .xlsx).",
+      "Formato de archivo no soportado. Usa .xlsx, .xlsm o .csv (el formato .xls antiguo no está soportado; expórtalo como .xlsx).",
     );
   }
 

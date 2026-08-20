@@ -1,7 +1,7 @@
 import { analyzeSupplierFile } from "@/lib/excel/importer";
 
-const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024; // 20 MB
-const ALLOWED_EXTENSIONS = [".xlsx", ".csv"];
+const MAX_FILE_SIZE_BYTES = 30 * 1024 * 1024; // 30 MB
+const ALLOWED_EXTENSIONS = [".xlsx", ".xlsm", ".csv"];
 
 export async function POST(request: Request) {
   const formData = await request.formData();
@@ -18,12 +18,12 @@ export async function POST(request: Request) {
   const lowerName = file.name.toLowerCase();
   if (!ALLOWED_EXTENSIONS.some((ext) => lowerName.endsWith(ext))) {
     return Response.json(
-      { error: "Formato no soportado. Solo se aceptan archivos .xlsx o .csv." },
+      { error: "Formato no soportado. Solo se aceptan archivos .xlsx, .xlsm o .csv." },
       { status: 400 },
     );
   }
   if (file.size > MAX_FILE_SIZE_BYTES) {
-    return Response.json({ error: "El archivo supera el límite de 20 MB." }, { status: 400 });
+    return Response.json({ error: "El archivo supera el límite de 30 MB." }, { status: 400 });
   }
 
   const buffer = Buffer.from(await file.arrayBuffer());
