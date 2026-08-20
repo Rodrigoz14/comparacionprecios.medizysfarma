@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { parsePastedList } from "@/lib/solicitudes/parse-pasted-list";
 
 interface ItemLine {
   text: string;
@@ -57,12 +58,18 @@ const STATUS_COLOR: Record<ItemResult["pricing"]["status"], string> = {
 const formatCOP = (value: number) =>
   new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(value);
 
+type InputMode = "manual" | "paste" | "file";
+
 export function RequestWizard() {
   const [customerName, setCustomerName] = useState("");
   const [lines, setLines] = useState<ItemLine[]>([{ text: "", quantity: 1 }]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<ItemResult[] | null>(null);
+
+  const [inputMode, setInputMode] = useState<InputMode>("manual");
+  const [pasteText, setPasteText] = useState("");
+  const [fileLoading, setFileLoading] = useState(false);
 
   function updateLine(index: number, patch: Partial<ItemLine>) {
     setLines((prev) => prev.map((l, i) => (i === index ? { ...l, ...patch } : l)));
@@ -74,6 +81,30 @@ export function RequestWizard() {
 
   function removeLine(index: number) {
     setLines((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function handleParsePaste() {
+    const parsed = parsePastedList(pasteText);
+    if (parsed.length > 0) setLines(parsed);
+  }
+
+  async function handleFileUpload(file: File) {
+    setFileLoading(true);
+    setError(null);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch("/api/customer-requests/parse-file", { method: "POST", body: form });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "No se pudo leer el archivo.");
+      const items = data.items as ItemLine[];
+      if (items.length === 0) throw new Error("No se encontraron productos en el archivo.");
+      setLines(items);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error inesperado al leer el archivo.");
+    } finally {
+      setFileLoading(false);
+    }
   }
 
   async function handleSubmit() {
@@ -122,6 +153,78 @@ export function RequestWizard() {
             className="mt-1 w-full rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
           />
         </div>
+
+        <div>
+          <div className="flex gap-1 text-sm">
+            {(
+              [
+                ["manual", "Uno por uno"],
+                ["paste", "Pegar lista"],
+                ["file", "Subir Excel"],
+              ] as [InputMode, string][]
+            ).map(([mode, label]) => (
+              <button
+                key={mode}
+                onClick={() => setInputMode(mode)}
+                className={`rounded-t px-3 py-1.5 font-medium ${
+                  inputMode === mode
+                    ? "border border-b-0 border-zinc-300 bg-white text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+                    : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {inputMode === "paste" && (
+            <div className="space-y-2 rounded-b rounded-tr border border-zinc-300 p-3 dark:border-zinc-700">
+              <p className="text-xs text-zinc-500">
+                Pega la lista del cliente (una línea por producto). Reconoce la cantidad al inicio o al final de
+                cada línea, o en una columna separada si pegas desde una tabla de Word o Excel.
+              </p>
+              <textarea
+                value={pasteText}
+                onChange={(e) => setPasteText(e.target.value)}
+                rows={6}
+                placeholder={"20 Acetaminofén 500mg x100\nLosartán 50mg x30 - 15\nOmeprazol 20mg x30"}
+                className="w-full rounded border border-zinc-300 px-3 py-2 font-mono text-xs dark:border-zinc-700 dark:bg-zinc-900"
+              />
+              <button
+                onClick={handleParsePaste}
+                disabled={!pasteText.trim()}
+                className="rounded bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40 dark:bg-zinc-50 dark:text-zinc-900"
+              >
+                Analizar lista
+              </button>
+            </div>
+          )}
+
+          {inputMode === "file" && (
+            <div className="space-y-2 rounded-b rounded-tr border border-zinc-300 p-3 dark:border-zinc-700">
+              <p className="text-xs text-zinc-500">
+                Sube un archivo .xlsx o .csv con el producto en una columna y la cantidad en otra (con o sin
+                encabezados).
+              </p>
+              <input
+                type="file"
+                accept=".xlsx,.xlsm,.csv"
+                disabled={fileLoading}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) void handleFileUpload(file);
+                  e.target.value = "";
+                }}
+                className="text-sm"
+              />
+              {fileLoading && <p className="text-xs text-zinc-500">Leyendo archivo...</p>}
+            </div>
+          )}
+        </div>
+
+        <p className="text-xs text-zinc-500">
+          Revisa la lista antes de comparar — puedes corregir cualquier línea:
+        </p>
 
         <div className="space-y-2">
           {lines.map((line, i) => (

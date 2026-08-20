@@ -73,6 +73,16 @@ describe("extractProductAttributes", () => {
     expect(result?.warnings.some((w) => w.includes("se asumió 1"))).toBe(true);
   });
 
+  it("quita el prefijo de canal EPS- del ingrediente activo (dato real Disfarma)", () => {
+    const conPrefijo = extractProductAttributes("EPS-ZOPICLONA 7.5MG C*30 TAB - RECIPE");
+    const sinPrefijo = extractProductAttributes("ZOPICLONA 7.5MG C*30 TAB - RECIPE");
+    expect(conPrefijo).not.toBeNull();
+    expect(conPrefijo?.attributes.activeIngredient).toBe("ZOPICLONA");
+    // Con o sin el prefijo del proveedor, debe quedar la misma clave generica
+    // para que un cliente que escribe "Zopiclona" (sin EPS-) sí lo encuentre.
+    expect(buildGenericKey(conPrefijo!.attributes)).toBe(buildGenericKey(sinPrefijo!.attributes));
+  });
+
   // Casos tomados de un archivo real de Disfarma, que usa "*" en vez de "X"
   // como separador de cantidad.
   describe("separador de presentacion con asterisco (Disfarma)", () => {

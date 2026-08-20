@@ -82,10 +82,16 @@ export function normalizeDosageForm(rawText: string): string | null {
  * productos distintos): en ese caso debe marcarse para revisión, no completarse
  * con un valor adivinado.
  */
+// Etiquetas de canal/categoría que algunos proveedores anteponen al nombre
+// del producto (p. ej. Disfarma: "EPS-ABACAVIR..."). No son parte del
+// principio activo: si no se quitan, "EPS-ZOPICLONA" nunca coincide con lo
+// que un cliente escribe normalmente ("Zopiclona").
+const CHANNEL_PREFIX_RE = /^(EPS|POS|NO[\s-]?POS|PBS)[\s-]+/i;
+
 export function extractProductAttributes(
   rawName: string,
 ): { attributes: ExtractedAttributes; warnings: string[] } | null {
-  const upper = stripAccents(rawName).toUpperCase();
+  const upper = stripAccents(rawName).toUpperCase().replace(CHANNEL_PREFIX_RE, "");
   const warnings: string[] = [];
 
   const concentrationMatch = CONCENTRATION_RE.exec(upper);
