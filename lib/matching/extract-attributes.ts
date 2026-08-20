@@ -2,12 +2,16 @@ import { stripAccents } from "@/lib/matching/normalize";
 import type { ExtractedAttributes } from "@/lib/matching/types";
 
 const CONCENTRATION_RE = /(\d+(?:[.,]\d+)?(?:\s*\/\s*\d+(?:[.,]\d+)?)?)\s*(MG|MCG|UI|G|ML)\b/i;
-// Cubre tanto conteos discretos ("X100" -> 100 tabletas) como volumen/peso por
-// envase pegado a la unidad, sin espacio ("X 30ML", "X400G", "X 1.5L").
-const PRESENTATION_QTY_RE = /X\s*(\d+(?:[.,]\d+)?)\s*(ML|L|G)?\b/i;
+// El símbolo de multiplicación varía por proveedor: "X100" (Ramédicas) o
+// "*30"/"C*1" (Disfarma). Cubre tanto conteos discretos ("X100" -> 100
+// tabletas) como volumen/peso por envase pegado a la unidad, sin espacio
+// ("X 30ML", "*400G", "X 1.5L"). Con bandera global: cuando el texto trae
+// varias coincidencias (p. ej. "C*1 FCO X 240ML"), se prefiere la que
+// especifica volumen/peso sobre un conteo de envases genérico.
+const PRESENTATION_QTY_RE = /[X*]\s*(\d+(?:[.,]\d+)?)\s*(ML|L|G)?\b/gi;
 // Envases de una sola unidad donde el proveedor no escribe "X1" (p. ej.
 // biológicos/oncológicos vendidos como "CAJA X VIAL"): se asume cantidad 1.
-const SINGLE_UNIT_CONTAINER_RE = /X\s*(VIAL|AMPOLLA|AMPOLLAS|JERINGA|FRASCO|TUBO|SOBRE)\b/i;
+const SINGLE_UNIT_CONTAINER_RE = /[X*]\s*(VIAL|AMPOLLA|AMPOLLAS|JERINGA|FRASCO|TUBO|SOBRE)\b/i;
 
 const DOSAGE_FORM_MAP: Record<string, string> = {
   TAB: "Tableta",
@@ -85,7 +89,11 @@ export function extractProductAttributes(
   const warnings: string[] = [];
 
   const concentrationMatch = CONCENTRATION_RE.exec(upper);
-  const presentationMatch = PRESENTATION_QTY_RE.exec(upper);
+  const presentationCandidates = [...upper.matchAll(PRESENTATION_QTY_RE)];
+  // Cuando hay varias coincidencias (p. ej. "C*1 FCO X 240ML"), se prefiere
+  // la que trae volumen/peso explícito sobre un conteo de envases genérico.
+  const presentationMatch =
+    presentationCandidates.find((m) => m[2]) ?? presentationCandidates[0] ?? null;
   const singleUnitMatch = presentationMatch ? null : SINGLE_UNIT_CONTAINER_RE.exec(upper);
 
   if (!concentrationMatch || (!presentationMatch && !singleUnitMatch)) {

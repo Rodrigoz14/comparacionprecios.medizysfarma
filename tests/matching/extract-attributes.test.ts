@@ -73,6 +73,30 @@ describe("extractProductAttributes", () => {
     expect(result?.warnings.some((w) => w.includes("se asumió 1"))).toBe(true);
   });
 
+  // Casos tomados de un archivo real de Disfarma, que usa "*" en vez de "X"
+  // como separador de cantidad.
+  describe("separador de presentacion con asterisco (Disfarma)", () => {
+    it("reconoce '*30' igual que 'X30'", () => {
+      const result = extractProductAttributes("ABACAVIR 600MG FCO*30 TAB");
+      expect(result).not.toBeNull();
+      expect(result?.attributes.presentationQuantity).toBe(30);
+    });
+
+    it("prefiere el volumen explicito sobre un conteo de envases cuando hay varias coincidencias", () => {
+      // "C*1" (1 envase) aparece antes que "X 240ML" (el contenido real).
+      const result = extractProductAttributes("ABACAVIR 20MG/ML SOL ORL C*1 FCO X 240ML");
+      expect(result).not.toBeNull();
+      expect(result?.attributes.presentationQuantity).toBe(240);
+      expect(result?.attributes.presentationUnit).toBe("ml");
+    });
+
+    it("asume cantidad 1 para 'FCO*1' sin unidad explicita, igual que con X", () => {
+      const result = extractProductAttributes("PRODUCTO 100MG CAJA*VIAL");
+      expect(result).not.toBeNull();
+      expect(result?.attributes.presentationQuantity).toBe(1);
+    });
+  });
+
   it("no confunde equipo medico sin concentracion farmacologica (correctamente null)", () => {
     // "UNIDAD" no tiene ni concentracion ni un patron de cantidad reconocible.
     expect(extractProductAttributes("LECTOR FRESTYLE LIBRE 2 UNIDAD")).toBeNull();
