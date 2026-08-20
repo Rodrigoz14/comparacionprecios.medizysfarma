@@ -84,10 +84,11 @@ describe("resolveProductMatch (integracion contra base de datos real)", () => {
     expect(result.source).toBe("none");
   });
 
-  it("presentacion distinta baja el puntaje por debajo del umbral de revision", async () => {
+  it("presentacion distinta sigue siendo MATCH: mismo generico, se compara por unidad en el motor de precios", async () => {
     const result = await resolveProductMatch("ZOLTRAXINA TAB 100MG X90");
-    expect(result.decision).toBe("NO_MATCH");
-    expect(result.confidence).toBeLessThan(0.8);
+    expect(result.decision).toBe("MATCH");
+    expect(result.confidence).toBe(1);
+    expect(result.matchedProductIds.sort()).toEqual([productIds[0], productIds[1]].sort());
   });
 
   it("coincidencia via sinonimo de ingrediente no es MATCH automatico (queda para revision sin IA configurada)", async () => {

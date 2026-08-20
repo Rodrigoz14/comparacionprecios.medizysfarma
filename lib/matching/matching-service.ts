@@ -14,10 +14,11 @@ import type { MatchResult, ScoredCandidate } from "@/lib/matching/types";
  * de la Sección 5: reglas determinísticas primero, IA solo para desempatar casos
  * ambiguos ya acotados, y validación determinística de lo que responda la IA.
  *
- * El laboratorio nunca es parte de la homologación: cuando hay una coincidencia
- * exacta de ingrediente + concentración + forma + presentación, se devuelven
- * TODOS los productos de esa clave genérica (uno por laboratorio); elegir el más
- * barato entre ellos es responsabilidad del motor de precios, no de este.
+ * Ni el laboratorio ni la presentación son parte de la homologación: cuando hay
+ * una coincidencia exacta de ingrediente + concentración + forma farmacéutica,
+ * se devuelven TODOS los productos de esa clave genérica (cualquier presentación,
+ * cualquier laboratorio); elegir el más barato entre ellos —comparando por
+ * unidad, no por presentación— es responsabilidad del motor de precios, no de este.
  */
 export async function resolveProductMatch(rawText: string): Promise<MatchResult> {
   const extraction = extractProductAttributes(rawText);
@@ -40,7 +41,7 @@ export async function resolveProductMatch(rawText: string): Promise<MatchResult>
       confidence: 1,
       matchedProductIds: exactMatches.map((p) => p.id),
       candidates: [],
-      reasons: ["Coincidencia exacta de ingrediente activo, concentración, forma farmacéutica y presentación."],
+      reasons: ["Coincidencia exacta de ingrediente activo, concentración y forma farmacéutica."],
       source: "deterministic",
     };
   }

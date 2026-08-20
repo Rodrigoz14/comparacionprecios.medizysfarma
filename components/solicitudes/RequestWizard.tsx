@@ -13,7 +13,12 @@ interface OfferOption {
   supplierId: string;
   supplierName: string;
   laboratoryName: string | null;
+  packageSize: number;
+  presentationUnit: string;
+  packagePrice: number;
   unitPrice: number;
+  packagesNeeded: number;
+  totalCost: number;
   availability: string;
   eligible: boolean;
   discardReason: string | null;
@@ -32,7 +37,6 @@ interface ItemResult {
     status: "SELECTED" | "REVIEW" | "NOT_FOUND" | "NO_STOCK" | "NO_VALID_OFFER";
     selected: OfferOption | null;
     alternatives: OfferOption[];
-    unitPrice: number | null;
     totalPrice: number | null;
     savings: number | null;
     reason: string;
@@ -304,8 +308,13 @@ export function RequestWizard() {
                   <p>
                     <span className="font-medium">{r.pricing.selected.supplierName}</span>
                     {r.pricing.selected.laboratoryName ? ` (${r.pricing.selected.laboratoryName})` : ""} —{" "}
-                    {formatCOP(r.pricing.selected.unitPrice)} c/u ={" "}
+                    {r.pricing.selected.packagesNeeded} {r.pricing.selected.packagesNeeded === 1 ? "empaque" : "empaques"} x
+                    {r.pricing.selected.packageSize} {r.pricing.selected.presentationUnit} a{" "}
+                    {formatCOP(r.pricing.selected.packagePrice)} c/u ={" "}
                     <span className="font-semibold">{formatCOP(r.pricing.totalPrice ?? 0)}</span>
+                  </p>
+                  <p className="mt-1 text-xs text-zinc-500">
+                    Referencia: {formatCOP(r.pricing.selected.unitPrice)} por unidad
                   </p>
                   <p className="mt-1 text-xs text-zinc-500">{r.pricing.reason}</p>
                 </div>
@@ -322,7 +331,8 @@ export function RequestWizard() {
                     {r.pricing.alternatives.map((a) => (
                       <li key={a.supplierOfferId}>
                         {a.eligible ? "✓" : "✗"} {a.supplierName}
-                        {a.laboratoryName ? ` (${a.laboratoryName})` : ""} — {formatCOP(a.unitPrice)}
+                        {a.laboratoryName ? ` (${a.laboratoryName})` : ""} — {a.packagesNeeded} x{a.packageSize}{" "}
+                        {a.presentationUnit} = {formatCOP(a.totalCost)} ({formatCOP(a.unitPrice)}/unidad)
                         {a.discardReason ? ` — ${a.discardReason}` : ""}
                       </li>
                     ))}

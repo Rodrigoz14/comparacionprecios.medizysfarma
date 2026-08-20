@@ -85,8 +85,10 @@ describe("selectBestOffer (integracion contra base de datos real)", () => {
     const result = await selectBestOffer(itemId);
 
     expect(result.status).toBe("SELECTED");
-    expect(result.selected?.unitPrice).toBe(5000); // Proveedor X + Genfar, el mas barato
-    expect(result.totalPrice).toBe(50000);
+    expect(result.selected?.supplierId).toBe(supplierIds[0]); // Proveedor X + Genfar, el mas barato
+    expect(result.selected?.packagePrice).toBe(5000);
+    expect(result.selected?.packagesNeeded).toBe(1); // 10 solicitadas, caja x10
+    expect(result.totalPrice).toBe(5000);
     expect(result.alternatives.length).toBeGreaterThanOrEqual(3); // X/Genfar, X/Pfizer, Y/Genfar
 
     const persisted = await prisma.priceComparison.findMany({ where: { customerRequestItemId: itemId } });
@@ -119,5 +121,68 @@ describe("selectBestOffer (integracion contra base de datos real)", () => {
     const result = await selectBestOffer(itemId);
     expect(result.status).toBe("REVIEW");
     expect(result.selected).toBeNull();
+  });
+});
+
+// Caso real reportado por el cliente: Sildenafil 100mg en caja x30 (Ramedicas)
+// vs caja x100 (Disfarma) — deben compararse por costo total para cubrir lo
+// pedido, no descartarse entre si por tener presentaciones distintas.
+describe("selectBestOffer (comparacion entre presentaciones distintas del mismo generico)", () => {
+  const productIds: string[] = [];
+  const laboratoryIds: string[] = [];
+  const supplierIds: string[] = [];
+
+  beforeAll(async () => {
+    const caja30 = await createProduct("ZOLTRAXINA TAB 100MG X30", "TestLab Zoltraxina");
+    const caja100 = await createProduct("ZOLTRAXINA TAB 100MG X100", "TestLab Zoltraxina");
+    productIds.push(caja30.id, caja100.id);
+    laboratoryIds.push(caja30.laboratoryId!, caja100.laboratoryId!);
+    expect(caja30.genericKey).toBe(caja100.genericKey); // misma clave generica pese a distinta presentacion
+
+    const ramedicas = await prisma.supplier.create({ data: { name: "Ramedicas Test Zoltraxina" } });
+    const disfarma = await prisma.supplier.create({ data: { name: "Disfarma Test Zoltraxina" } });
+    supplierIds.push(ramedicas.id, disfarma.id);
+
+    // Ramedicas: caja x30 a $9000 -> $300/unidad. Disfarma: caja x100 a $25000 -> $250/unidad.
+    await prisma.supplierOffer.create({
+      data: { supplierId: ramedicas.id, productId: caja30.id, price: 9000, availability: "AVAILABLE", stockQuantity: 300 },
+    });
+    await prisma.supplierOffer.create({
+      data: { supplierId: disfarma.id, productId: caja100.id, price: 25000, availability: "AVAILABLE", stockQuantity: 500 },
+    });
+  });
+
+  afterAll(async () => {
+    await prisma.priceComparison.deleteMany({ where: { productId: { in: productIds } } });
+    await prisma.supplierOffer.deleteMany({ where: { productId: { in: productIds } } });
+    await prisma.supplier.deleteMany({ where: { id: { in: supplierIds } } });
+    await prisma.product.deleteMany({ where: { id: { in: productIds } } });
+    await prisma.laboratory.deleteMany({ where: { id: { in: laboratoryIds } } });
+  });
+
+  it("para un pedido pequeno, gana la presentacion mas chica aunque su precio unitario sea mas alto", async () => {
+    // Piden 30: Ramedicas cubre con 1 caja x30 ($9000). Disfarma necesita 1 caja x100 igual ($25000).
+    const { itemId } = await createRequestItem("ZOLTRAXINA TAB 100MG X30", 30);
+    await resolveCustomerRequestItem(itemId);
+
+    const result = await selectBestOffer(itemId);
+    expect(result.status).toBe("SELECTED");
+    expect(result.selected?.supplierName).toBe("Ramedicas Test Zoltraxina");
+    expect(result.selected?.unitPrice).toBeGreaterThan(
+      result.alternatives.find((a) => a.supplierName === "Disfarma Test Zoltraxina")!.unitPrice,
+    );
+    expect(result.totalPrice).toBe(9000);
+  });
+
+  it("para un pedido grande, gana la presentacion que minimiza empaques desperdiciados", async () => {
+    // Piden 90: Ramedicas necesita 3 cajas x30 (3*9000=27000). Disfarma cubre con 1 caja x100 (25000).
+    const { itemId } = await createRequestItem("ZOLTRAXINA TAB 100MG X30", 90);
+    await resolveCustomerRequestItem(itemId);
+
+    const result = await selectBestOffer(itemId);
+    expect(result.status).toBe("SELECTED");
+    expect(result.selected?.supplierName).toBe("Disfarma Test Zoltraxina");
+    expect(result.selected?.packagesNeeded).toBe(1);
+    expect(result.totalPrice).toBe(25000);
   });
 });

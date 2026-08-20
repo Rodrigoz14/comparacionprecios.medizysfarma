@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db/client";
 import { checkAvailability } from "@/lib/pricing/availability";
-import { calculateSavings, calculateTotal } from "@/lib/pricing/price-calculator";
+import { calculatePackagesNeeded, calculateSavings, calculateTotal } from "@/lib/pricing/price-calculator";
 import { DEFAULT_PRICING_RULES } from "@/lib/pricing/rules";
 import { rankOffers } from "@/lib/pricing/supplier-ranking";
 import type { OfferOption, PricingRules, SelectionResult } from "@/lib/pricing/types";
@@ -26,7 +26,6 @@ export async function selectBestOffer(
     status,
     selected: null,
     alternatives: [],
-    unitPrice: null,
     totalPrice: null,
     savings: null,
     reason,
@@ -57,14 +56,26 @@ export async function selectBestOffer(
   }
 
   const options: OfferOption[] = offers.map((offer) => {
+    const packageSize = offer.product.presentationQuantity;
+    // No se compran unidades sueltas: siempre se redondea hacia arriba a
+    // empaques completos para cubrir lo solicitado.
+    const packagesNeeded = calculatePackagesNeeded(item.requestedQuantity, packageSize);
+    // stockQuantity se interpreta en unidades, igual que antes de este cambio
+    // (ambigüedad preexistente del dato de proveedor, no resuelta aquí).
     const check = checkAvailability(offer.availability, offer.stockQuantity, item.requestedQuantity);
+    const packagePrice = Number(offer.price);
     return {
       supplierOfferId: offer.id,
       supplierId: offer.supplierId,
       supplierName: offer.supplier.name,
       productId: offer.productId,
       laboratoryName: offer.product.laboratory?.name ?? null,
-      unitPrice: Number(offer.price),
+      packageSize,
+      presentationUnit: offer.product.presentationUnit,
+      packagePrice,
+      unitPrice: Math.round((packagePrice / packageSize) * 10000) / 10000,
+      packagesNeeded,
+      totalCost: calculateTotal(packagePrice, packagesNeeded),
       availability: offer.availability,
       stockQuantity: offer.stockQuantity,
       eligible: check.eligible,
@@ -84,9 +95,8 @@ export async function selectBestOffer(
   } else {
     const ranked = rankOffers(eligible, rules);
     const selected = ranked[0];
-    const mostExpensive = Math.max(...eligible.map((o) => o.unitPrice));
-    const totalPrice = calculateTotal(selected.unitPrice, item.requestedQuantity);
-    const savings = calculateSavings(selected.unitPrice, mostExpensive, item.requestedQuantity);
+    const mostExpensive = Math.max(...eligible.map((o) => o.totalCost));
+    const savings = calculateSavings(selected.totalCost, mostExpensive);
 
     result = {
       customerRequestItemId,
@@ -94,13 +104,12 @@ export async function selectBestOffer(
       status: "SELECTED",
       selected,
       alternatives: options,
-      unitPrice: selected.unitPrice,
-      totalPrice,
+      totalPrice: selected.totalCost,
       savings,
       reason:
         ranked.length === 1
-          ? `Única oferta elegible: ${selected.supplierName} a $${selected.unitPrice}.`
-          : `Menor precio entre ${ranked.length} ofertas elegibles: ${selected.supplierName} a $${selected.unitPrice}.`,
+          ? `Única oferta elegible: ${selected.supplierName}, ${selected.packagesNeeded} empaque(s) x${selected.packageSize} a $${selected.packagePrice} c/u = $${selected.totalCost}.`
+          : `Menor costo total entre ${ranked.length} ofertas elegibles: ${selected.supplierName}, ${selected.packagesNeeded} empaque(s) x${selected.packageSize} a $${selected.packagePrice} c/u = $${selected.totalCost}.`,
     };
   }
 
@@ -124,7 +133,7 @@ async function persistComparison(
       productId: option.productId,
       supplierId: option.supplierId,
       supplierOfferId: option.supplierOfferId,
-      price: option.unitPrice,
+      price: option.packagePrice,
       availability: option.availability,
       matchConfidence,
       selected: selected?.supplierOfferId === option.supplierOfferId,

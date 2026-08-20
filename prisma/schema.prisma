@@ -160,11 +160,12 @@ model Product {
   /// pero de laboratorios distintos son filas distintas (para poder tener una
   /// oferta independiente de cada uno por proveedor).
   normalizedName          String       @unique @map("normalized_name")
-  /// Identidad genérica: ingrediente + concentración + forma + presentación,
-  /// SIN laboratorio. Varias filas de Product comparten el mismo genericKey
-  /// cuando solo difieren en laboratorio; el motor de homologación y el de
-  /// precios agrupan por este campo porque el laboratorio no es un criterio
-  /// de selección para Medizys.
+  /// Identidad genérica: ingrediente + concentración + forma farmacéutica,
+  /// SIN presentación ni laboratorio. Varias filas de Product comparten el
+  /// mismo genericKey cuando solo difieren en presentación y/o laboratorio;
+  /// el motor de homologación y el de precios agrupan por este campo porque
+  /// ni el laboratorio ni la presentación son criterio de selección para
+  /// Medizys — se compara por precio unitario, no por presentación exacta.
   genericKey              String       @map("generic_key")
   activeIngredient        String       @map("active_ingredient")
   concentration           String

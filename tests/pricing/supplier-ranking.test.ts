@@ -9,7 +9,12 @@ function offer(overrides: Partial<OfferOption>): OfferOption {
     supplierName: "Proveedor",
     productId: "product",
     laboratoryName: null,
+    packageSize: 1,
+    presentationUnit: "tableta",
+    packagePrice: 100,
     unitPrice: 100,
+    packagesNeeded: 1,
+    totalCost: 100,
     availability: "AVAILABLE",
     stockQuantity: null,
     eligible: true,
@@ -19,11 +24,11 @@ function offer(overrides: Partial<OfferOption>): OfferOption {
 }
 
 describe("rankOffers", () => {
-  it("ordena por menor precio cuando no hay proveedor preferido", () => {
+  it("ordena por menor costo total cuando no hay proveedor preferido", () => {
     const offers = [
-      offer({ supplierId: "a", unitPrice: 200 }),
-      offer({ supplierId: "b", unitPrice: 100 }),
-      offer({ supplierId: "c", unitPrice: 150 }),
+      offer({ supplierId: "a", totalCost: 200 }),
+      offer({ supplierId: "b", totalCost: 100 }),
+      offer({ supplierId: "c", totalCost: 150 }),
     ];
     const ranked = rankOffers(offers, { preferredSupplierId: null, preferredSupplierTolerance: 0.02 });
     expect(ranked.map((o) => o.supplierId)).toEqual(["b", "c", "a"]);
@@ -31,8 +36,8 @@ describe("rankOffers", () => {
 
   it("el proveedor preferido gana si esta dentro del margen de tolerancia", () => {
     const offers = [
-      offer({ supplierId: "ramedicas", unitPrice: 10000 }),
-      offer({ supplierId: "disfarma", unitPrice: 9900 }),
+      offer({ supplierId: "ramedicas", totalCost: 10000 }),
+      offer({ supplierId: "disfarma", totalCost: 9900 }),
     ];
     const ranked = rankOffers(offers, { preferredSupplierId: "ramedicas", preferredSupplierTolerance: 0.02 });
     expect(ranked[0].supplierId).toBe("ramedicas");
@@ -40,10 +45,22 @@ describe("rankOffers", () => {
 
   it("el proveedor preferido NO gana si supera el margen de tolerancia", () => {
     const offers = [
-      offer({ supplierId: "ramedicas", unitPrice: 12000 }),
-      offer({ supplierId: "disfarma", unitPrice: 9900 }),
+      offer({ supplierId: "ramedicas", totalCost: 12000 }),
+      offer({ supplierId: "disfarma", totalCost: 9900 }),
     ];
     const ranked = rankOffers(offers, { preferredSupplierId: "ramedicas", preferredSupplierTolerance: 0.02 });
     expect(ranked[0].supplierId).toBe("disfarma");
+  });
+
+  it("ordena por costo total, no por precio unitario, cuando las presentaciones difieren", () => {
+    // Mismo medicamento: Ramedicas en caja x30 mas cara por unidad pero el
+    // cliente solo necesita 30, asi que su costo total es menor que comprar 2
+    // cajas x100 de Disfarma para cubrir lo mismo.
+    const offers = [
+      offer({ supplierId: "disfarma", packageSize: 100, unitPrice: 90, packagesNeeded: 1, totalCost: 9000 }),
+      offer({ supplierId: "ramedicas", packageSize: 30, unitPrice: 95, packagesNeeded: 1, totalCost: 2850 }),
+    ];
+    const ranked = rankOffers(offers, { preferredSupplierId: null, preferredSupplierTolerance: 0.02 });
+    expect(ranked[0].supplierId).toBe("ramedicas");
   });
 });

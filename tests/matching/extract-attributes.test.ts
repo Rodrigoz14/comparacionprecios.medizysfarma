@@ -112,11 +112,15 @@ describe("extractProductAttributes", () => {
     expect(extractProductAttributes("LECTOR FRESTYLE LIBRE 2 UNIDAD")).toBeNull();
   });
 
-  it("no confunde presentaciones distintas del mismo producto", () => {
+  it("reconoce presentaciones distintas del mismo producto como el mismo generico (se comparan por unidad)", () => {
     const x100 = extractProductAttributes("ACETAMINOFEN TAB 500MG X100");
-    const x20 = extractProductAttributes("ACETAMINOFEN 500MG X20");
+    const x20 = extractProductAttributes("ACETAMINOFEN TAB 500MG X20");
     expect(x100?.attributes.presentationQuantity).not.toBe(x20?.attributes.presentationQuantity);
-    expect(buildGenericKey(x100!.attributes)).not.toBe(buildGenericKey(x20!.attributes));
+    // La presentacion ya no forma parte de la clave generica: caja x100 y caja
+    // x20 del mismo medicamento deben quedar bajo la misma clave para poder
+    // compararse por precio unitario en el motor de precios.
+    expect(buildGenericKey(x100!.attributes)).toBe(buildGenericKey(x20!.attributes));
+    expect(buildNormalizedName(x100!.attributes, null)).not.toBe(buildNormalizedName(x20!.attributes, null));
   });
 
   it("devuelve null cuando no hay concentracion ni presentacion reconocibles", () => {
