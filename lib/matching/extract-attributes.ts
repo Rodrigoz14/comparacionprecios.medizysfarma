@@ -19,6 +19,7 @@ const DOSAGE_FORM_MAP: Record<string, string> = {
   TABLETAS: "Tableta",
   COMPRIMIDO: "Tableta",
   COMPRIMIDOS: "Tableta",
+  CAP: "Cápsula",
   CAPS: "Cápsula",
   CAPSULA: "Cápsula",
   CAPSULAS: "Cápsula",
@@ -88,9 +89,23 @@ export function normalizeDosageForm(rawText: string): string | null {
 // que un cliente escribe normalmente ("Zopiclona").
 const CHANNEL_PREFIX_RE = /^(EPS|POS|NO[\s-]?POS|PBS)[\s-]+/i;
 
+export interface ExtractOptions {
+  /**
+   * Si es false, no exigir una cantidad de presentación explícita en el texto:
+   * se asume 1 en vez de descartar la fila. Sirve para lo que escribe un
+   * cliente ("Ácido Valproico 250mg", la cantidad va en un campo aparte), no
+   * para archivos de proveedor, donde la presentación es un dato real que no
+   * se debe adivinar (Sección 6: el precio por unidad depende de acertarla).
+   * Por defecto true, para no cambiar el comportamiento de la importación.
+   */
+  requirePresentation?: boolean;
+}
+
 export function extractProductAttributes(
   rawName: string,
+  options: ExtractOptions = {},
 ): { attributes: ExtractedAttributes; warnings: string[] } | null {
+  const requirePresentation = options.requirePresentation ?? true;
   const upper = stripAccents(rawName).toUpperCase().replace(CHANNEL_PREFIX_RE, "");
   const warnings: string[] = [];
 
@@ -102,7 +117,10 @@ export function extractProductAttributes(
     presentationCandidates.find((m) => m[2]) ?? presentationCandidates[0] ?? null;
   const singleUnitMatch = presentationMatch ? null : SINGLE_UNIT_CONTAINER_RE.exec(upper);
 
-  if (!concentrationMatch || (!presentationMatch && !singleUnitMatch)) {
+  if (!concentrationMatch) {
+    return null;
+  }
+  if (!presentationMatch && !singleUnitMatch && requirePresentation) {
     return null;
   }
 
@@ -110,6 +128,8 @@ export function extractProductAttributes(
     warnings.push(
       `No se encontró una cantidad explícita de presentación; se asumió 1 (envase "${singleUnitMatch[1]}").`,
     );
+  } else if (!presentationMatch && !requirePresentation) {
+    warnings.push("No se especificó presentación; no afecta la homologación (se compara por unidad).");
   }
 
   const tokens = upper.split(/[^A-ZÁÉÍÓÚÑ]+/).filter(Boolean);

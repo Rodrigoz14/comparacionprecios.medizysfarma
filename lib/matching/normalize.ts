@@ -12,6 +12,20 @@ export function normalizeText(value: string): string {
 }
 
 /**
+ * Los proveedores no siempre escriben el ingrediente activo en el mismo orden:
+ * Ramédicas alfabetiza como "VALPROICO ACIDO" mientras que Disfarma escribe
+ * "ACIDO VALPROICO" para la misma sustancia (confirmado en datos reales: 33
+ * ingredientes distintos, incluyendo combinaciones de varios principios,
+ * afectados por esto). Ordenar las palabras alfabéticamente hace que ambas
+ * formas produzcan la misma clave sin necesidad de registrar cada variante
+ * como sinónimo — es una normalización estructural, no una inferencia de
+ * equivalencia entre sustancias distintas.
+ */
+export function canonicalizeIngredient(activeIngredient: string): string {
+  return normalizeText(activeIngredient).split(" ").filter(Boolean).sort().join(" ");
+}
+
+/**
  * Identidad del medicamento: ingrediente activo + concentración + forma
  * farmacéutica, SIN presentación ni laboratorio. Es la clave por la que se
  * agrupan y comparan ofertas: el mismo Sildenafil 100mg en caja x30 (Ramédicas)
@@ -21,7 +35,7 @@ export function normalizeText(value: string): string {
  */
 export function buildGenericKey(attributes: ExtractedAttributes): string {
   const raw = [
-    attributes.activeIngredient,
+    canonicalizeIngredient(attributes.activeIngredient),
     attributes.concentration,
     attributes.concentrationUnit,
     attributes.dosageForm,

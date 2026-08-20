@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db/client";
-import { normalizeText } from "@/lib/matching/normalize";
+import { canonicalizeIngredient, normalizeText } from "@/lib/matching/normalize";
 import { expandIngredientTerms } from "@/lib/matching/synonym-service";
 import type { CandidateProduct, ExtractedAttributes } from "@/lib/matching/types";
 
@@ -18,11 +18,14 @@ export interface CandidateSearchResult {
 export async function searchCandidates(attributes: ExtractedAttributes): Promise<CandidateSearchResult[]> {
   const normalizedIngredient = normalizeText(attributes.activeIngredient);
   const terms = await expandIngredientTerms(normalizedIngredient);
+  // Se busca por ingredientKey (palabras ordenadas alfabéticamente) para que
+  // no importe si el proveedor escribió "ACIDO VALPROICO" o "VALPROICO ACIDO".
+  const ingredientKeys = [...new Set(terms.map((term) => canonicalizeIngredient(term)))];
 
   const products = await prisma.product.findMany({
     where: {
       status: "ACTIVE",
-      OR: terms.map((term) => ({ activeIngredient: { equals: term, mode: "insensitive" as const } })),
+      ingredientKey: { in: ingredientKeys },
     },
   });
 
@@ -41,6 +44,9 @@ export async function searchCandidates(attributes: ExtractedAttributes): Promise
       presentationUnit: product.presentationUnit,
       laboratoryId: product.laboratoryId,
     },
-    viaSynonym: normalizeText(product.activeIngredient) !== normalizedIngredient,
+    // Solo cuenta como sinónimo si el ingrediente en sí es distinto (p. ej.
+    // paracetamol/acetaminofén); una variante de orden de palabras del mismo
+    // ingrediente ("ACIDO VALPROICO" vs "VALPROICO ACIDO") no lo es.
+    viaSynonym: canonicalizeIngredient(product.activeIngredient) !== canonicalizeIngredient(attributes.activeIngredient),
   }));
 }

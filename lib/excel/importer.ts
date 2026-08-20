@@ -2,7 +2,7 @@ import { prisma } from "@/lib/db/client";
 import { detectColumns, detectHeaderRowIndex } from "@/lib/excel/detector";
 import { detectPriceFormat, normalizeAvailability, parsePrice } from "@/lib/excel/normalizer";
 import { parseWorkbook } from "@/lib/excel/parser";
-import { buildGenericKey, buildNormalizedName, normalizeText } from "@/lib/matching/normalize";
+import { buildGenericKey, buildNormalizedName, canonicalizeIngredient, normalizeText } from "@/lib/matching/normalize";
 import { extractProductAttributes, normalizeDosageForm } from "@/lib/matching/extract-attributes";
 import {
   hashBuffer,
@@ -285,6 +285,7 @@ export async function confirmSupplierImport(input: ConfirmImportInput): Promise<
         const productAttributes = {
           standardName: row.originalProductName,
           activeIngredient: row.attributes.activeIngredient,
+          ingredientKey: canonicalizeIngredient(row.attributes.activeIngredient),
           concentration: row.attributes.concentration,
           concentrationUnit: row.attributes.concentrationUnit,
           dosageForm: row.attributes.dosageForm,

@@ -120,11 +120,23 @@ acetaminofén), compara atributos estructurados y decide `MATCH` / `REVIEW` /
 reglas determinísticas (`POST /api/matching/resolve` para probarlo
 manualmente) — nunca decide sola, y su respuesta se valida antes de aceptarla.
 
-El laboratorio nunca es criterio de homologación ni de selección: un mismo
-genérico ofrecido por distintos laboratorios son productos distintos en la
-base de datos (`Product.normalizedName` incluye el laboratorio), pero
-comparten `Product.genericKey` para que el motor de precios (fase futura)
-pueda compararlos e ignorar el laboratorio, quedándose con el más barato.
+Ni el laboratorio ni la presentación son criterio de homologación ni de
+selección: un mismo genérico ofrecido por distintos laboratorios o en
+presentaciones distintas (caja x30 vs x100) son productos distintos en la
+base de datos (`Product.normalizedName` los distingue), pero comparten
+`Product.genericKey` para que el motor de precios los compare por precio
+unitario y se quede con el más barato (ver "Comparar precios" abajo). Cuando
+un cliente escribe su pedido no hace falta indicar presentación (solo
+cantidad, en un campo aparte); al importar un archivo de proveedor sí es
+obligatoria, porque ahí sí es un dato real necesario para calcular el precio
+por unidad.
+
+Los proveedores no siempre escriben el ingrediente activo en el mismo orden
+(p. ej. Ramédicas usa "VALPROICO ACIDO" alfabetizado, Disfarma "ACIDO
+VALPROICO"): `Product.ingredientKey` guarda las palabras del ingrediente
+ordenadas alfabéticamente para que ambas formas se traten como el mismo
+principio activo, tanto en la búsqueda como en la comparación de precios
+entre proveedores.
 
 ## Comparar precios para un cliente
 

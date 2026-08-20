@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../lib/generated/prisma/client";
 import { extractProductAttributes } from "../lib/matching/extract-attributes";
-import { buildGenericKey, buildNormalizedName, normalizeText } from "../lib/matching/normalize";
+import { buildGenericKey, buildNormalizedName, canonicalizeIngredient, normalizeText } from "../lib/matching/normalize";
 import { hashPassword } from "../lib/auth/password";
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
@@ -28,6 +28,7 @@ async function upsertProduct(rawName: string, laboratoryName: string) {
       normalizedName,
       genericKey: buildGenericKey(extraction.attributes),
       activeIngredient: extraction.attributes.activeIngredient,
+      ingredientKey: canonicalizeIngredient(extraction.attributes.activeIngredient),
       concentration: extraction.attributes.concentration,
       concentrationUnit: extraction.attributes.concentrationUnit,
       dosageForm: extraction.attributes.dosageForm,

@@ -168,6 +168,10 @@ model Product {
   /// Medizys — se compara por precio unitario, no por presentación exacta.
   genericKey              String       @map("generic_key")
   activeIngredient        String       @map("active_ingredient")
+  /// Ingrediente activo con las palabras ordenadas alfabéticamente
+  /// (canonicalizeIngredient), para poder buscar por ingrediente sin que el
+  /// orden en que lo escribió el proveedor importe (ver buildGenericKey).
+  ingredientKey           String       @default("") @map("ingredient_key")
   concentration           String
   concentrationUnit       String       @map("concentration_unit")
   dosageForm              String       @map("dosage_form")
@@ -191,6 +195,7 @@ model Product {
 
   @@index([activeIngredient, concentration, dosageForm])
   @@index([genericKey])
+  @@index([ingredientKey])
   @@index([laboratoryId])
   @@map("products")
 }

@@ -21,14 +21,17 @@ import type { MatchResult, ScoredCandidate } from "@/lib/matching/types";
  * unidad, no por presentación— es responsabilidad del motor de precios, no de este.
  */
 export async function resolveProductMatch(rawText: string): Promise<MatchResult> {
-  const extraction = extractProductAttributes(rawText);
+  // No se exige presentación en lo que escribe un cliente: pide "cuántas
+  // unidades", no "en caja de cuántas" — eso ya no es parte de la identidad
+  // del medicamento (se compara por unidad en el motor de precios).
+  const extraction = extractProductAttributes(rawText, { requirePresentation: false });
   if (!extraction) {
     return {
       decision: "NO_MATCH",
       confidence: 0,
       matchedProductIds: [],
       candidates: [],
-      reasons: [`No se pudo determinar la concentración y/o la presentación de "${rawText}".`],
+      reasons: [`No se pudo determinar la concentración de "${rawText}".`],
       source: "none",
     };
   }

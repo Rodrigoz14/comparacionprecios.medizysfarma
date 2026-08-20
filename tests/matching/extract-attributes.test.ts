@@ -130,6 +130,33 @@ describe("extractProductAttributes", () => {
   it("devuelve null cuando falta la unidad de concentracion (evita adivinar)", () => {
     expect(extractProductAttributes("AMOXICILINA 500/125 X21")).toBeNull();
   });
+
+  describe("requirePresentation: false (busqueda de cliente)", () => {
+    it("sigue devolviendo null sin concentracion, con o sin presentacion", () => {
+      expect(extractProductAttributes("PRODUCTO SIN DATOS CLAROS", { requirePresentation: false })).toBeNull();
+    });
+
+    it("no devuelve null cuando falta la presentacion; asume cantidad 1", () => {
+      const result = extractProductAttributes("ACIDO VALPROICO 250MG CAPSULA", { requirePresentation: false });
+      expect(result).not.toBeNull();
+      expect(result?.attributes).toMatchObject({
+        activeIngredient: "ACIDO VALPROICO",
+        concentration: "250",
+        concentrationUnit: "MG",
+        dosageForm: "Cápsula",
+        presentationQuantity: 1,
+      });
+    });
+
+    it("sigue exigiendo presentacion por defecto (importacion de proveedores)", () => {
+      expect(extractProductAttributes("ACIDO VALPROICO 250MG CAPSULA")).toBeNull();
+    });
+  });
+
+  it("reconoce 'CAP' como abreviatura de capsula (visto en datos reales de Disfarma)", () => {
+    const result = extractProductAttributes("ACIDO VALPROICO 250MG FCO*50 CAP");
+    expect(result?.attributes.dosageForm).toBe("Cápsula");
+  });
 });
 
 describe("normalizeDosageForm", () => {
@@ -156,6 +183,15 @@ describe("buildGenericKey", () => {
     const a = extractProductAttributes("ACETAMINOFEN TAB 500MG X100");
     const b = extractProductAttributes("Acetaminofen tableta 500 mg x 100");
     expect(buildGenericKey(a!.attributes)).toBe(buildGenericKey(b!.attributes));
+  });
+
+  it("ignora el orden de las palabras del ingrediente activo (Ramedicas vs Disfarma)", () => {
+    // Caso real: Ramedicas escribe "VALPROICO ACIDO" (alfabetizado) y Disfarma
+    // "ACIDO VALPROICO" (orden natural) para la misma sustancia — sin esto,
+    // nunca se comparaban entre proveedores ni se encontraban por busqueda.
+    const disfarma = extractProductAttributes("ACIDO VALPROICO 250MG JARABE X120ML");
+    const ramedicas = extractProductAttributes("VALPROICO ACIDO 250MG JARABE X120ML");
+    expect(buildGenericKey(disfarma!.attributes)).toBe(buildGenericKey(ramedicas!.attributes));
   });
 });
 

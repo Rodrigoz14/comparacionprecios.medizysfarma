@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db/client";
 import { resolveCustomerRequestItem, resolveProductMatch } from "@/lib/matching/matching-service";
 import { extractProductAttributes } from "@/lib/matching/extract-attributes";
-import { buildGenericKey, buildNormalizedName, normalizeText } from "@/lib/matching/normalize";
+import { buildGenericKey, buildNormalizedName, canonicalizeIngredient, normalizeText } from "@/lib/matching/normalize";
 
 // "Zoltraxina" es un principio activo ficticio usado solo en estas pruebas, para
 // no depender de (ni contaminar) datos reales o los del seed.
@@ -21,6 +21,7 @@ async function createProduct(rawName: string, laboratoryName: string) {
       normalizedName,
       genericKey: buildGenericKey(extraction.attributes),
       activeIngredient: extraction.attributes.activeIngredient,
+      ingredientKey: canonicalizeIngredient(extraction.attributes.activeIngredient),
       concentration: extraction.attributes.concentration,
       concentrationUnit: extraction.attributes.concentrationUnit,
       dosageForm: extraction.attributes.dosageForm,
@@ -91,6 +92,13 @@ describe("resolveProductMatch (integracion contra base de datos real)", () => {
     expect(result.matchedProductIds.sort()).toEqual([productIds[0], productIds[1]].sort());
   });
 
+  it("un cliente puede buscar sin indicar presentacion: la cantidad va en un campo aparte", async () => {
+    const result = await resolveProductMatch("ZOLTRAXINA TAB 100MG");
+    expect(result.decision).toBe("MATCH");
+    expect(result.confidence).toBe(1);
+    expect(result.matchedProductIds.sort()).toEqual([productIds[0], productIds[1]].sort());
+  });
+
   it("coincidencia via sinonimo de ingrediente no es MATCH automatico (queda para revision sin IA configurada)", async () => {
     const result = await resolveProductMatch("ZOLTRAXINASAL TAB 100MG X30");
     expect(result.decision).toBe("REVIEW");
@@ -120,5 +128,39 @@ describe("resolveProductMatch (integracion contra base de datos real)", () => {
 
     await prisma.customerRequestItem.delete({ where: { id: item.id } });
     await prisma.customerRequest.delete({ where: { id: customerRequest.id } });
+  });
+});
+
+// Caso real reportado por el cliente: Ramedicas escribe "VALPROICO ACIDO"
+// (alfabetizado) y Disfarma "ACIDO VALPROICO" (orden natural) para la misma
+// sustancia; sin canonicalizar el orden de las palabras, ni la busqueda del
+// cliente ni la comparacion de precios entre proveedores encontraban match.
+describe("resolveProductMatch (orden de palabras del ingrediente activo)", () => {
+  const productIds: string[] = [];
+  const laboratoryIds: string[] = [];
+
+  beforeAll(async () => {
+    // "ZOLTRAXINICO ACIDO", orden alfabetizado como en los archivos de Ramedicas.
+    const ramedicasStyle = await createProduct("ZOLTRAXINICO ACIDO 250MG CAPSULA X30", "TestLab Ramedicas Style");
+    productIds.push(ramedicasStyle.id);
+    laboratoryIds.push(ramedicasStyle.laboratoryId!);
+  });
+
+  afterAll(async () => {
+    await prisma.product.deleteMany({ where: { id: { in: productIds } } });
+    await prisma.laboratory.deleteMany({ where: { id: { in: laboratoryIds } } });
+  });
+
+  it("encuentra el producto sin importar el orden de las palabras del ingrediente", async () => {
+    const result = await resolveProductMatch("ACIDO ZOLTRAXINICO 250MG CAPSULA X30");
+    expect(result.decision).toBe("MATCH");
+    expect(result.confidence).toBe(1);
+    expect(result.matchedProductIds).toEqual([productIds[0]]);
+  });
+
+  it("combina ambas correcciones: sin presentacion y con el ingrediente en orden natural", async () => {
+    const result = await resolveProductMatch("ACIDO ZOLTRAXINICO 250MG CAPSULA");
+    expect(result.decision).toBe("MATCH");
+    expect(result.matchedProductIds).toEqual([productIds[0]]);
   });
 });

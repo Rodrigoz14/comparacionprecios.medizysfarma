@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db/client";
 import { resolveCustomerRequestItem } from "@/lib/matching/matching-service";
 import { selectBestOffer } from "@/lib/pricing/selection-engine";
 import { extractProductAttributes } from "@/lib/matching/extract-attributes";
-import { buildGenericKey, buildNormalizedName, normalizeText } from "@/lib/matching/normalize";
+import { buildGenericKey, buildNormalizedName, canonicalizeIngredient, normalizeText } from "@/lib/matching/normalize";
 
 async function createProduct(rawName: string, laboratoryName: string) {
   const extraction = extractProductAttributes(rawName)!;
@@ -20,6 +20,7 @@ async function createProduct(rawName: string, laboratoryName: string) {
       normalizedName,
       genericKey: buildGenericKey(extraction.attributes),
       activeIngredient: extraction.attributes.activeIngredient,
+      ingredientKey: canonicalizeIngredient(extraction.attributes.activeIngredient),
       concentration: extraction.attributes.concentration,
       concentrationUnit: extraction.attributes.concentrationUnit,
       dosageForm: extraction.attributes.dosageForm,
