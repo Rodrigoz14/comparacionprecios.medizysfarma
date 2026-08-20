@@ -1,4 +1,4 @@
-import { normalizeText } from "@/lib/excel/normalizer";
+import { normalizeText } from "@/lib/matching/normalize";
 import type { ColumnTarget, DetectedColumn, RawRow } from "@/lib/excel/types";
 
 const ALIASES: Record<ColumnTarget, string[]> = {

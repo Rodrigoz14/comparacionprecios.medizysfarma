@@ -1,4 +1,5 @@
 import type { Availability } from "@/lib/generated/prisma/client";
+import type { ExtractedAttributes } from "@/lib/matching/types";
 
 /// Campos estándar internos a los que se mapean las columnas del archivo del proveedor.
 export type ColumnTarget =
@@ -52,21 +53,12 @@ export interface AnalyzeResult {
 /// Una fila cruda de la hoja, tal como viene, indexada por número de columna.
 export type RawRow = Record<number, string | number | null>;
 
-export interface ExtractedAttributes {
-  activeIngredient: string;
-  concentration: string;
-  concentrationUnit: string;
-  dosageForm: string;
-  presentationType: string;
-  presentationQuantity: number;
-  presentationUnit: string;
-}
-
 export interface ParsedOfferRow {
   rowNumber: number;
   supplierProductCode: string | null;
   originalProductName: string;
   normalizedName: string;
+  genericKey: string;
   attributes: ExtractedAttributes;
   attributeWarnings: string[];
   laboratoryName: string | null;

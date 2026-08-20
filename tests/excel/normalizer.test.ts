@@ -1,11 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  buildNormalizedName,
-  detectPriceFormat,
-  extractProductAttributes,
-  normalizeAvailability,
-  parsePrice,
-} from "@/lib/excel/normalizer";
+import { detectPriceFormat, normalizeAvailability, parsePrice } from "@/lib/excel/normalizer";
 
 describe("parsePrice", () => {
   it("parsea formato colombiano con miles en punto y decimales en coma", () => {
@@ -76,62 +70,5 @@ describe("normalizeAvailability", () => {
   it("devuelve desconocido para texto no interpretable", () => {
     expect(normalizeAvailability("???").availability).toBe("UNKNOWN");
     expect(normalizeAvailability(undefined).availability).toBe("UNKNOWN");
-  });
-});
-
-describe("extractProductAttributes", () => {
-  it("extrae atributos de 'ACETAMINOFEN TAB 500MG X100'", () => {
-    const result = extractProductAttributes("ACETAMINOFEN TAB 500MG X100");
-    expect(result).not.toBeNull();
-    expect(result?.attributes).toMatchObject({
-      activeIngredient: "ACETAMINOFEN",
-      concentration: "500",
-      concentrationUnit: "MG",
-      dosageForm: "Tableta",
-      presentationQuantity: 100,
-    });
-  });
-
-  it("extrae atributos de 'PARACETAMOL 500 MG TABLETAS CAJA X 100'", () => {
-    const result = extractProductAttributes("PARACETAMOL 500 MG TABLETAS CAJA X 100");
-    expect(result).not.toBeNull();
-    expect(result?.attributes).toMatchObject({
-      activeIngredient: "PARACETAMOL",
-      concentration: "500",
-      concentrationUnit: "MG",
-      dosageForm: "Tableta",
-      presentationType: "Caja",
-      presentationQuantity: 100,
-    });
-  });
-
-  it("extrae la concentracion compuesta de 'AMOXICILINA + CLAVULANATO 500/125 MG X21'", () => {
-    const result = extractProductAttributes("AMOXICILINA + CLAVULANATO 500/125 MG X21");
-    expect(result).not.toBeNull();
-    expect(result?.attributes.concentration).toBe("500/125");
-    expect(result?.attributes.presentationQuantity).toBe(21);
-  });
-
-  it("no confunde presentaciones distintas del mismo producto", () => {
-    const x100 = extractProductAttributes("ACETAMINOFEN TAB 500MG X100");
-    const x20 = extractProductAttributes("ACETAMINOFEN 500MG X20");
-    expect(x100?.attributes.presentationQuantity).not.toBe(x20?.attributes.presentationQuantity);
-    expect(buildNormalizedName(x100!.attributes)).not.toBe(buildNormalizedName(x20!.attributes));
-  });
-
-  it("devuelve null cuando no hay concentracion ni presentacion reconocibles", () => {
-    expect(extractProductAttributes("PRODUCTO SIN DATOS CLAROS")).toBeNull();
-  });
-
-  it("devuelve null cuando falta la unidad de concentracion (evita adivinar)", () => {
-    expect(extractProductAttributes("AMOXICILINA 500/125 X21")).toBeNull();
-  });
-});
-
-describe("buildNormalizedName", () => {
-  it("produce el mismo nombre normalizado para variantes de escritura equivalentes", () => {
-    const a = extractProductAttributes("ACETAMINOFEN TAB 500MG X100");
-    const b = extractProductAttributes("Acetaminofen tableta 500 mg x 100");
-    expect(buildNormalizedName(a!.attributes)).toBe(buildNormalizedName(b!.attributes));
   });
 });

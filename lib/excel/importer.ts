@@ -1,14 +1,9 @@
 import { prisma } from "@/lib/db/client";
 import { detectColumns, detectHeaderRowIndex } from "@/lib/excel/detector";
-import {
-  buildNormalizedName,
-  detectPriceFormat,
-  extractProductAttributes,
-  normalizeAvailability,
-  normalizeText,
-  parsePrice,
-} from "@/lib/excel/normalizer";
+import { detectPriceFormat, normalizeAvailability, parsePrice } from "@/lib/excel/normalizer";
 import { parseWorkbook } from "@/lib/excel/parser";
+import { buildGenericKey, buildNormalizedName, normalizeText } from "@/lib/matching/normalize";
+import { extractProductAttributes } from "@/lib/matching/extract-attributes";
 import {
   hashBuffer,
   persistSupplierFile,
@@ -130,14 +125,17 @@ function readMappedRow(
     supplierProductCodeRaw === null || supplierProductCodeRaw === undefined ? null : String(supplierProductCodeRaw).trim();
 
   const laboratoryRaw = mapping.laboratory !== undefined ? row[mapping.laboratory] : null;
-  const laboratoryName = laboratoryRaw === null || laboratoryRaw === undefined ? null : String(laboratoryRaw).trim();
+  const laboratoryNameRaw = laboratoryRaw === null || laboratoryRaw === undefined ? null : String(laboratoryRaw).trim();
+  const laboratoryName = laboratoryNameRaw || null;
+  const laboratoryNormalizedName = laboratoryName ? normalizeText(laboratoryName) : null;
 
   return {
     row: {
       rowNumber,
       supplierProductCode,
       originalProductName,
-      normalizedName: buildNormalizedName(extraction.attributes),
+      normalizedName: buildNormalizedName(extraction.attributes, laboratoryNormalizedName),
+      genericKey: buildGenericKey(extraction.attributes),
       attributes: extraction.attributes,
       attributeWarnings: extraction.warnings,
       laboratoryName,
@@ -251,6 +249,7 @@ export async function confirmSupplierImport(input: ConfirmImportInput): Promise<
           create: {
             standardName: row.originalProductName,
             normalizedName: row.normalizedName,
+            genericKey: row.genericKey,
             activeIngredient: row.attributes.activeIngredient,
             concentration: row.attributes.concentration,
             concentrationUnit: row.attributes.concentrationUnit,

@@ -155,7 +155,16 @@ model Product {
   id                      String       @id @default(cuid())
   internalCode            String?      @unique @map("internal_code")
   standardName            String       @map("standard_name")
+  /// Identidad exacta: incluye el laboratorio. Dos productos del mismo genérico
+  /// pero de laboratorios distintos son filas distintas (para poder tener una
+  /// oferta independiente de cada uno por proveedor).
   normalizedName          String       @unique @map("normalized_name")
+  /// Identidad genérica: ingrediente + concentración + forma + presentación,
+  /// SIN laboratorio. Varias filas de Product comparten el mismo genericKey
+  /// cuando solo difieren en laboratorio; el motor de homologación y el de
+  /// precios agrupan por este campo porque el laboratorio no es un criterio
+  /// de selección para Medizys.
+  genericKey              String       @map("generic_key")
   activeIngredient        String       @map("active_ingredient")
   concentration           String
   concentrationUnit       String       @map("concentration_unit")
@@ -179,8 +188,23 @@ model Product {
   purchaseOrderItems   PurchaseOrderItem[]
 
   @@index([activeIngredient, concentration, dosageForm])
+  @@index([genericKey])
   @@index([laboratoryId])
   @@map("products")
+}
+
+/// Catálogo controlado de equivalencias de principio activo (p. ej.
+/// "paracetamol" = "acetaminofen"). Requiere fuente explícita: nunca se crea
+/// automáticamente por similitud de texto.
+model IngredientSynonym {
+  id            String   @id @default(cuid())
+  term          String   @unique
+  canonicalTerm String   @map("canonical_term")
+  source        String
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([canonicalTerm])
+  @@map("ingredient_synonyms")
 }
 
 // ---------------------------------------------------------------------------
