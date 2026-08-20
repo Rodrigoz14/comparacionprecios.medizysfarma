@@ -68,6 +68,66 @@ export async function resolveProductMatch(rawText: string): Promise<MatchResult>
     })
     .sort((a, b) => b.score - a.score);
 
+  // El cliente no siempre dice la forma farmacéutica ("Ácido Valproico 250mg",
+  // sin decir cápsula/jarabe/tableta). No especificarla no es lo mismo que una
+  // forma distinta: no se debe puntuar igual que un mismatch real, porque eso
+  // hunde el puntaje por debajo del umbral de revisión y termina en NO_MATCH
+  // aunque el producto sí exista (el bug reportado por el cliente). Tampoco se
+  // puede elegir la forma a ciegas: cápsula, jarabe y tableta no son
+  // intercambiables, así que si hay más de una disponible, es ambiguo de
+  // verdad y debe pasar por el mismo desempate con IA / revisión humana que
+  // cualquier otro caso ambiguo — nunca se adivina.
+  if (extraction.attributes.dosageForm === "No especificada") {
+    const concentrationMatches = scored.filter((c) => c.comparison.concentrationMatch);
+    const distinctForms = new Set(concentrationMatches.map((c) => c.product.dosageForm));
+
+    if (distinctForms.size === 1) {
+      return {
+        decision: "MATCH",
+        confidence: 1,
+        matchedProductIds: concentrationMatches.map((c) => c.product.id),
+        candidates: scored.slice(0, 5),
+        reasons: [
+          `Única forma farmacéutica disponible para este principio activo y concentración: ${[...distinctForms][0]}.`,
+        ],
+        source: "deterministic",
+      };
+    }
+
+    if (distinctForms.size > 1) {
+      const aiResult = await judgeWithAI(rawText, concentrationMatches.slice(0, 5));
+
+      if (aiResult && aiResult.decision === "MATCH" && aiResult.candidateId) {
+        const chosen = concentrationMatches.find((c) => c.product.id === aiResult.candidateId);
+        if (chosen) {
+          return {
+            decision: "MATCH",
+            confidence: aiResult.confidence,
+            matchedProductIds: [chosen.product.id],
+            candidates: scored.slice(0, 5),
+            reasons: aiResult.reasons,
+            source: "ai",
+          };
+        }
+      }
+
+      return {
+        decision: "REVIEW",
+        confidence: concentrationMatches[0].score,
+        matchedProductIds: [],
+        candidates: scored.slice(0, 5),
+        reasons: aiResult
+          ? aiResult.reasons
+          : [
+              `El cliente no especificó la forma farmacéutica y hay varias disponibles (${[...distinctForms].join(", ")}); requiere revisión.`,
+            ],
+        source: aiResult ? "ai" : "deterministic",
+      };
+    }
+    // distinctForms.size === 0: ningún candidato coincide en concentración;
+    // sigue el flujo normal más abajo (terminará en NO_MATCH o REVIEW).
+  }
+
   const best = scored[0];
   const deterministicDecision = decideFromScore(best.score, best.comparison.concentrationMatch);
 

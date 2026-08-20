@@ -99,6 +99,18 @@ describe("resolveProductMatch (integracion contra base de datos real)", () => {
     expect(result.matchedProductIds.sort()).toEqual([productIds[0], productIds[1]].sort());
   });
 
+  it("sin forma farmaceutica y con varias disponibles a la misma concentracion -> REVIEW, nunca NO_MATCH ni una eleccion a ciegas", async () => {
+    // Bug real reportado por el cliente: "Acido Valproico 250mg" (sin decir
+    // capsula/jarabe/tableta) caia en NO_MATCH aunque el producto existiera,
+    // porque el puntaje por la forma farmaceutica ausente hundia el total
+    // por debajo del umbral de revision. A 100mg este fixture tiene Tableta
+    // (dos laboratorios) y Capsula, asi que es un caso realmente ambiguo.
+    const result = await resolveProductMatch("ZOLTRAXINA 100MG");
+    expect(result.decision).toBe("REVIEW");
+    expect(result.matchedProductIds).toEqual([]);
+    expect(result.reasons.join(" ")).toMatch(/forma farmac[ée]utica/i);
+  });
+
   it("coincidencia via sinonimo de ingrediente no es MATCH automatico (queda para revision sin IA configurada)", async () => {
     const result = await resolveProductMatch("ZOLTRAXINASAL TAB 100MG X30");
     expect(result.decision).toBe("REVIEW");
@@ -160,6 +172,12 @@ describe("resolveProductMatch (orden de palabras del ingrediente activo)", () =>
 
   it("combina ambas correcciones: sin presentacion y con el ingrediente en orden natural", async () => {
     const result = await resolveProductMatch("ACIDO ZOLTRAXINICO 250MG CAPSULA");
+    expect(result.decision).toBe("MATCH");
+    expect(result.matchedProductIds).toEqual([productIds[0]]);
+  });
+
+  it("sin forma farmaceutica pero con una sola disponible -> MATCH automatico, no hay ambiguedad real", async () => {
+    const result = await resolveProductMatch("ACIDO ZOLTRAXINICO 250MG");
     expect(result.decision).toBe("MATCH");
     expect(result.matchedProductIds).toEqual([productIds[0]]);
   });
