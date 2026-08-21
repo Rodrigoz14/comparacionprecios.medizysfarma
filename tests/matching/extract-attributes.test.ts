@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractProductAttributes, normalizeDosageForm } from "@/lib/matching/extract-attributes";
+import { extractIngredientGuess, extractProductAttributes, normalizeDosageForm } from "@/lib/matching/extract-attributes";
 import { buildGenericKey, buildNormalizedName } from "@/lib/matching/normalize";
 
 describe("extractProductAttributes", () => {
@@ -181,6 +181,37 @@ describe("extractProductAttributes", () => {
   it("reconoce 'CREM' y 'GEL' como abreviaturas (visto en datos reales de Disfarma: CREM TOP, GEL TOP)", () => {
     expect(extractProductAttributes("SULFADIAZINA PLATA 1G/100G CREM TOP TUB*30G")?.attributes.dosageForm).toBe("Crema");
     expect(extractProductAttributes("KETOPROFENO 2.5G/100G GEL TOP TUB*60G")?.attributes.dosageForm).toBe("Gel");
+  });
+
+  it("distingue aerosol inhalador (oral) de aerosol nasal, sin colapsar ambos a 'Solucion'/'Suspension'", () => {
+    // Bug real: "Beclometasona inhalador" no encontraba nada. Disfarma reporta
+    // la forma como "AEROSOL INH BUC" (columna aparte, sin reconocer antes de
+    // este fix) y variantes de solucion/suspension "para inhalacion" (Ramedicas)
+    // o "SOL INH BUC"/"SUSP NAS" (Disfarma) colapsaban a la forma generica
+    // "Solucion"/"Suspension", mezclando inhaladores orales con aerosoles
+    // nasales y con soluciones sin relacion. Un inhalador oral (MDI) y un
+    // aerosol nasal no son el mismo producto ni intercambiables.
+    const disfarma = extractProductAttributes("BECLOMETASONA DIPROPIONATO 50MCG AEROSOL INH BUC FCOX200 DOSIS CX1");
+    expect(disfarma?.attributes.dosageForm).toBe("Aerosol inhalador");
+
+    const disfarmaNasal = extractProductAttributes("BECLOMETASONA DIPROPIONATO 50MCG/DOSIS AEROSOL INH NAS FCOX200 DOSIS CX1");
+    expect(disfarmaNasal?.attributes.dosageForm).toBe("Aerosol nasal");
+
+    const ramedicasSolucion = extractProductAttributes("BECLOMETASONA 50MCG SOLUCION PARA INHALACION X200");
+    expect(ramedicasSolucion?.attributes.dosageForm).toBe("Solución inhalada");
+
+    const ramedicasNasal = extractProductAttributes("BECLOMETASONA 50MCG SOLUCION PARA INHALACION NASAL X200");
+    expect(ramedicasNasal?.attributes.dosageForm).toBe("Solución nasal");
+
+    // No se mezclan entre si.
+    expect(buildGenericKey(disfarma!.attributes)).not.toBe(buildGenericKey(disfarmaNasal!.attributes));
+    expect(buildGenericKey(ramedicasSolucion!.attributes)).not.toBe(buildGenericKey(ramedicasNasal!.attributes));
+  });
+
+  it("reconoce 'inhalador' como termino de busqueda de cliente", () => {
+    const guess = extractIngredientGuess("Beclometasona inhalador");
+    expect(guess).toBe("BECLOMETASONA");
+    expect(normalizeDosageForm("inhalador")).toBe("Aerosol inhalador");
   });
 });
 

@@ -34,26 +34,79 @@ const DOSAGE_FORM_MAP: Record<string, string> = {
   GEL: "Gel",
   UNG: "Ungüento",
   UNGUENTO: "Ungüento",
+  POMADA: "Ungüento",
   AMPOLLA: "Ampolla",
   AMP: "Ampolla",
   INY: "Inyectable",
   INYECTABLE: "Inyectable",
   GOTAS: "Gotas",
+  GRAGEA: "Tableta",
+  GRAGEAS: "Tableta",
+  SUPOS: "Supositorio",
+  SUPOSITORIO: "Supositorio",
+  SUPOSITORIOS: "Supositorio",
+  OVULO: "Óvulo",
+  OVULOS: "Óvulo",
+  OVUL: "Óvulo",
+  SHAMP: "Shampoo",
+  SHAMPOO: "Shampoo",
+  INHALADOR: "Aerosol inhalador",
 };
 
 /**
  * Algunas formas farmacéuticas solo se distinguen correctamente con la vía de
- * administración (una crema vaginal y una crema tópica no son intercambiables),
- * pero DOSAGE_FORM_MAP solo mira una palabra a la vez y "CREMA" sola encontraría
- * primero y pararía ahí, perdiendo la palabra "VAGINAL" que viene después. Se
- * revisan frases completas ANTES que palabras sueltas para no perder esa
- * distinción — visto en datos reales de Disfarma ("CREM VAG", columna de forma
- * farmacéutica separada) y de Ramédicas ("CREMA VAGINAL", dentro del nombre).
+ * administración (una crema vaginal y una crema tópica no son intercambiables,
+ * ni un aerosol para inhalar oral y uno nasal), pero DOSAGE_FORM_MAP solo mira
+ * una palabra a la vez y pararía en la primera que reconozca, perdiendo la que
+ * viene después. Se revisan frases completas ANTES que palabras sueltas para no
+ * perder esa distinción.
+ *
+ * Es un ARRAY (no un objeto) porque el orden importa: las frases más largas y
+ * específicas deben revisarse antes que las más cortas que están contenidas
+ * dentro de ellas (p. ej. "POL INH BUC" antes que "INH BUC" a secas, o
+ * "AEROSOL INH BUC" nunca se confundiría con "INH BUC" si "INH BUC" se
+ * revisara primero por error).
+ *
+ * Cada entrada viene de datos reales encontrados en los archivos de Disfarma
+ * o Ramédicas durante esta sesión, nunca inventada.
  */
-const COMPOUND_DOSAGE_FORM_MAP: Record<string, string> = {
-  "CREMA VAGINAL": "Crema vaginal",
-  "CREM VAG": "Crema vaginal",
-};
+const COMPOUND_DOSAGE_FORM_MAP: [string, string][] = [
+  // Crema vaginal vs tópica (reportado por el cliente).
+  ["CREMA VAGINAL", "Crema vaginal"],
+  ["CREM VAG", "Crema vaginal"],
+  // Aerosol/polvo/solución para inhalar, oral vs nasal (reportado por el cliente: Beclometasona).
+  ["AEROSOL INH BUC", "Aerosol inhalador"],
+  ["AEROSOL INH NAS", "Aerosol nasal"],
+  ["AEROSOL TOP", "Aerosol"],
+  ["POL INH BUC", "Polvo inhalado"],
+  ["SOL INH BUC", "Solución inhalada"],
+  ["POLVO PARA INHALACION", "Polvo inhalado"],
+  ["POL INH", "Polvo inhalado"],
+  ["INH BUC", "Aerosol inhalador"],
+  ["SOLUCION PARA INHALACION NASAL", "Solución nasal"],
+  ["SOLUCION PARA INHALACION", "Solución inhalada"],
+  ["SUSPENSION PARA INHALACION", "Suspensión inhalada"],
+  ["SUSP NAS", "Suspensión nasal"],
+  ["SUSPENSION NASAL", "Suspensión nasal"],
+  // Vías tópica/oftálmica que igual se pierden si solo se mira la primera palabra.
+  ["EMULSION TOPICA - SHAMPOO", "Shampoo"],
+  ["EMULSION TOPICA", "Emulsión"],
+  ["EMUL TOP", "Emulsión"],
+  ["EMULSION OFTALMICA", "Emulsión oftálmica"],
+  ["EMUL OFT", "Emulsión oftálmica"],
+  ["LOCION TOPICA", "Loción"],
+  ["LOC TOP", "Loción"],
+  ["LOCION CAPILAR", "Loción"],
+  ["POMADA TOPICA", "Ungüento"],
+  ["PARCHE TRANSDERMICO", "Parche transdérmico"],
+  ["SIST TRANSD", "Parche transdérmico"],
+  ["OVULO VAGINAL", "Óvulo"],
+  ["OVUL VAG", "Óvulo"],
+  ["SUPOSITORIO RECTAL", "Supositorio"],
+  ["POL GRAN PRO", "Polvo"],
+  ["POL GRAN", "Polvo"],
+  ["POL ORL", "Polvo"],
+];
 
 const PRESENTATION_TYPE_MAP: Record<string, string> = {
   CAJA: "Caja",
@@ -76,6 +129,21 @@ const PRESENTATION_UNIT_BY_FORM: Record<string, string> = {
   Ungüento: "g",
   Ampolla: "ampollas",
   Inyectable: "ampollas",
+  Supositorio: "supositorios",
+  Óvulo: "óvulos",
+  Shampoo: "ml",
+  Emulsión: "ml",
+  "Emulsión oftálmica": "ml",
+  Loción: "ml",
+  "Aerosol inhalador": "dosis",
+  "Aerosol nasal": "dosis",
+  Aerosol: "dosis",
+  "Polvo inhalado": "dosis",
+  "Solución inhalada": "dosis",
+  "Solución nasal": "dosis",
+  "Suspensión inhalada": "dosis",
+  "Suspensión nasal": "dosis",
+  "Parche transdérmico": "parches",
 };
 
 /**
@@ -86,7 +154,7 @@ const PRESENTATION_UNIT_BY_FORM: Record<string, string> = {
  * nombre del producto y no confundir la forma con el principio activo.
  */
 function matchDosageForm(upper: string): { dosageForm: string; index: number } | null {
-  for (const [phrase, mapped] of Object.entries(COMPOUND_DOSAGE_FORM_MAP)) {
+  for (const [phrase, mapped] of COMPOUND_DOSAGE_FORM_MAP) {
     const index = upper.indexOf(phrase);
     if (index >= 0) return { dosageForm: mapped, index };
   }
