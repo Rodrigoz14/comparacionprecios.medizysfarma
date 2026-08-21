@@ -1,12 +1,44 @@
 import { prisma } from "@/lib/db/client";
 import { judgeWithAI } from "@/lib/matching/ai-judge";
-import { searchCandidates } from "@/lib/matching/candidate-search";
+import { searchCandidates, searchCandidatesByIngredientText } from "@/lib/matching/candidate-search";
 import { compareAttributes } from "@/lib/matching/compare-attributes";
 import { decideFromScore } from "@/lib/matching/decision";
-import { extractProductAttributes } from "@/lib/matching/extract-attributes";
+import { extractIngredientGuess, extractProductAttributes } from "@/lib/matching/extract-attributes";
 import { buildGenericKey } from "@/lib/matching/normalize";
 import { scoreComparison } from "@/lib/matching/score";
-import type { MatchResult, ScoredCandidate } from "@/lib/matching/types";
+import type { CandidateProduct, MatchResult, ScoredCandidate } from "@/lib/matching/types";
+
+/**
+ * Varios laboratorios pueden ofrecer el mismo genérico exacto (misma
+ * presentación, distinto laboratorio) — mostrarlos todos como "opciones para
+ * elegir" sería ruido, ya que el motor de precios los compara automáticamente
+ * una vez se elige el genérico. Se conserva solo el mejor candidato por
+ * genericKey, hasta un límite razonable, para que la lista de opciones que ve
+ * el usuario represente variedad real (distintas formas/concentraciones), no
+ * al mismo producto repetido por laboratorio — y para no truncar por
+ * casualidad las opciones de un proveedor completo si superan el límite.
+ */
+function dedupeByGenericKey(scored: ScoredCandidate[], limit = 8): ScoredCandidate[] {
+  const seen = new Set<string>();
+  const result: ScoredCandidate[] = [];
+  for (const c of scored) {
+    if (seen.has(c.product.genericKey)) continue;
+    seen.add(c.product.genericKey);
+    result.push(c);
+    if (result.length >= limit) break;
+  }
+  return result;
+}
+
+function toGuessCandidate(product: CandidateProduct): ScoredCandidate {
+  return {
+    product,
+    comparison: { activeIngredientMatch: true, concentrationMatch: false, dosageFormMatch: false, presentationMatch: false },
+    score: 0,
+    viaSynonym: false,
+    viaFuzzyMatch: false,
+  };
+}
 
 /**
  * Resuelve a qué producto(s) del catálogo corresponde un texto libre (lo que
@@ -26,6 +58,33 @@ export async function resolveProductMatch(rawText: string): Promise<MatchResult>
   // del medicamento (se compara por unidad en el motor de precios).
   const extraction = extractProductAttributes(rawText, { requirePresentation: false });
   if (!extraction) {
+    // No se pudo extraer una concentración (p. ej. el cliente escribió solo
+    // "Ácido Valproico", sin decir cuál). En vez de terminar en NO_MATCH sin
+    // más, se busca el ingrediente solo para poder mostrar qué concentraciones
+    // existen en el catálogo y que el cliente elija — nunca se adivina cuál es.
+    const ingredientGuess = extractIngredientGuess(rawText);
+    if (ingredientGuess) {
+      const found = await searchCandidatesByIngredientText(ingredientGuess);
+      if (found.length > 0) {
+        const candidates = dedupeByGenericKey(found.map((f) => toGuessCandidate(f.product)));
+        const concentrations = [...new Set(found.map((f) => `${f.product.concentration}${f.product.concentrationUnit}`))];
+        const viaFuzzy = found.some((f) => f.viaFuzzyMatch);
+        return {
+          decision: "REVIEW",
+          confidence: 0,
+          matchedProductIds: [],
+          candidates,
+          reasons: [
+            `No se especificó la concentración de "${ingredientGuess}". Concentraciones disponibles: ${concentrations.join(", ")}. Elige la opción correcta.`,
+            ...(viaFuzzy
+              ? [`Se muestran principios activos con escritura parecida a "${ingredientGuess}" por si hubo un error de tipeo — confírmalo antes de cotizar.`]
+              : []),
+          ],
+          source: "deterministic",
+        };
+      }
+    }
+
     return {
       decision: "NO_MATCH",
       confidence: 0,
@@ -103,7 +162,7 @@ export async function resolveProductMatch(rawText: string): Promise<MatchResult>
         decision: "MATCH",
         confidence: 1,
         matchedProductIds: concentrationMatches.map((c) => c.product.id),
-        candidates: scored.slice(0, 5),
+        candidates: dedupeByGenericKey(concentrationMatches),
         reasons: [
           `Única forma farmacéutica disponible para este principio activo y concentración: ${[...distinctForms][0]}.`,
         ],
@@ -112,7 +171,7 @@ export async function resolveProductMatch(rawText: string): Promise<MatchResult>
     }
 
     if (distinctForms.size >= 1) {
-      const aiResult = await judgeWithAI(rawText, concentrationMatches.slice(0, 5));
+      const aiResult = await judgeWithAI(rawText, dedupeByGenericKey(concentrationMatches));
 
       if (aiResult && aiResult.decision === "MATCH" && aiResult.candidateId) {
         const chosen = concentrationMatches.find((c) => c.product.id === aiResult.candidateId);
@@ -121,7 +180,7 @@ export async function resolveProductMatch(rawText: string): Promise<MatchResult>
             decision: "MATCH",
             confidence: aiResult.confidence,
             matchedProductIds: [chosen.product.id],
-            candidates: scored.slice(0, 5),
+            candidates: dedupeByGenericKey(concentrationMatches),
             reasons: aiResult.reasons,
             source: "ai",
           };
@@ -140,7 +199,7 @@ export async function resolveProductMatch(rawText: string): Promise<MatchResult>
         decision: "REVIEW",
         confidence: concentrationMatches[0].score,
         matchedProductIds: [],
-        candidates: scored.slice(0, 5),
+        candidates: dedupeByGenericKey(concentrationMatches),
         reasons: [...reasons, ...fuzzyIngredientNote],
         source: aiResult ? "ai" : "deterministic",
       };
@@ -160,7 +219,7 @@ export async function resolveProductMatch(rawText: string): Promise<MatchResult>
       decision: "MATCH",
       confidence: best.score,
       matchedProductIds: tied.map((c) => c.product.id),
-      candidates: scored.slice(0, 5),
+      candidates: dedupeByGenericKey(scored),
       reasons: [describeMatch(best)],
       source: "deterministic",
     };
@@ -171,7 +230,7 @@ export async function resolveProductMatch(rawText: string): Promise<MatchResult>
       decision: "NO_MATCH",
       confidence: best.score,
       matchedProductIds: [],
-      candidates: scored.slice(0, 5),
+      candidates: dedupeByGenericKey(scored),
       reasons: [describeMatch(best), ...fuzzyIngredientNote],
       source: "deterministic",
     };
@@ -180,7 +239,7 @@ export async function resolveProductMatch(rawText: string): Promise<MatchResult>
   // REVIEW determinístico: se intenta desempatar con IA entre los candidatos
   // acotados, pero solo entre los que sí cumplen la concentración exacta (la
   // regla de la Sección 5.35 nunca se le delega a la IA).
-  const eligibleForAI = scored.filter((c) => c.comparison.concentrationMatch).slice(0, 5);
+  const eligibleForAI = dedupeByGenericKey(scored.filter((c) => c.comparison.concentrationMatch));
   const aiResult = await judgeWithAI(rawText, eligibleForAI);
 
   if (aiResult && aiResult.decision === "MATCH" && aiResult.candidateId) {
@@ -190,7 +249,7 @@ export async function resolveProductMatch(rawText: string): Promise<MatchResult>
         decision: "MATCH",
         confidence: aiResult.confidence,
         matchedProductIds: [chosen.product.id],
-        candidates: scored.slice(0, 5),
+        candidates: dedupeByGenericKey(scored),
         reasons: aiResult.reasons,
         source: "ai",
       };
@@ -202,7 +261,7 @@ export async function resolveProductMatch(rawText: string): Promise<MatchResult>
       decision: "NO_MATCH",
       confidence: aiResult.confidence,
       matchedProductIds: [],
-      candidates: scored.slice(0, 5),
+      candidates: dedupeByGenericKey(scored),
       reasons: [...aiResult.reasons, ...fuzzyIngredientNote],
       source: "ai",
     };

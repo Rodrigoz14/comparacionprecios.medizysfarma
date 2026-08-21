@@ -13,13 +13,16 @@ export interface CandidateSearchResult {
 }
 
 /**
- * Busca candidatos por principio activo (o sus sinónimos controlados), sin filtrar
- * todavía por concentración/forma/presentación: esa comparación estructurada más
- * fina ocurre después, en compare-attributes.ts. Esto evita enviar toda la base de
- * datos a la IA más adelante (Sección 5.18).
+ * Busca candidatos por principio activo (o sus sinónimos controlados, o
+ * tolerando errores de tipeo/OCR si no hay nada exacto), sin filtrar todavía
+ * por concentración/forma/presentación: esa comparación estructurada más fina
+ * ocurre después, en compare-attributes.ts. Esto evita enviar toda la base de
+ * datos a la IA más adelante (Sección 5.18). Es la base tanto de la búsqueda
+ * normal (con concentración) como de la búsqueda "solo ingrediente" que se
+ * usa cuando el cliente no dio concentración (matching-service.ts).
  */
-export async function searchCandidates(attributes: ExtractedAttributes): Promise<CandidateSearchResult[]> {
-  const normalizedIngredient = normalizeText(attributes.activeIngredient);
+export async function searchCandidatesByIngredientText(rawIngredient: string): Promise<CandidateSearchResult[]> {
+  const normalizedIngredient = normalizeText(rawIngredient);
   const terms = await expandIngredientTerms(normalizedIngredient);
   // Se busca por ingredientKey (palabras ordenadas alfabéticamente) para que
   // no importe si el proveedor escribió "ACIDO VALPROICO" o "VALPROICO ACIDO".
@@ -38,7 +41,7 @@ export async function searchCandidates(attributes: ExtractedAttributes): Promise
       // Solo cuenta como sinónimo si el ingrediente en sí es distinto (p. ej.
       // paracetamol/acetaminofén); una variante de orden de palabras del mismo
       // ingrediente ("ACIDO VALPROICO" vs "VALPROICO ACIDO") no lo es.
-      viaSynonym: canonicalizeIngredient(product.activeIngredient) !== canonicalizeIngredient(attributes.activeIngredient),
+      viaSynonym: canonicalizeIngredient(product.activeIngredient) !== canonicalizeIngredient(rawIngredient),
       viaFuzzyMatch: false,
     }));
   }
@@ -72,6 +75,10 @@ export async function searchCandidates(attributes: ExtractedAttributes): Promise
     viaSynonym: false,
     viaFuzzyMatch: true,
   }));
+}
+
+export async function searchCandidates(attributes: ExtractedAttributes): Promise<CandidateSearchResult[]> {
+  return searchCandidatesByIngredientText(attributes.activeIngredient);
 }
 
 function toCandidateProduct(product: {

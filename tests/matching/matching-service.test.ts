@@ -109,6 +109,26 @@ describe("resolveProductMatch (integracion contra base de datos real)", () => {
     expect(result.decision).toBe("REVIEW");
     expect(result.matchedProductIds).toEqual([]);
     expect(result.reasons.join(" ")).toMatch(/forma farmac[ée]utica/i);
+    // Bug real: la lista de candidatos mostraba solo los primeros 5 resultados
+    // sin ordenar por relevancia, así que si un proveedor tenía muchas filas
+    // (varios laboratorios de la misma forma), las opciones de otro proveedor
+    // quedaban afuera. Debe haber un candidato por forma farmacéutica distinta
+    // (Tableta, Cápsula), no uno por cada fila/laboratorio repetido.
+    expect(result.candidates).toHaveLength(2);
+    expect(new Set(result.candidates.map((c) => c.product.dosageForm))).toEqual(new Set(["Tableta", "Cápsula"]));
+  });
+
+  it("busca sin concentracion: lista las concentraciones disponibles en vez de terminar en NO_MATCH", async () => {
+    // Bug real: buscar solo "Ácido Valproico" (sin decir la concentración) no
+    // daba ninguna opción. Ahora debe mostrar qué concentraciones existen para
+    // que el cliente elija, nunca adivinar cuál es.
+    const result = await resolveProductMatch("ZOLTRAXINA");
+    expect(result.decision).toBe("REVIEW");
+    expect(result.matchedProductIds).toEqual([]);
+    expect(result.reasons.join(" ")).toMatch(/concentraci[oó]n/i);
+    expect(result.reasons.join(" ")).toMatch(/100MG/);
+    expect(result.reasons.join(" ")).toMatch(/200MG/);
+    expect(result.candidates.length).toBeGreaterThan(0);
   });
 
   it("coincidencia via sinonimo de ingrediente no es MATCH automatico (queda para revision sin IA configurada)", async () => {

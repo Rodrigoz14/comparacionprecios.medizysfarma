@@ -101,6 +101,30 @@ export interface ExtractOptions {
   requirePresentation?: boolean;
 }
 
+/**
+ * Última red antes de rendirse: cuando el cliente escribe solo el nombre del
+ * medicamento sin concentración (p. ej. "Ácido Valproico", sin decir cuál),
+ * extractProductAttributes() devuelve null porque no hay suficiente para
+ * identificar un producto exacto. En vez de terminar ahí en NO_MATCH, esto
+ * devuelve una mejor suposición del ingrediente para poder mostrarle al
+ * cliente qué concentraciones existen y que elija — nunca se adivina cuál es
+ * la correcta, solo se ayuda a encontrar las opciones.
+ *
+ * Deliberadamente conservador: si el texto trae algún dígito, es más probable
+ * que la concentración esté mal escrita que que no exista, y adivinar el
+ * ingrediente ahí sería más arriesgado que útil — se prefiere no intentarlo.
+ */
+export function extractIngredientGuess(rawText: string): string | null {
+  const upper = stripAccents(rawText).toUpperCase().replace(CHANNEL_PREFIX_RE, "").trim();
+  if (!upper || /\d/.test(upper)) return null;
+
+  const tokens = upper.split(/[^A-ZÁÉÍÓÚÑ]+/).filter(Boolean);
+  const dosageFormTokenIndex = tokens.findIndex((token) => DOSAGE_FORM_MAP[token]);
+  const ingredientTokens = dosageFormTokenIndex >= 0 ? tokens.slice(0, dosageFormTokenIndex) : tokens;
+  const ingredient = ingredientTokens.join(" ").trim();
+  return ingredient || null;
+}
+
 export function extractProductAttributes(
   rawName: string,
   options: ExtractOptions = {},
