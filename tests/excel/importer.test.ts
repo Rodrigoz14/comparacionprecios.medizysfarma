@@ -133,4 +133,26 @@ describe("importador de Excel (integracion contra base de datos real)", () => {
     const history = await prisma.priceHistory.findMany({ where: { supplierOfferId: offer!.id } });
     expect(history.length).toBe(2); // precio inicial (8500) + el nuevo (9000)
   });
+
+  it("no propone como precio una columna mayormente en cero, aunque su nombre coincida por texto", async () => {
+    // Caso real de un archivo de Disfarma: "VLR_TOPE_REG" (techo regulatorio,
+    // casi siempre 0) se proponía como precio por contener "vlr", en vez de
+    // "Ger_EPS" (el precio real, sin ningún alias reconocible en su nombre) —
+    // miles de filas se rechazaban por precio 0, o se importaban con el precio
+    // equivocado. Si la muestra es mayormente cero, no se propone ninguna
+    // columna: mejor obligar a elegir a mano que corromper el catálogo.
+    const rows = [
+      ["CODIGO", "DESCRIPCION", "GER_EPS", "VLR_TOPE_REG"],
+      ["D001", "AMOXICILINA TAB 500MG X30", 12000, 0],
+      ["D002", "DICLOFENACO TAB 50MG X20", 3200, 0],
+      ["D003", "LORATADINA TAB 10MG X10", 2800, 45000],
+      ["D004", "METFORMINA TAB 850MG X30", 5100, 0],
+    ];
+    const buffer = await buildXlsxBuffer(rows);
+    const result = await analyzeSupplierFile(buffer, "disfarma-vlr-tope.xlsx", supplierId);
+
+    const priceColumn = result.columns.find((c) => c.header === "VLR_TOPE_REG");
+    expect(priceColumn?.proposedTarget).toBeNull();
+    expect(result.columns.some((c) => c.proposedTarget === "price")).toBe(false);
+  });
 });

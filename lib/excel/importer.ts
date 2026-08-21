@@ -49,6 +49,24 @@ export async function analyzeSupplierFile(
     : [];
   const proposedPriceFormat = detectPriceFormat(priceSamples);
 
+  // El nombre de la columna no basta para confiar en ella: en un archivo real de
+  // Disfarma, "VLR_TOPE_REG" (un techo regulatorio, casi siempre 0 o distinto al
+  // precio real) coincidió por contener "vlr" y se propuso como precio en vez de
+  // "Ger_EPS" (el precio real, sin ningún alias reconocible en su nombre) — miles
+  // de filas terminaron sin importarse (precio 0 rechazado) o con precio
+  // equivocado. Si la mayoría de la muestra es cero, no se propone la columna:
+  // mejor obligar a elegir a mano que corromper el catálogo en silencio.
+  if (priceColumn) {
+    const parsedSamples = priceSamples
+      .map((v) => parsePrice(v, proposedPriceFormat))
+      .filter((v): v is number => v !== null);
+    const zeroCount = parsedSamples.filter((v) => v <= 0).length;
+    if (parsedSamples.length > 0 && zeroCount / parsedSamples.length > 0.3) {
+      priceColumn.proposedTarget = null;
+      priceColumn.confidence = 0;
+    }
+  }
+
   const mapping: ColumnMapping = {};
   for (const col of columns) {
     if (col.proposedTarget) mapping[col.proposedTarget] = col.index;
