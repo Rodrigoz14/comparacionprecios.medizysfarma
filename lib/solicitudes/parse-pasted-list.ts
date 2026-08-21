@@ -38,12 +38,22 @@ function parseLine(line: string): ParsedLine {
   }
 
   // Número al final, con separador opcional: "Acetaminofén 500mg x100 - 20",
-  // "Acetaminofén 500mg x100  20", "Acetaminofén 500mg x100 (20 und)".
+  // "Acetaminofén 500mg x100  20", "Acetaminofén 500mg x100 (20 und)",
+  // "Estrógenos conjugados crema: 10 tubos". La palabra de empaque después
+  // del número es opcional y solo sirve para reconocer el patrón — la
+  // cantidad siempre es el número, sin importar en qué venga (tubos, cajas,
+  // frascos...). Sin esto, un número seguido de una palabra no reconocida
+  // ("10 tubos") no calzaba con nada y la línea entera —número incluido—
+  // quedaba como texto del producto, lo que además rompe la homologación
+  // (un dígito ahí se lee como una posible concentración mal escrita).
   // Ojo: la "x" NUNCA cuenta como separador aquí a propósito — el nombre del
   // producto casi siempre termina en "x100" (la presentación), y si "x"
   // contara como separador, "Acetaminofén 500mg x100" se leería como
   // cantidad 100 en vez de como un producto sin cantidad explícita.
-  const trailing = /^(.+?)[\s.,:\-–(]+(\d+)\s*(?:unid(?:ades)?|und?|u\.?)?\)?\s*$/i.exec(line);
+  const trailing =
+    /^(.+?)[\s.,:\-–(]+(\d+)\s*(?:unid(?:ades)?|und?|u\.?|tubos?|frascos?|cajas?|ampollas?|viales?|sobres?|bl[ií]ster(?:es)?|bolsas?|tabletas?|c[aá]psulas?)?\)?\s*$/i.exec(
+      line,
+    );
   if (trailing) {
     return { text: trailing[1].trim(), quantity: Number.parseInt(trailing[2], 10) };
   }

@@ -48,4 +48,37 @@ describe("parsePastedList", () => {
     const result = parsePastedList("20 Acetaminofén 500mg x100\n\n\nLosartán 50mg x30 - 15\n");
     expect(result).toHaveLength(2);
   });
+
+  describe("palabras de empaque despues de la cantidad (datos reales de clientes)", () => {
+    // Bug real: "Estrogenos conjugados crema: 10 tubos" no calzaba con ningun
+    // patron (solo se reconocia unid/und/u), asi que la linea completa —con el
+    // "10" incluido— quedaba como texto del producto con cantidad 1. Ese "10"
+    // suelto en el texto despues hacia que la homologacion se negara a
+    // interpretarlo (un digito ahi se lee como una posible concentracion mal
+    // escrita), terminando en NO_MATCH aunque el producto si existiera.
+    it("reconoce 'tubos' como palabra de empaque", () => {
+      const result = parsePastedList("Estrogenos conjugados crema: 10 tubos");
+      expect(result).toEqual([{ text: "Estrogenos conjugados crema", quantity: 10 }]);
+    });
+
+    it("reconoce 'frascos' como palabra de empaque", () => {
+      const result = parsePastedList("Berodual solución para nebulizar: 3 frascos");
+      expect(result).toEqual([{ text: "Berodual solución para nebulizar", quantity: 3 }]);
+    });
+
+    it("no confunde un numero que es parte del nombre con la cantidad al final", () => {
+      const result = parsePastedList("Vaselina crema x 500 ml: 3 frascos");
+      expect(result).toEqual([{ text: "Vaselina crema x 500 ml", quantity: 3 }]);
+    });
+
+    it("reconoce cajas, ampollas y viales", () => {
+      expect(parsePastedList("Dexametasona ampolla: 20 ampollas")).toEqual([
+        { text: "Dexametasona ampolla", quantity: 20 },
+      ]);
+      expect(parsePastedList("Insulina glargina: 5 viales")).toEqual([{ text: "Insulina glargina", quantity: 5 }]);
+      expect(parsePastedList("Ibuprofeno 400mg x30: 2 cajas")).toEqual([
+        { text: "Ibuprofeno 400mg x30", quantity: 2 },
+      ]);
+    });
+  });
 });
