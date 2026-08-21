@@ -30,6 +30,8 @@ const DOSAGE_FORM_MAP: Record<string, string> = {
   SOL: "Solución",
   SOLUCION: "Solución",
   CREMA: "Crema",
+  CREM: "Crema",
+  GEL: "Gel",
   UNG: "Ungüento",
   UNGUENTO: "Ungüento",
   AMPOLLA: "Ampolla",
@@ -37,6 +39,20 @@ const DOSAGE_FORM_MAP: Record<string, string> = {
   INY: "Inyectable",
   INYECTABLE: "Inyectable",
   GOTAS: "Gotas",
+};
+
+/**
+ * Algunas formas farmacéuticas solo se distinguen correctamente con la vía de
+ * administración (una crema vaginal y una crema tópica no son intercambiables),
+ * pero DOSAGE_FORM_MAP solo mira una palabra a la vez y "CREMA" sola encontraría
+ * primero y pararía ahí, perdiendo la palabra "VAGINAL" que viene después. Se
+ * revisan frases completas ANTES que palabras sueltas para no perder esa
+ * distinción — visto en datos reales de Disfarma ("CREM VAG", columna de forma
+ * farmacéutica separada) y de Ramédicas ("CREMA VAGINAL", dentro del nombre).
+ */
+const COMPOUND_DOSAGE_FORM_MAP: Record<string, string> = {
+  "CREMA VAGINAL": "Crema vaginal",
+  "CREM VAG": "Crema vaginal",
 };
 
 const PRESENTATION_TYPE_MAP: Record<string, string> = {
@@ -55,24 +71,40 @@ const PRESENTATION_UNIT_BY_FORM: Record<string, string> = {
   Solución: "ml",
   Gotas: "ml",
   Crema: "g",
+  "Crema vaginal": "g",
+  Gel: "g",
   Ungüento: "g",
   Ampolla: "ampollas",
   Inyectable: "ampollas",
 };
 
 /**
- * Busca una forma farmacéutica conocida dentro de un texto (tokenizando por
- * palabras) y la normaliza al vocabulario controlado (DOSAGE_FORM_MAP).
- * Devuelve null si no reconoce ninguna palabra clave.
+ * Busca una forma farmacéutica conocida dentro de un texto ya en mayúsculas:
+ * primero frases compuestas (COMPOUND_DOSAGE_FORM_MAP, para no perder la vía de
+ * administración), luego palabras sueltas (DOSAGE_FORM_MAP). Devuelve también
+ * en qué posición del texto empieza la coincidencia, para poder cortar ahí el
+ * nombre del producto y no confundir la forma con el principio activo.
  */
-export function normalizeDosageForm(rawText: string): string | null {
-  const upper = stripAccents(rawText).toUpperCase();
+function matchDosageForm(upper: string): { dosageForm: string; index: number } | null {
+  for (const [phrase, mapped] of Object.entries(COMPOUND_DOSAGE_FORM_MAP)) {
+    const index = upper.indexOf(phrase);
+    if (index >= 0) return { dosageForm: mapped, index };
+  }
   const tokens = upper.split(/[^A-ZÁÉÍÓÚÑ]+/).filter(Boolean);
   for (const token of tokens) {
     const mapped = DOSAGE_FORM_MAP[token];
-    if (mapped) return mapped;
+    if (mapped) return { dosageForm: mapped, index: upper.indexOf(token) };
   }
   return null;
+}
+
+/**
+ * Busca una forma farmacéutica conocida dentro de un texto y la normaliza al
+ * vocabulario controlado. Devuelve null si no reconoce nada.
+ */
+export function normalizeDosageForm(rawText: string): string | null {
+  const upper = stripAccents(rawText).toUpperCase();
+  return matchDosageForm(upper)?.dosageForm ?? null;
 }
 
 /**
@@ -118,10 +150,8 @@ export function extractIngredientGuess(rawText: string): string | null {
   const upper = stripAccents(rawText).toUpperCase().replace(CHANNEL_PREFIX_RE, "").trim();
   if (!upper || /\d/.test(upper)) return null;
 
-  const tokens = upper.split(/[^A-ZÁÉÍÓÚÑ]+/).filter(Boolean);
-  const dosageFormTokenIndex = tokens.findIndex((token) => DOSAGE_FORM_MAP[token]);
-  const ingredientTokens = dosageFormTokenIndex >= 0 ? tokens.slice(0, dosageFormTokenIndex) : tokens;
-  const ingredient = ingredientTokens.join(" ").trim();
+  const formMatch = matchDosageForm(upper);
+  const ingredient = (formMatch ? upper.slice(0, formMatch.index) : upper).trim();
   return ingredient || null;
 }
 
@@ -158,16 +188,9 @@ export function extractProductAttributes(
 
   const tokens = upper.split(/[^A-ZÁÉÍÓÚÑ]+/).filter(Boolean);
 
-  let dosageForm: string | null = null;
-  let dosageFormTokenIndex = -1;
-  for (let i = 0; i < tokens.length; i++) {
-    const mapped = DOSAGE_FORM_MAP[tokens[i]];
-    if (mapped) {
-      dosageForm = mapped;
-      dosageFormTokenIndex = upper.indexOf(tokens[i]);
-      break;
-    }
-  }
+  const formMatch = matchDosageForm(upper);
+  let dosageForm = formMatch?.dosageForm ?? null;
+  const dosageFormTokenIndex = formMatch?.index ?? -1;
   if (!dosageForm) {
     dosageForm = "No especificada";
     warnings.push("No se pudo determinar la forma farmacéutica; se dejó 'No especificada'.");

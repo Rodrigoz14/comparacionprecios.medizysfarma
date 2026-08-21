@@ -157,6 +157,31 @@ describe("extractProductAttributes", () => {
     const result = extractProductAttributes("ACIDO VALPROICO 250MG FCO*50 CAP");
     expect(result?.attributes.dosageForm).toBe("Cápsula");
   });
+
+  it("reconoce 'crema vaginal' como forma distinta de 'crema' a secas, sin importar como venga escrito", () => {
+    // Bug real: "Estrogenos Conjugados crema" no aparecia en la busqueda porque
+    // Disfarma reporta la forma como "CREM VAG" (columna aparte, sin reconocer
+    // antes de este fix -> se guardaba tal cual) y Ramedicas la escribe dentro
+    // del nombre ("...CREMA VAGINAL"), pero el escaneo palabra por palabra se
+    // quedaba en "CREMA" y nunca llegaba a leer "VAGINAL". Una crema vaginal y
+    // una crema topica no son intercambiables, asi que deben quedar como formas
+    // farmaceuticas distintas (no colapsar ambas a "Crema").
+    const disfarma = extractProductAttributes("ESTROGENOS CONJUGADOS 0.625MG/G CREM VAG TUBX43G+APLIC CX1");
+    const ramedicas = extractProductAttributes("ESTROGENOS CONJUGADOS 0,625MG/G CREMA VAGINAL X43G");
+    expect(disfarma?.attributes.dosageForm).toBe("Crema vaginal");
+    expect(ramedicas?.attributes.dosageForm).toBe("Crema vaginal");
+    expect(buildGenericKey(disfarma!.attributes)).toBe(buildGenericKey(ramedicas!.attributes));
+
+    // Una crema topica normal sigue siendo "Crema", no se mezcla con la vaginal.
+    const topica = extractProductAttributes("KETOCONAZOL 2G/100G CREMA TOPICA TUBX30G");
+    expect(topica?.attributes.dosageForm).toBe("Crema");
+    expect(buildGenericKey(topica!.attributes)).not.toBe(buildGenericKey(ramedicas!.attributes));
+  });
+
+  it("reconoce 'CREM' y 'GEL' como abreviaturas (visto en datos reales de Disfarma: CREM TOP, GEL TOP)", () => {
+    expect(extractProductAttributes("SULFADIAZINA PLATA 1G/100G CREM TOP TUB*30G")?.attributes.dosageForm).toBe("Crema");
+    expect(extractProductAttributes("KETOPROFENO 2.5G/100G GEL TOP TUB*60G")?.attributes.dosageForm).toBe("Gel");
+  });
 });
 
 describe("normalizeDosageForm", () => {
@@ -175,6 +200,13 @@ describe("normalizeDosageForm", () => {
     // o dos filas del mismo generico terminan con genericKey distinto.
     const fromText = extractProductAttributes("DICLOFENACO 75MG SOLUCION INYECTABLE X10");
     expect(normalizeDosageForm("SOLUCION INYECTABLE")).toBe(fromText?.attributes.dosageForm);
+  });
+
+  it("prioriza la frase completa sobre la primera palabra suelta (crema vaginal vs crema)", () => {
+    // Dato real de la columna FORMA_FARMACEUTICA de Disfarma.
+    expect(normalizeDosageForm("CREM VAG")).toBe("Crema vaginal");
+    expect(normalizeDosageForm("CREMA VAGINAL")).toBe("Crema vaginal");
+    expect(normalizeDosageForm("CREMA")).toBe("Crema");
   });
 });
 
