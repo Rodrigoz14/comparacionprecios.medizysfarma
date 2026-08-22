@@ -232,7 +232,23 @@ export function extractProductAttributes(
   const warnings: string[] = [];
 
   const concentrationMatch = CONCENTRATION_RE.exec(upper);
-  const presentationCandidates = [...upper.matchAll(PRESENTATION_QTY_RE)];
+  // Cuando alguien escribe "Esomeprazol x 40 mg" usando "x" como separador
+  // antes de la dosis (no como multiplicador de empaque), PRESENTATION_QTY_RE
+  // igual encuentra "X 40" ahí mismo, sin unidad propia (MG no es ML/L/G),
+  // porque el número de la concentración también le sirve de cantidad. Ese
+  // conteo sin unidad se descarta cuando cae justo sobre la concentración,
+  // dejando un "X" pegado al principio activo ("ESOMEPRAZOL X") y rompiendo
+  // la búsqueda. No se aplica a coincidencias CON unidad propia (p. ej. "LATA
+  // X 400G" de una fórmula infantil), donde el mismo número sí describe
+  // legítimamente tanto la "concentración" como el peso del envase.
+  const concentrationStart = concentrationMatch?.index ?? -1;
+  const concentrationEnd = concentrationMatch ? concentrationStart + concentrationMatch[0].length : -1;
+  const presentationCandidates = [...upper.matchAll(PRESENTATION_QTY_RE)].filter((m) => {
+    if (m[2]) return true;
+    const start = m.index;
+    const end = start + m[0].length;
+    return end <= concentrationStart || start >= concentrationEnd;
+  });
   // Cuando hay varias coincidencias (p. ej. "C*1 FCO X 240ML"), se prefiere
   // la que trae volumen/peso explícito sobre un conteo de envases genérico.
   const presentationMatch =
@@ -286,11 +302,17 @@ export function extractProductAttributes(
   // primer número dentro del paréntesis deja un "(" colgando al final. Se
   // recorta esa puntuación suelta para no arrastrarla como si fuera parte del
   // nombre del ingrediente (confirmado en datos reales de varios combinados).
+  // Además, cuando alguien escribe "Esomeprazol x 40 mg" usando "x" como
+  // separador antes de la dosis (no como multiplicador de empaque), ese "X"
+  // suelto queda pegado justo antes del corte; ningún principio activo real
+  // termina en una "X" o "*" aislada, así que se recorta igual que la
+  // puntuación (dato real: búsquedas de clientes con Esomeprazol).
   const activeIngredient = upper
     .slice(0, cutIndex)
     .trim()
     .replace(/\s+/g, " ")
     .replace(/[+(),./-]+$/, "")
+    .replace(/\s[X*]$/, "")
     .trim();
 
   if (!activeIngredient) {

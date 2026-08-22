@@ -151,6 +151,31 @@ describe("extractProductAttributes", () => {
     it("sigue exigiendo presentacion por defecto (importacion de proveedores)", () => {
       expect(extractProductAttributes("ACIDO VALPROICO 250MG CAPSULA")).toBeNull();
     });
+
+    it("no confunde la 'x' usada como separador antes de la dosis con un multiplicador de empaque", () => {
+      // Bug real: "Esomeprazol x 40 mg" no encontraba nada porque la "X"
+      // quedaba pegada al principio activo extraido ("ESOMEPRAZOL X"), ya que
+      // el mismo numero de la concentracion tambien calzaba con el patron de
+      // cantidad de presentacion ("X 40").
+      const result = extractProductAttributes("Esomeprazol x 40 mg", { requirePresentation: false });
+      expect(result).not.toBeNull();
+      expect(result?.attributes).toMatchObject({
+        activeIngredient: "ESOMEPRAZOL",
+        concentration: "40",
+        concentrationUnit: "MG",
+        presentationQuantity: 1,
+      });
+    });
+
+    it("sigue reconociendo un multiplicador de empaque legitimo aunque comparta digitos con la concentracion (LATA X 400G)", () => {
+      const result = extractProductAttributes(
+        "APME EN POLVO FORMULA POLIMERICA PARA NINOS LATA X 400G",
+        { requirePresentation: false },
+      );
+      expect(result).not.toBeNull();
+      expect(result?.attributes.presentationQuantity).toBe(400);
+      expect(result?.attributes.presentationUnit).toBe("g");
+    });
   });
 
   it("reconoce 'CAP' como abreviatura de capsula (visto en datos reales de Disfarma)", () => {
