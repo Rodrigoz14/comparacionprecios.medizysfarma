@@ -42,6 +42,8 @@ export interface ScoredCandidate {
   viaFuzzyMatch: boolean;
   /** true si se encontró porque todas las palabras buscadas están contenidas en un principio activo con palabras adicionales (p. ej. buscar "Hidroxido de aluminio + Simeticona" encuentra "Aluminio Hidroxido + Magnesio Hidroxido + Simeticona"), no por texto exacto ni sinónimo controlado. */
   viaSubsetMatch: boolean;
+  /** true si se encontró por el nombre comercial (marca) entre paréntesis en el nombre del proveedor, no por principio activo. */
+  viaBrandMatch: boolean;
 }
 
 export interface MatchResult {

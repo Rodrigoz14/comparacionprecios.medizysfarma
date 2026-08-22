@@ -30,7 +30,7 @@ function dedupeByGenericKey(scored: ScoredCandidate[], limit = 8): ScoredCandida
   return result;
 }
 
-function toGuessCandidate(product: CandidateProduct, viaSubsetMatch = false): ScoredCandidate {
+function toGuessCandidate(product: CandidateProduct, viaSubsetMatch = false, viaBrandMatch = false): ScoredCandidate {
   return {
     product,
     comparison: { activeIngredientMatch: true, concentrationMatch: false, dosageFormMatch: false, presentationMatch: false },
@@ -38,6 +38,7 @@ function toGuessCandidate(product: CandidateProduct, viaSubsetMatch = false): Sc
     viaSynonym: false,
     viaFuzzyMatch: false,
     viaSubsetMatch,
+    viaBrandMatch,
   };
 }
 
@@ -106,17 +107,22 @@ async function resolveProductMatchCore(rawText: string): Promise<MatchResult> {
     if (ingredientGuess) {
       const found = await searchCandidatesByIngredientText(ingredientGuess);
       if (found.length > 0) {
-        const candidates = dedupeByGenericKey(found.map((f) => toGuessCandidate(f.product, f.viaSubsetMatch)));
+        const candidates = dedupeByGenericKey(
+          found.map((f) => toGuessCandidate(f.product, f.viaSubsetMatch, f.viaBrandMatch)),
+        );
         const concentrations = [...new Set(found.map((f) => `${f.product.concentration}${f.product.concentrationUnit}`))];
         const viaFuzzy = found.some((f) => f.viaFuzzyMatch);
         const viaSubset = found.some((f) => f.viaSubsetMatch);
+        const viaBrand = found.some((f) => f.viaBrandMatch);
         return {
           decision: "REVIEW",
           confidence: 0,
           matchedProductIds: [],
           candidates,
           reasons: [
-            `No se especificó la concentración de "${ingredientGuess}". Concentraciones disponibles: ${concentrations.join(", ")}. Elige la opción correcta.`,
+            viaBrand
+              ? `"${ingredientGuess}" no coincide con ningún principio activo, pero sí con el nombre comercial de estas opciones — confírmalo antes de cotizar.`
+              : `No se especificó la concentración de "${ingredientGuess}". Concentraciones disponibles: ${concentrations.join(", ")}. Elige la opción correcta.`,
             ...(viaFuzzy
               ? [`Se muestran principios activos con escritura parecida a "${ingredientGuess}" por si hubo un error de tipeo — confírmalo antes de cotizar.`]
               : []),
@@ -165,15 +171,16 @@ async function resolveProductMatchCore(rawText: string): Promise<MatchResult> {
   }
 
   const scored: ScoredCandidate[] = found
-    .map(({ product, viaSynonym, viaFuzzyMatch, viaSubsetMatch }) => {
+    .map(({ product, viaSynonym, viaFuzzyMatch, viaSubsetMatch, viaBrandMatch }) => {
       const comparison = compareAttributes(extraction.attributes, product);
       return {
         product,
         comparison,
-        score: scoreComparison(comparison, !viaSynonym && !viaFuzzyMatch && !viaSubsetMatch),
+        score: scoreComparison(comparison, !viaSynonym && !viaFuzzyMatch && !viaSubsetMatch && !viaBrandMatch),
         viaSynonym,
         viaFuzzyMatch,
         viaSubsetMatch,
+        viaBrandMatch,
       };
     })
     .sort((a, b) => b.score - a.score);
@@ -187,6 +194,12 @@ async function resolveProductMatchCore(rawText: string): Promise<MatchResult> {
   const subsetIngredientNote = scored.some((c) => c.viaSubsetMatch)
     ? [
         `No se encontró "${extraction.attributes.activeIngredient}" tal cual en el catálogo; se muestran combinados que lo incluyen junto con otros principios activos adicionales — confírmalo antes de cotizar.`,
+      ]
+    : [];
+
+  const brandMatchNote = scored.some((c) => c.viaBrandMatch)
+    ? [
+        `"${extraction.attributes.activeIngredient}" no coincide con ningún principio activo; se muestran productos cuyo nombre comercial se le parece — confírmalo antes de cotizar.`,
       ]
     : [];
 
@@ -206,7 +219,9 @@ async function resolveProductMatchCore(rawText: string): Promise<MatchResult> {
     // si el ingrediente se identificó con certeza (texto exacto): si vino por
     // sinónimo o por tolerancia a typos, la identidad del principio activo ya
     // es incierta y no se debe sumar una segunda suposición (la forma) encima.
-    const allExactIngredient = concentrationMatches.every((c) => !c.viaSynonym && !c.viaFuzzyMatch && !c.viaSubsetMatch);
+    const allExactIngredient = concentrationMatches.every(
+      (c) => !c.viaSynonym && !c.viaFuzzyMatch && !c.viaSubsetMatch && !c.viaBrandMatch,
+    );
 
     if (distinctForms.size === 1 && allExactIngredient) {
       return {
@@ -251,7 +266,7 @@ async function resolveProductMatchCore(rawText: string): Promise<MatchResult> {
         confidence: concentrationMatches[0].score,
         matchedProductIds: [],
         candidates: dedupeByGenericKey(concentrationMatches),
-        reasons: [...reasons, ...fuzzyIngredientNote, ...subsetIngredientNote],
+        reasons: [...reasons, ...fuzzyIngredientNote, ...subsetIngredientNote, ...brandMatchNote],
         source: aiResult ? "ai" : "deterministic",
       };
     }
@@ -282,7 +297,7 @@ async function resolveProductMatchCore(rawText: string): Promise<MatchResult> {
       confidence: best.score,
       matchedProductIds: [],
       candidates: dedupeByGenericKey(scored),
-      reasons: [describeMatch(best), ...fuzzyIngredientNote, ...subsetIngredientNote],
+      reasons: [describeMatch(best), ...fuzzyIngredientNote, ...subsetIngredientNote, ...brandMatchNote],
       source: "deterministic",
     };
   }
@@ -313,7 +328,7 @@ async function resolveProductMatchCore(rawText: string): Promise<MatchResult> {
       confidence: aiResult.confidence,
       matchedProductIds: [],
       candidates: dedupeByGenericKey(scored),
-      reasons: [...aiResult.reasons, ...fuzzyIngredientNote, ...subsetIngredientNote],
+      reasons: [...aiResult.reasons, ...fuzzyIngredientNote, ...subsetIngredientNote, ...brandMatchNote],
       source: "ai",
     };
   }
@@ -323,7 +338,7 @@ async function resolveProductMatchCore(rawText: string): Promise<MatchResult> {
     confidence: best.score,
     matchedProductIds: [],
     candidates: dedupeByGenericKey(scored),
-    reasons: aiResult ? aiResult.reasons : [describeMatch(best), "Requiere revisión humana.", ...fuzzyIngredientNote, ...subsetIngredientNote],
+    reasons: aiResult ? aiResult.reasons : [describeMatch(best), "Requiere revisión humana.", ...fuzzyIngredientNote, ...subsetIngredientNote, ...brandMatchNote],
     source: aiResult ? "ai" : "deterministic",
   };
 }

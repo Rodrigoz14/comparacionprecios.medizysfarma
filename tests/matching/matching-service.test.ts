@@ -336,6 +336,50 @@ describe("resolveProductMatch (subconjunto de palabras: combinado con un compone
   });
 });
 
+// Bug real reportado por el cliente: buscar "Verodual" no encontraba nada,
+// aunque el producto existe con el nombre comercial "BERODUAL" (confundido
+// por el mismo sonido de B/V en español) entre paréntesis en los datos de
+// Disfarma ("...FCO X 20ML (BERODUAL) - BOEHRINGER"). Se usa un principio
+// activo y una marca ficticios para no depender de datos reales.
+describe("resolveProductMatch (nombre comercial entre parentesis, no principio activo)", () => {
+  const productIds: string[] = [];
+  const laboratoryIds: string[] = [];
+
+  beforeAll(async () => {
+    const product = await createProduct(
+      "ZOLTRAXAMINA 5MG SOLUCION PARA INHALACION FCO X20ML (ZOLTRODUAL) - TestLab Zoltrodual",
+      "TestLab Zoltrodual",
+    );
+    productIds.push(product.id);
+    laboratoryIds.push(product.laboratoryId!);
+  });
+
+  afterAll(async () => {
+    await prisma.product.deleteMany({ where: { id: { in: productIds } } });
+    await prisma.laboratory.deleteMany({ where: { id: { in: laboratoryIds } } });
+  });
+
+  it("encuentra el producto por su nombre comercial, aunque no coincida con ningun principio activo", async () => {
+    const result = await resolveProductMatch("Zoltrodual solución para nebulizar");
+    expect(result.decision).toBe("REVIEW");
+    const foundIds = result.candidates.map((c) => c.product.id);
+    expect(foundIds).toEqual(expect.arrayContaining([productIds[0]]));
+    expect(result.reasons.join(" ")).toMatch(/nombre comercial/i);
+  });
+
+  it("tolera un error de tipeo/transcripcion en el nombre comercial (p. ej. confusion B/V)", async () => {
+    const result = await resolveProductMatch("Zeltrodual solución para nebulizar");
+    const foundIds = result.candidates.map((c) => c.product.id);
+    expect(foundIds).toEqual(expect.arrayContaining([productIds[0]]));
+  });
+
+  it("nunca es MATCH automatico solo por nombre comercial (requiere revision humana)", async () => {
+    const result = await resolveProductMatch("Zoltrodual solución para nebulizar");
+    expect(result.decision).not.toBe("MATCH");
+    expect(result.matchedProductIds).toEqual([]);
+  });
+});
+
 // Pedido explícito del cliente: no ofrecer para elegir una opción que ningún
 // proveedor tiene en existencia — sería un callejón sin salida.
 describe("resolveProductMatch (no ofrece opciones sin existencia confirmada)", () => {

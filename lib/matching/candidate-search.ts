@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db/client";
 import { fuzzyIngredientThreshold, levenshteinDistance } from "@/lib/matching/fuzzy";
-import { canonicalizeIngredient, normalizeText } from "@/lib/matching/normalize";
+import { canonicalizeIngredient, normalizeText, stripAccents } from "@/lib/matching/normalize";
 import { expandIngredientTerms } from "@/lib/matching/synonym-service";
 import type { CandidateProduct, ExtractedAttributes } from "@/lib/matching/types";
 
@@ -12,6 +12,24 @@ export interface CandidateSearchResult {
   viaFuzzyMatch: boolean;
   /** true si se encontró porque todas las palabras buscadas están contenidas en un principio activo con palabras adicionales. */
   viaSubsetMatch: boolean;
+  /** true si se encontró por el nombre comercial (marca) entre paréntesis en el nombre del proveedor, no por principio activo. */
+  viaBrandMatch: boolean;
+}
+
+/**
+ * Los proveedores agregan el nombre comercial entre paréntesis al final del
+ * nombre del producto (p. ej. "...FCO X 20ML (BERODUAL) - BOEHRINGER"), casi
+ * siempre el ÚLTIMO paréntesis del texto — los anteriores suelen ser
+ * concentraciones combinadas ("(0.50MG+0.25MG)") o volúmenes ("(10ML)"), que
+ * se descartan exigiendo que el contenido tenga al menos 3 letras seguidas
+ * (una concentración no las tiene: "MG"/"ML" son solo 2).
+ */
+function extractBrandFromStandardName(standardName: string): string | null {
+  const matches = [...standardName.matchAll(/\(([^()]+)\)/g)];
+  if (matches.length === 0) return null;
+  const last = matches[matches.length - 1][1].trim();
+  if (!/[A-Z]{3,}/i.test(last)) return null;
+  return stripAccents(last).toUpperCase();
 }
 
 /**
@@ -46,6 +64,7 @@ export async function searchCandidatesByIngredientText(rawIngredient: string): P
       viaSynonym: canonicalizeIngredient(product.activeIngredient) !== canonicalizeIngredient(rawIngredient),
       viaFuzzyMatch: false,
       viaSubsetMatch: false,
+      viaBrandMatch: false,
     }));
   }
 
@@ -87,6 +106,7 @@ export async function searchCandidatesByIngredientText(rawIngredient: string): P
         viaSynonym: false,
         viaFuzzyMatch: false,
         viaSubsetMatch: true,
+        viaBrandMatch: false,
       }));
     }
   }
@@ -103,17 +123,54 @@ export async function searchCandidatesByIngredientText(rawIngredient: string): P
     .map((row) => row.ingredientKey)
     .filter((key) => key.length > 0 && levenshteinDistance(queryKey, key) <= threshold);
 
-  if (closeKeys.length === 0) return [];
+  if (closeKeys.length > 0) {
+    const fuzzyProducts = await prisma.product.findMany({
+      where: { status: "ACTIVE", ingredientKey: { in: closeKeys } },
+    });
 
-  const fuzzyProducts = await prisma.product.findMany({
-    where: { status: "ACTIVE", ingredientKey: { in: closeKeys } },
+    return fuzzyProducts.map((product) => ({
+      product: toCandidateProduct(product),
+      viaSynonym: false,
+      viaFuzzyMatch: true,
+      viaSubsetMatch: false,
+      viaBrandMatch: false,
+    }));
+  }
+
+  // Nada por principio activo, ni exacto ni con tolerancia: el cliente a
+  // veces solo conoce el nombre comercial, no el principio activo (bug real:
+  // buscar "Verodual" -- en realidad "Berodual", confundido por el mismo
+  // sonido de B/V en español -- no encontraba nada, aunque el producto
+  // existe con el nombre comercial "BERODUAL" entre paréntesis en los datos
+  // de Disfarma). Se compara contra la marca extraída de cada producto,
+  // tolerando typos/mal transcripción igual que con el principio activo.
+  // Nunca es MATCH automático (matching-service.ts lo obliga a REVIEW).
+  const queryBrand = stripAccents(rawIngredient).toUpperCase().trim();
+  if (queryBrand.length < 3) return [];
+
+  const allActiveProducts = await prisma.product.findMany({
+    where: { status: "ACTIVE" },
+    select: { id: true, standardName: true },
+  });
+  const brandThreshold = fuzzyIngredientThreshold(queryBrand.length);
+  const brandMatchIds = allActiveProducts
+    .map((p) => ({ id: p.id, brand: extractBrandFromStandardName(p.standardName) }))
+    .filter((p): p is { id: string; brand: string } => p.brand !== null)
+    .filter((p) => levenshteinDistance(queryBrand, p.brand) <= brandThreshold)
+    .map((p) => p.id);
+
+  if (brandMatchIds.length === 0) return [];
+
+  const brandProducts = await prisma.product.findMany({
+    where: { status: "ACTIVE", id: { in: brandMatchIds } },
   });
 
-  return fuzzyProducts.map((product) => ({
+  return brandProducts.map((product) => ({
     product: toCandidateProduct(product),
     viaSynonym: false,
-    viaFuzzyMatch: true,
+    viaFuzzyMatch: false,
     viaSubsetMatch: false,
+    viaBrandMatch: true,
   }));
 }
 
