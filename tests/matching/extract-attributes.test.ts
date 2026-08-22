@@ -282,6 +282,17 @@ describe("buildGenericKey", () => {
     expect(buildGenericKey(disfarma!.attributes)).toBe(buildGenericKey(ramedicas!.attributes));
   });
 
+  it("ignora la preposicion 'de'/'del' al comparar principios activos", () => {
+    // Bug real: el cliente busco "Pamoato de pirantel suspension" y no
+    // encontro nada, porque el catalogo tiene el producto como "PAMOATO
+    // PIRANTEL" (sin "de"). El patron quimico en espanol "[Radical] de
+    // [Base]" (Cloruro de Sodio, Bromuro de Tiotropio, etc.) se escribe de
+    // forma inconsistente entre proveedores y clientes.
+    const conDe = extractProductAttributes("PAMOATO DE PIRANTEL 250MG SUSPENSION X15");
+    const sinDe = extractProductAttributes("PAMOATO PIRANTEL 250MG SUSPENSION X15");
+    expect(buildGenericKey(conDe!.attributes)).toBe(buildGenericKey(sinDe!.attributes));
+  });
+
   it("ignora un '+' suelto entre principios activos separados por espacio", () => {
     // Bug real: "ALUMINIO HIDROXIDO + MAGNESIO + SIMETICONA" (con espacios
     // alrededor del "+") dejaba el "+" como si fuera una palabra mas del

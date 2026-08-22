@@ -247,22 +247,31 @@ describe("resolveProductMatch (tolerancia a errores de tipeo en el ingrediente)"
 // palabras, orden distinto), aquí ni siquiera es el mismo conjunto de
 // palabras -- ordenar alfabéticamente no basta para unificarlas, hace falta
 // un sinónimo controlado explícito (igual que paracetamol/acetaminofén).
+//
+// El fixture original usaba "de" como la palabra que creaba el conjunto
+// distinto (igual que el caso real de Hioscina), pero canonicalizeIngredient
+// ahora filtra "de"/"del" (ver normalize.ts), así que esa palabra ya no basta
+// para diferenciar los conjuntos -- se usa en su lugar una palabra compuesta
+// pegada vs. separada ("BUTILBROMURO" vs "BROMURO BUTIL"), que replica el
+// mismo problema real (palabras fusionadas vs. separadas, aún sin resolver
+// de forma general) y sigue exigiendo el sinónimo.
 describe("resolveProductMatch (sinonimos con distinto conjunto de palabras, no solo distinto orden)", () => {
   const productIds: string[] = [];
   const laboratoryIds: string[] = [];
-  const synonymTerms = ["zoltraxina butil bromuro", "zoltraxina"];
+  const synonymTerms = ["zoltraxina bromuro butil", "zoltraxina"];
 
   beforeAll(async () => {
-    // "BROMURO BUTIL DE ZOLTRAXINA" (con "de") vs "ZOLTRAXINA BROMURO BUTIL"
-    // (sin "de"): mismo principio activo ficticio, distinto conjunto de
-    // palabras -- el mismo patrón real de Hioscina, con nombres inventados
-    // para no depender de datos reales ni de ediciones futuras del seed.
-    const conDe = await createProduct("BROMURO BUTIL DE ZOLTRAXINA 10MG TABLETA X30", "TestLab Zoltraxina Disfarma");
-    const sinDe = await createProduct("ZOLTRAXINA BROMURO BUTIL 10MG TABLETA X30", "TestLab Zoltraxina Ramedicas");
-    productIds.push(conDe.id, sinDe.id);
-    laboratoryIds.push(conDe.laboratoryId!, sinDe.laboratoryId!);
+    // "BUTILBROMURO ZOLTRAXINA" (palabra fusionada) vs "ZOLTRAXINA BROMURO
+    // BUTIL" (palabras separadas): mismo principio activo ficticio, distinto
+    // conjunto de palabras -- el mismo patrón real de Hioscina, con nombres
+    // inventados para no depender de datos reales ni de ediciones futuras
+    // del seed.
+    const fusionada = await createProduct("BUTILBROMURO ZOLTRAXINA 10MG TABLETA X30", "TestLab Zoltraxina Disfarma");
+    const separada = await createProduct("ZOLTRAXINA BROMURO BUTIL 10MG TABLETA X30", "TestLab Zoltraxina Ramedicas");
+    productIds.push(fusionada.id, separada.id);
+    laboratoryIds.push(fusionada.laboratoryId!, separada.laboratoryId!);
 
-    const canonical = canonicalizeIngredient("BROMURO BUTIL DE ZOLTRAXINA");
+    const canonical = canonicalizeIngredient("BUTILBROMURO ZOLTRAXINA");
     for (const term of synonymTerms) {
       await prisma.ingredientSynonym.upsert({
         where: { term },

@@ -29,11 +29,23 @@ export function normalizeText(value: string): string {
  * cortar el nombre del producto) termina con "+" o "(" como si fueran una
  * palabra más del ingrediente, ensuciando la clave — confirmado en datos
  * reales: le pasaba a decenas de productos combinados de ambos proveedores.
+ *
+ * También se descartan las preposiciones "de"/"del": el patrón químico en
+ * español "[Radical] de [Base]" (p. ej. "Cloruro de Sodio", "Bromuro de
+ * Tiotropio", "Sulfato de Zinc") se escribe de forma inconsistente entre
+ * proveedores y clientes — a veces con "de", a veces sin (confirmado en
+ * datos reales: 697 productos del catálogo, ~6% del total, donde la misma
+ * sustancia aparece escrita de ambas formas). Solo se filtran estas dos
+ * palabras, no otras preposiciones/conectores en español ("y", "a", "la"),
+ * porque esas sí pueden ser parte real de un nombre (p. ej. "Vitamina A").
  */
+const IGNORED_CONNECTOR_WORDS = new Set(["de", "del"]);
+
 export function canonicalizeIngredient(activeIngredient: string): string {
   return normalizeText(activeIngredient)
     .split(" ")
     .filter((word) => /[a-z]/.test(word))
+    .filter((word) => !IGNORED_CONNECTOR_WORDS.has(word))
     .sort()
     .join(" ");
 }
