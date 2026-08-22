@@ -193,6 +193,11 @@ describe("extractProductAttributes", () => {
     });
   });
 
+  it("reconoce el tipo de empaque en plural, no solo en singular", () => {
+    const result = extractProductAttributes("POLIETILENGLICOL 3350 17G POL ORL SOBRES X10");
+    expect(result?.attributes.presentationType).toBe("Sobre");
+  });
+
   it("reconoce 'CAP' como abreviatura de capsula (visto en datos reales de Disfarma)", () => {
     const result = extractProductAttributes("ACIDO VALPROICO 250MG FCO*50 CAP");
     expect(result?.attributes.dosageForm).toBe("Cápsula");
@@ -266,6 +271,15 @@ describe("extractProductAttributes", () => {
 
   it("sigue descartando la busqueda si el digito no es parte de una cantidad de presentacion reconocida", () => {
     expect(extractIngredientGuess("Amoxicilina 500 suspension")).toBeNull();
+  });
+
+  it("corta el ingrediente en una palabra de empaque aunque no sea una forma farmaceutica ('sobres')", () => {
+    // Bug real: el cliente busco "Polietilenglicol sobres" y no encontro
+    // nada, porque "sobres" no es una forma farmaceutica reconocida (es
+    // empaque, no dosis) y se quedaba pegada al ingrediente extraido
+    // ("POLIETILENGLICOL SOBRES"), sin coincidir con la clave real del
+    // catalogo ("polietilenglicol" a secas).
+    expect(extractIngredientGuess("Polietilenglicol sobres")).toBe("POLIETILENGLICOL");
   });
 });
 

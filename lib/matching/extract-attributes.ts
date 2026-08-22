@@ -110,10 +110,15 @@ const COMPOUND_DOSAGE_FORM_MAP: [string, string][] = [
 
 const PRESENTATION_TYPE_MAP: Record<string, string> = {
   CAJA: "Caja",
+  CAJAS: "Caja",
   FRASCO: "Frasco",
+  FRASCOS: "Frasco",
   BLISTER: "Blíster",
+  BLISTERES: "Blíster",
   SOBRE: "Sobre",
+  SOBRES: "Sobre",
   TUBO: "Tubo",
+  TUBOS: "Tubo",
 };
 
 const PRESENTATION_UNIT_BY_FORM: Record<string, string> = {
@@ -226,7 +231,25 @@ export function extractIngredientGuess(rawText: string): string | null {
   if (/\d/.test(withoutPresentation)) return null;
 
   const formMatch = matchDosageForm(withoutPresentation);
-  const ingredient = (formMatch ? withoutPresentation.slice(0, formMatch.index) : withoutPresentation).trim();
+  // Una palabra de empaque ("sobres", "frascos"...) no es una forma
+  // farmacéutica, pero igual marca dónde termina el nombre del ingrediente:
+  // sin esto, "Polietilenglicol sobres" quedaba como ingrediente completo
+  // ("POLIETILENGLICOL SOBRES"), sin coincidir con la clave real del
+  // catálogo ("polietilenglicol" a secas) — bug real reportado por el cliente.
+  const packagingTokens = withoutPresentation.split(/[^A-ZÁÉÍÓÚÑ]+/).filter(Boolean);
+  let packagingIndex = -1;
+  for (const token of packagingTokens) {
+    if (PRESENTATION_TYPE_MAP[token]) {
+      packagingIndex = withoutPresentation.indexOf(token);
+      break;
+    }
+  }
+
+  const candidateIndexes = [formMatch?.index, packagingIndex >= 0 ? packagingIndex : undefined].filter(
+    (i): i is number => i !== undefined,
+  );
+  const cutIndex = candidateIndexes.length > 0 ? Math.min(...candidateIndexes) : -1;
+  const ingredient = (cutIndex >= 0 ? withoutPresentation.slice(0, cutIndex) : withoutPresentation).trim();
   return ingredient || null;
 }
 
