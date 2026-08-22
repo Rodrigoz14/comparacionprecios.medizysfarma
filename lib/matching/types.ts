@@ -40,6 +40,8 @@ export interface ScoredCandidate {
   viaSynonym: boolean;
   /** true si se encontró tolerando un posible error de tipeo/OCR (p. ej. "valprico" por "valproico"), no por texto exacto ni sinónimo controlado. */
   viaFuzzyMatch: boolean;
+  /** true si se encontró porque todas las palabras buscadas están contenidas en un principio activo con palabras adicionales (p. ej. buscar "Hidroxido de aluminio + Simeticona" encuentra "Aluminio Hidroxido + Magnesio Hidroxido + Simeticona"), no por texto exacto ni sinónimo controlado. */
+  viaSubsetMatch: boolean;
 }
 
 export interface MatchResult {

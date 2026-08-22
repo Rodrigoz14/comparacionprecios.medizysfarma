@@ -10,6 +10,8 @@ export interface CandidateSearchResult {
   viaSynonym: boolean;
   /** true si se encontró tolerando un posible error de tipeo/OCR, no por el texto exacto ni un sinónimo controlado. */
   viaFuzzyMatch: boolean;
+  /** true si se encontró porque todas las palabras buscadas están contenidas en un principio activo con palabras adicionales. */
+  viaSubsetMatch: boolean;
 }
 
 /**
@@ -43,21 +45,58 @@ export async function searchCandidatesByIngredientText(rawIngredient: string): P
       // ingrediente ("ACIDO VALPROICO" vs "VALPROICO ACIDO") no lo es.
       viaSynonym: canonicalizeIngredient(product.activeIngredient) !== canonicalizeIngredient(rawIngredient),
       viaFuzzyMatch: false,
+      viaSubsetMatch: false,
     }));
   }
 
-  // Nada por texto exacto ni sinónimo: se intenta con tolerancia a errores de
-  // tipeo/OCR (p. ej. "valprico" en vez de "valproico"), comparando contra los
-  // ingredientKey realmente existentes en el catálogo. Nunca se auto-confirma
-  // un match encontrado así (matching-service.ts lo obliga a REVIEW): es una
-  // ayuda para no perder la búsqueda por una letra, no una inferencia de que
-  // dos sustancias distintas son la misma.
   const distinctIngredientKeys = await prisma.product.findMany({
     where: { status: "ACTIVE" },
     distinct: ["ingredientKey"],
     select: { ingredientKey: true },
   });
 
+  // Nada por texto exacto ni sinónimo: un combinado real a veces se busca sin
+  // mencionar todos sus componentes (p. ej. "Hidroxido de aluminio +
+  // Simeticona" para un producto real que también lleva "Magnesio
+  // Hidroxido" — bug real reportado por el cliente). Si TODAS las palabras
+  // buscadas están contenidas en la clave de un candidato (nunca al revés:
+  // no se adivina un ingrediente que el cliente no mencionó), se ofrece para
+  // revisión humana, nunca como MATCH automático (matching-service.ts lo
+  // obliga a REVIEW igual que la tolerancia a typos). Se exige un mínimo de 2
+  // palabras en la búsqueda y un máximo de 2 palabras adicionales en el
+  // candidato para no disparar con un solo ingrediente común compartido por
+  // decenas de combinados no relacionados.
+  const queryWords = (ingredientKeys[0] ?? "").split(" ").filter(Boolean);
+  if (queryWords.length >= 2) {
+    const subsetKeys = distinctIngredientKeys
+      .map((row) => row.ingredientKey)
+      .filter((key) => {
+        if (!key) return false;
+        const candidateWords = key.split(" ").filter(Boolean);
+        if (candidateWords.length <= queryWords.length) return false;
+        if (candidateWords.length - queryWords.length > 2) return false;
+        return queryWords.every((word) => candidateWords.includes(word));
+      });
+
+    if (subsetKeys.length > 0) {
+      const subsetProducts = await prisma.product.findMany({
+        where: { status: "ACTIVE", ingredientKey: { in: subsetKeys } },
+      });
+      return subsetProducts.map((product) => ({
+        product: toCandidateProduct(product),
+        viaSynonym: false,
+        viaFuzzyMatch: false,
+        viaSubsetMatch: true,
+      }));
+    }
+  }
+
+  // Tampoco hay coincidencia de subconjunto: se intenta con tolerancia a
+  // errores de tipeo/OCR (p. ej. "valprico" en vez de "valproico"),
+  // comparando contra los ingredientKey realmente existentes en el catálogo.
+  // Nunca se auto-confirma un match encontrado así (matching-service.ts lo
+  // obliga a REVIEW): es una ayuda para no perder la búsqueda por una letra,
+  // no una inferencia de que dos sustancias distintas son la misma.
   const queryKey = ingredientKeys[0];
   const threshold = fuzzyIngredientThreshold(queryKey.length);
   const closeKeys = distinctIngredientKeys
@@ -74,6 +113,7 @@ export async function searchCandidatesByIngredientText(rawIngredient: string): P
     product: toCandidateProduct(product),
     viaSynonym: false,
     viaFuzzyMatch: true,
+    viaSubsetMatch: false,
   }));
 }
 

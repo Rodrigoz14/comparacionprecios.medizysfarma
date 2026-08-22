@@ -295,6 +295,47 @@ describe("resolveProductMatch (sinonimos con distinto conjunto de palabras, no s
   });
 });
 
+// Bug real reportado por el cliente: buscar "Hidroxido de aluminio +
+// Simeticona suspension" no encontraba nada, aunque el producto real del
+// catálogo (Disfarma, código 320243) lleva un tercer componente que el
+// cliente no mencionó: "Aluminio Hidroxido + Magnesio Hidroxido +
+// Simeticona". Se usa un principio activo ficticio para no depender de datos
+// reales ni de ediciones futuras del seed.
+describe("resolveProductMatch (subconjunto de palabras: combinado con un componente no mencionado)", () => {
+  const productIds: string[] = [];
+  const laboratoryIds: string[] = [];
+
+  beforeAll(async () => {
+    const combinado = await createProduct("ZOLTRAXINA + MEGATROLINA + SIMETIFENOL 4G SUSPENSION X240ML", "TestLab Zoltraxina Combinado");
+    productIds.push(combinado.id);
+    laboratoryIds.push(combinado.laboratoryId!);
+  });
+
+  afterAll(async () => {
+    await prisma.product.deleteMany({ where: { id: { in: productIds } } });
+    await prisma.laboratory.deleteMany({ where: { id: { in: laboratoryIds } } });
+  });
+
+  it("encuentra el combinado real aunque la busqueda omita uno de sus componentes", async () => {
+    const result = await resolveProductMatch("Zoltraxina + Simetifenol suspensión x 360 ml");
+    expect(result.decision).toBe("REVIEW");
+    const foundIds = result.candidates.map((c) => c.product.id);
+    expect(foundIds).toEqual(expect.arrayContaining([productIds[0]]));
+    expect(result.reasons.join(" ")).toMatch(/principios activos adicionales/i);
+  });
+
+  it("nunca es MATCH automatico solo por subconjunto de palabras (requiere revision humana)", async () => {
+    const result = await resolveProductMatch("Zoltraxina + Simetifenol suspensión x 360 ml");
+    expect(result.decision).not.toBe("MATCH");
+    expect(result.matchedProductIds).toEqual([]);
+  });
+
+  it("no encuentra nada si la busqueda menciona un ingrediente que el combinado no tiene", async () => {
+    const result = await resolveProductMatch("Zoltraxina + Ibuprofenol suspensión x 360 ml");
+    expect(result.decision).toBe("NO_MATCH");
+  });
+});
+
 // Pedido explícito del cliente: no ofrecer para elegir una opción que ningún
 // proveedor tiene en existencia — sería un callejón sin salida.
 describe("resolveProductMatch (no ofrece opciones sin existencia confirmada)", () => {

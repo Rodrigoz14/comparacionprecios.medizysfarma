@@ -176,6 +176,21 @@ describe("extractProductAttributes", () => {
       expect(result?.attributes.presentationQuantity).toBe(400);
       expect(result?.attributes.presentationUnit).toBe("g");
     });
+
+    it("no confunde el volumen del envase (ML/L tras 'X'/'*') con la concentracion del medicamento", () => {
+      // Bug real: el cliente busco "Hidroxido de aluminio + Simeticona
+      // suspension x 360 ml" (sin decir la concentracion real) y no
+      // encontro nada, porque "360 ML" (el volumen del frasco) se tomaba
+      // como si fuera la concentracion -- ningun producto real tiene esa
+      // "concentracion", asi que la busqueda siempre fallaba. A diferencia
+      // del peso (G, ver LATA X 400G arriba), un volumen introducido por
+      // "X"/"*" es siempre tamaño de envase, nunca concentracion.
+      expect(
+        extractProductAttributes("Hidróxido de aluminio + simeticona suspensión x 360 ml", {
+          requirePresentation: false,
+        }),
+      ).toBeNull();
+    });
   });
 
   it("reconoce 'CAP' como abreviatura de capsula (visto en datos reales de Disfarma)", () => {
@@ -237,6 +252,20 @@ describe("extractProductAttributes", () => {
     const guess = extractIngredientGuess("Beclometasona inhalador");
     expect(guess).toBe("BECLOMETASONA");
     expect(normalizeDosageForm("inhalador")).toBe("Aerosol inhalador");
+  });
+
+  it("tolera una cantidad de presentacion al final ('X 360 ML') sin descartar la busqueda por tener un digito", () => {
+    // Bug real: "Hidroxido de aluminio + Simeticona suspension x 360 ml" no
+    // daba ninguna opcion, porque extractIngredientGuess descartaba CUALQUIER
+    // texto con un digito -- incluyendo un tamaño de envase reconocido, que
+    // no es una concentracion mal escrita.
+    expect(extractIngredientGuess("Hidróxido de aluminio + simeticona suspensión x 360 ml")).toBe(
+      "HIDROXIDO DE ALUMINIO + SIMETICONA",
+    );
+  });
+
+  it("sigue descartando la busqueda si el digito no es parte de una cantidad de presentacion reconocida", () => {
+    expect(extractIngredientGuess("Amoxicilina 500 suspension")).toBeNull();
   });
 });
 

@@ -213,13 +213,20 @@ export interface ExtractOptions {
  * Deliberadamente conservador: si el texto trae algún dígito, es más probable
  * que la concentración esté mal escrita que que no exista, y adivinar el
  * ingrediente ahí sería más arriesgado que útil — se prefiere no intentarlo.
+ * Excepción: una cantidad de presentación al final ("X 360 ML", "CAJA X 10")
+ * sí se tolera, porque es un patrón reconocido de tamaño de envase, no una
+ * concentración mal escrita (bug real: "Hidroxido de aluminio + Simeticona
+ * suspensión X 360 ml" no debía descartarse solo por el "360").
  */
 export function extractIngredientGuess(rawText: string): string | null {
   const upper = stripAccents(rawText).toUpperCase().replace(CHANNEL_PREFIX_RE, "").trim();
-  if (!upper || /\d/.test(upper)) return null;
+  if (!upper) return null;
 
-  const formMatch = matchDosageForm(upper);
-  const ingredient = (formMatch ? upper.slice(0, formMatch.index) : upper).trim();
+  const withoutPresentation = upper.replace(PRESENTATION_QTY_RE, " ").trim();
+  if (/\d/.test(withoutPresentation)) return null;
+
+  const formMatch = matchDosageForm(withoutPresentation);
+  const ingredient = (formMatch ? withoutPresentation.slice(0, formMatch.index) : withoutPresentation).trim();
   return ingredient || null;
 }
 
@@ -231,7 +238,24 @@ export function extractProductAttributes(
   const upper = stripAccents(rawName).toUpperCase().replace(CHANNEL_PREFIX_RE, "");
   const warnings: string[] = [];
 
-  const concentrationMatch = CONCENTRATION_RE.exec(upper);
+  // Un volumen (ML/L) escrito justo despues de "X"/"*" es SIEMPRE tamaño de
+  // envase ("FRASCO X 360ML"), nunca la concentracion del medicamento -- una
+  // concentracion real nunca se introduce con ese prefijo. Sin este filtro,
+  // una busqueda sin concentracion real (p. ej. "Hidroxido de aluminio +
+  // Simeticona suspension X 360 ML") tomaba el volumen del frasco como si
+  // fuera la concentracion (360ML), y como ningun producto real tiene esa
+  // "concentracion", la busqueda nunca encontraba nada (bug real reportado
+  // por el cliente). No aplica a G (peso): ahí sigue el comportamiento
+  // anterior, porque hay productos reales (formulas/suplementos) sin
+  // concentracion farmacologica propia donde el peso del envase es el unico
+  // dato disponible para construir la clave generica.
+  const concentrationCandidates = [...upper.matchAll(new RegExp(CONCENTRATION_RE.source, "gi"))];
+  const concentrationMatch =
+    concentrationCandidates.find((m) => {
+      const unit = m[2]?.toUpperCase();
+      if (unit !== "ML" && unit !== "L") return true;
+      return !/[X*]\s*$/.test(upper.slice(0, m.index));
+    }) ?? null;
   // Cuando alguien escribe "Esomeprazol x 40 mg" usando "x" como separador
   // antes de la dosis (no como multiplicador de empaque), PRESENTATION_QTY_RE
   // igual encuentra "X 40" ahí mismo, sin unidad propia (MG no es ML/L/G),
