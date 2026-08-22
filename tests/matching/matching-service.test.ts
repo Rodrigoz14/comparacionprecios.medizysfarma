@@ -239,3 +239,49 @@ describe("resolveProductMatch (tolerancia a errores de tipeo en el ingrediente)"
     expect(result.matchedProductIds).toEqual([]);
   });
 });
+
+// Caso real reportado por el cliente: buscar "Hioscina" no encontraba nada,
+// aunque el producto existe en ambos proveedores como "N-Butil Bromuro de
+// Hioscina" (Disfarma) y "Hioscina N-Butil Bromuro" (Ramédicas, sin la
+// preposición "de"). A diferencia de "ácido valproico" (mismo conjunto de
+// palabras, orden distinto), aquí ni siquiera es el mismo conjunto de
+// palabras -- ordenar alfabéticamente no basta para unificarlas, hace falta
+// un sinónimo controlado explícito (igual que paracetamol/acetaminofén).
+describe("resolveProductMatch (sinonimos con distinto conjunto de palabras, no solo distinto orden)", () => {
+  const productIds: string[] = [];
+  const laboratoryIds: string[] = [];
+  const synonymTerms = ["zoltraxina butil bromuro", "zoltraxina"];
+
+  beforeAll(async () => {
+    // "BROMURO BUTIL DE ZOLTRAXINA" (con "de") vs "ZOLTRAXINA BROMURO BUTIL"
+    // (sin "de"): mismo principio activo ficticio, distinto conjunto de
+    // palabras -- el mismo patrón real de Hioscina, con nombres inventados
+    // para no depender de datos reales ni de ediciones futuras del seed.
+    const conDe = await createProduct("BROMURO BUTIL DE ZOLTRAXINA 10MG TABLETA X30", "TestLab Zoltraxina Disfarma");
+    const sinDe = await createProduct("ZOLTRAXINA BROMURO BUTIL 10MG TABLETA X30", "TestLab Zoltraxina Ramedicas");
+    productIds.push(conDe.id, sinDe.id);
+    laboratoryIds.push(conDe.laboratoryId!, sinDe.laboratoryId!);
+
+    const canonical = canonicalizeIngredient("BROMURO BUTIL DE ZOLTRAXINA");
+    for (const term of synonymTerms) {
+      await prisma.ingredientSynonym.upsert({
+        where: { term },
+        update: {},
+        create: { term, canonicalTerm: canonical, source: "test" },
+      });
+    }
+  });
+
+  afterAll(async () => {
+    await prisma.product.deleteMany({ where: { id: { in: productIds } } });
+    await prisma.laboratory.deleteMany({ where: { id: { in: laboratoryIds } } });
+    await prisma.ingredientSynonym.deleteMany({ where: { term: { in: synonymTerms } } });
+  });
+
+  it("una busqueda del nombre base encuentra ambas variantes, sin importar que trian distinto set de palabras", async () => {
+    const result = await resolveProductMatch("ZOLTRAXINA 10MG TABLETA");
+    expect(result.decision).not.toBe("NO_MATCH");
+    const foundIds = result.matchedProductIds.length > 0 ? result.matchedProductIds : result.candidates.map((c) => c.product.id);
+    expect(foundIds).toEqual(expect.arrayContaining([productIds[0], productIds[1]]));
+  });
+});

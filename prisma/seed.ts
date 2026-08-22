@@ -125,6 +125,28 @@ async function main() {
     create: { term: "paracetamol", canonicalTerm: "acetaminofen", source: "INN (manual)" },
   });
 
+  // N-Butil Bromuro de Hioscina (Buscapina): a diferencia de "ácido valproico"
+  // (mismo orden de palabras, distinto arreglo), aquí Ramédicas y Disfarma
+  // ni siquiera usan el mismo CONJUNTO de palabras (con/sin el prefijo "N-",
+  // con/sin la preposición "de"), así que ordenar alfabéticamente no alcanza
+  // para unificarlas — son sinónimos de escritura genuinos, no una variante
+  // de orden. Reportado por el cliente: buscar "Hioscina" no encontraba nada
+  // aunque el producto existe en ambos proveedores.
+  const hioscinaCanonical = "n-butil bromuro de hioscina"; // forma más común en los datos (Disfarma)
+  for (const term of [
+    "hioscina n-butil bromuro",
+    "hioscina butil bromuro",
+    "butilbromuro de hioscina",
+    "hioscina butilbromuro",
+    "hioscina",
+  ]) {
+    await prisma.ingredientSynonym.upsert({
+      where: { term },
+      update: {},
+      create: { term, canonicalTerm: hioscinaCanonical, source: "Variantes reales de Ramédicas/Disfarma (manual)" },
+    });
+  }
+
   console.log("Seed completado: proveedores, laboratorios, productos, ofertas y sinónimos de prueba creados.");
 }
 
