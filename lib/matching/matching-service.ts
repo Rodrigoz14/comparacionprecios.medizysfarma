@@ -41,6 +41,33 @@ function toGuessCandidate(product: CandidateProduct): ScoredCandidate {
 }
 
 /**
+ * No tiene sentido ofrecerle al cliente para elegir una opción que ningún
+ * proveedor tiene en existencia — terminaría en un callejón sin salida. Se
+ * excluyen los candidatos sin ninguna oferta activa y con existencia
+ * confirmada (nunca se asume disponibilidad: "UNKNOWN" no cuenta como
+ * confirmada, igual que en checkAvailability). Si filtrar dejara la lista
+ * vacía, se prefiere mostrar las opciones sin confirmar antes que no mostrar
+ * nada, dejándolo explícito en las razones.
+ */
+async function withStockNoted(candidates: ScoredCandidate[]): Promise<{ candidates: ScoredCandidate[]; note: string[] }> {
+  if (candidates.length === 0) return { candidates, note: [] };
+  const productIds = candidates.map((c) => c.product.id);
+  const stocked = await prisma.supplierOffer.findMany({
+    where: { productId: { in: productIds }, status: "ACTIVE", availability: "AVAILABLE" },
+    select: { productId: true },
+    distinct: ["productId"],
+  });
+  const stockedIds = new Set(stocked.map((s) => s.productId));
+  const inStock = candidates.filter((c) => stockedIds.has(c.product.id));
+
+  if (inStock.length > 0) return { candidates: inStock, note: [] };
+  return {
+    candidates,
+    note: ["Ninguna de las opciones encontradas tiene existencia confirmada con algún proveedor por ahora; verifícalo antes de cotizar."],
+  };
+}
+
+/**
  * Resuelve a qué producto(s) del catálogo corresponde un texto libre (lo que
  * escribió un cliente, o la descripción de un proveedor). Sigue la arquitectura
  * de la Sección 5: reglas determinísticas primero, IA solo para desempatar casos
@@ -53,6 +80,18 @@ function toGuessCandidate(product: CandidateProduct): ScoredCandidate {
  * unidad, no por presentación— es responsabilidad del motor de precios, no de este.
  */
 export async function resolveProductMatch(rawText: string): Promise<MatchResult> {
+  const result = await resolveProductMatchCore(rawText);
+  // Solo se filtra por existencia cuando se le está por ofrecer al cliente una
+  // lista para ELEGIR (REVIEW, o NO_MATCH que igual muestra candidatos
+  // cercanos): un MATCH ya es una decisión tomada, y si no hay existencia el
+  // motor de precios lo informa con claridad más abajo (NO_STOCK) — filtrar
+  // ahí escondería que sí se encontró el producto exacto.
+  if (result.decision === "MATCH" || result.candidates.length === 0) return result;
+  const { candidates, note } = await withStockNoted(result.candidates);
+  return { ...result, candidates, reasons: [...result.reasons, ...note] };
+}
+
+async function resolveProductMatchCore(rawText: string): Promise<MatchResult> {
   // No se exige presentación en lo que escribe un cliente: pide "cuántas
   // unidades", no "en caja de cuántas" — eso ya no es parte de la identidad
   // del medicamento (se compara por unidad en el motor de precios).
@@ -271,7 +310,7 @@ export async function resolveProductMatch(rawText: string): Promise<MatchResult>
     decision: "REVIEW",
     confidence: best.score,
     matchedProductIds: [],
-    candidates: scored.slice(0, 5),
+    candidates: dedupeByGenericKey(scored),
     reasons: aiResult ? aiResult.reasons : [describeMatch(best), "Requiere revisión humana.", ...fuzzyIngredientNote],
     source: aiResult ? "ai" : "deterministic",
   };

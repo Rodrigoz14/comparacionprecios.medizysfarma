@@ -285,3 +285,68 @@ describe("resolveProductMatch (sinonimos con distinto conjunto de palabras, no s
     expect(foundIds).toEqual(expect.arrayContaining([productIds[0], productIds[1]]));
   });
 });
+
+// Pedido explícito del cliente: no ofrecer para elegir una opción que ningún
+// proveedor tiene en existencia — sería un callejón sin salida.
+describe("resolveProductMatch (no ofrece opciones sin existencia confirmada)", () => {
+  const productIds: string[] = [];
+  const laboratoryIds: string[] = [];
+  const supplierIds: string[] = [];
+
+  beforeAll(async () => {
+    // Misma concentración, dos formas distintas: una con existencia
+    // confirmada (AVAILABLE) y otra sin ninguna oferta -- ambigüedad real de
+    // forma farmacéutica, igual que el patrón ya cubierto para Zoltraxina.
+    const conStock = await createProduct("ZOLTRAXOFEN TAB 50MG X30", "TestLab Zoltraxofen Con Stock");
+    const sinStock = await createProduct("ZOLTRAXOFEN CAPS 50MG X30", "TestLab Zoltraxofen Sin Stock");
+    productIds.push(conStock.id, sinStock.id);
+    laboratoryIds.push(conStock.laboratoryId!, sinStock.laboratoryId!);
+
+    const supplier = await prisma.supplier.create({ data: { name: "Proveedor Test Stock" } });
+    supplierIds.push(supplier.id);
+    await prisma.supplierOffer.create({
+      data: { supplierId: supplier.id, productId: conStock.id, price: 1000, availability: "AVAILABLE" },
+    });
+    // sinStock no recibe ninguna oferta a propósito.
+  });
+
+  afterAll(async () => {
+    await prisma.supplierOffer.deleteMany({ where: { productId: { in: productIds } } });
+    await prisma.supplier.deleteMany({ where: { id: { in: supplierIds } } });
+    await prisma.product.deleteMany({ where: { id: { in: productIds } } });
+    await prisma.laboratory.deleteMany({ where: { id: { in: laboratoryIds } } });
+  });
+
+  it("excluye de las opciones un candidato sin ninguna oferta, cuando otro si tiene existencia", async () => {
+    const result = await resolveProductMatch("ZOLTRAXOFEN 50MG");
+    const ids = result.candidates.map((c) => c.product.id);
+    expect(ids).toContain(productIds[0]); // con stock: se muestra
+    expect(ids).not.toContain(productIds[1]); // sin stock: se excluye
+  });
+});
+
+describe("resolveProductMatch (todas las opciones sin existencia: se muestran igual, con nota)", () => {
+  const productIds: string[] = [];
+  const laboratoryIds: string[] = [];
+
+  beforeAll(async () => {
+    // Dos formas ambiguas, ninguna con ninguna oferta: forzar el caso donde
+    // filtrar por existencia dejaría la lista vacía -- mejor mostrar las
+    // opciones sin confirmar que no mostrar nada.
+    const tableta = await createProduct("ZOLTRAXAGEL TAB 75MG X30", "TestLab Zoltraxagel A");
+    const capsula = await createProduct("ZOLTRAXAGEL CAPS 75MG X30", "TestLab Zoltraxagel B");
+    productIds.push(tableta.id, capsula.id);
+    laboratoryIds.push(tableta.laboratoryId!, capsula.laboratoryId!);
+  });
+
+  afterAll(async () => {
+    await prisma.product.deleteMany({ where: { id: { in: productIds } } });
+    await prisma.laboratory.deleteMany({ where: { id: { in: laboratoryIds } } });
+  });
+
+  it("si ninguna opcion tiene existencia confirmada, las muestra igual con una nota explicita", async () => {
+    const result = await resolveProductMatch("ZOLTRAXAGEL 75MG");
+    expect(result.candidates.length).toBeGreaterThan(0);
+    expect(result.reasons.join(" ")).toMatch(/existencia confirmada/i);
+  });
+});
