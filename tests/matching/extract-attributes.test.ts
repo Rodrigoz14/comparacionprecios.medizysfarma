@@ -193,6 +193,31 @@ describe("extractProductAttributes", () => {
     });
   });
 
+  it("reconoce una concentracion en porcentaje ('0.5%'), no solo en mg/ml", () => {
+    // Bug real: el cliente busco "Carboximetilcelulosa gotas al 0.5%" y no
+    // encontro nada, porque el signo "%" no era una unidad reconocida (el
+    // catalogo guarda la misma concentracion como "5MG/ML").
+    const result = extractProductAttributes("Carboximetilcelulosa gotas al 0.5%", { requirePresentation: false });
+    expect(result).not.toBeNull();
+    expect(result?.attributes).toMatchObject({
+      activeIngredient: "CARBOXIMETILCELULOSA",
+      concentration: "0.5",
+      concentrationUnit: "%",
+      dosageForm: "Solución",
+    });
+  });
+
+  it("reconoce 'gotas' como sinonimo coloquial de 'Solucion', no como forma aparte", () => {
+    // Ningun producto real del catalogo tiene 'Gotas' como forma
+    // farmaceutica: los proveedores siempre lo normalizan a 'Solucion' (p.
+    // ej. 'SOL OFT GTS'). Antes 'gotas' mapeaba a una categoria separada que
+    // ningun producto real usaba, asi que nunca coincidia con nada.
+    const result = extractProductAttributes("Hidroxipropilmetilcelulosa 0.3% gotas oftalmicas", {
+      requirePresentation: false,
+    });
+    expect(result?.attributes.dosageForm).toBe("Solución");
+  });
+
   it("reconoce el tipo de empaque en plural, no solo en singular", () => {
     const result = extractProductAttributes("POLIETILENGLICOL 3350 17G POL ORL SOBRES X10");
     expect(result?.attributes.presentationType).toBe("Sobre");

@@ -380,6 +380,44 @@ describe("resolveProductMatch (nombre comercial entre parentesis, no principio a
   });
 });
 
+// Bug real reportado por el cliente: buscar "Carboximetilcelulosa gotas al
+// 0.5%" no encontraba el producto real (Disfarma, codigo 320231), guardado
+// en el catalogo como "5MG/ML (0.5%)" -- la misma concentracion, solo
+// expresada en mg/mL en vez de porcentaje. Se usa un principio activo
+// ficticio para no depender de datos reales.
+describe("resolveProductMatch (concentracion en porcentaje equivalente a mg/mL)", () => {
+  const productIds: string[] = [];
+  const laboratoryIds: string[] = [];
+
+  beforeAll(async () => {
+    const target = await createProduct("ZOLTRACELULOSA 5MG SOLUCION OFTALMICA FCO X15ML", "TestLab Zoltracelulosa");
+    const otraConcentracion = await createProduct(
+      "ZOLTRACELULOSA 10MG SOLUCION OFTALMICA FCO X15ML",
+      "TestLab Zoltracelulosa",
+    );
+    productIds.push(target.id, otraConcentracion.id);
+    laboratoryIds.push(target.laboratoryId!);
+  });
+
+  afterAll(async () => {
+    await prisma.product.deleteMany({ where: { id: { in: productIds } } });
+    await prisma.laboratory.deleteMany({ where: { id: { in: laboratoryIds } } });
+  });
+
+  it("encuentra el producto en mg/mL a partir de una busqueda en porcentaje equivalente (0.5% = 5mg/mL)", async () => {
+    const result = await resolveProductMatch("Zoltracelulosa solución 0.5%");
+    expect(result.decision).toBe("MATCH");
+    expect(result.confidence).toBe(1);
+    expect(result.matchedProductIds).toEqual([productIds[0]]);
+  });
+
+  it("no confunde una concentracion en porcentaje con otra concentracion distinta (1% = 10mg/mL, no 0.5%)", async () => {
+    const result = await resolveProductMatch("Zoltracelulosa solución 1%");
+    expect(result.decision).toBe("MATCH");
+    expect(result.matchedProductIds).toEqual([productIds[1]]);
+  });
+});
+
 // Pedido explícito del cliente: no ofrecer para elegir una opción que ningún
 // proveedor tiene en existencia — sería un callejón sin salida.
 describe("resolveProductMatch (no ofrece opciones sin existencia confirmada)", () => {

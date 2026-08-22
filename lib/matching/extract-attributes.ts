@@ -1,7 +1,14 @@
 import { stripAccents } from "@/lib/matching/normalize";
 import type { ExtractedAttributes } from "@/lib/matching/types";
 
-const CONCENTRATION_RE = /(\d+(?:[.,]\d+)?(?:\s*\/\s*\d+(?:[.,]\d+)?)?)\s*(MG|MCG|UI|G|ML)\b/i;
+// El signo "%" (peso/volumen, la convención real usada en gotas oftálmicas
+// y otras soluciones: p. ej. "Carboximetilcelulosa 0.5%" = 5MG/ML, el mismo
+// producto que el catálogo guarda como "5MG") no lleva un límite de palabra
+// (\b) detrás como las demás unidades, porque casi siempre le sigue un
+// paréntesis o el final del texto — ninguno de los dos es un límite de
+// palabra válido en regex (ambos son caracteres "no palabra"), así que \b
+// nunca coincidiría ahí.
+const CONCENTRATION_RE = /(\d+(?:[.,]\d+)?(?:\s*\/\s*\d+(?:[.,]\d+)?)?)\s*(MG\b|MCG\b|UI\b|G\b|ML\b|%)/i;
 // El símbolo de multiplicación varía por proveedor: "X100" (Ramédicas) o
 // "*30"/"C*1" (Disfarma). Cubre tanto conteos discretos ("X100" -> 100
 // tabletas) como volumen/peso por envase pegado a la unidad, sin espacio
@@ -39,7 +46,14 @@ const DOSAGE_FORM_MAP: Record<string, string> = {
   AMP: "Ampolla",
   INY: "Inyectable",
   INYECTABLE: "Inyectable",
-  GOTAS: "Gotas",
+  // "Gotas" no existe como forma farmacéutica propia en ningún producto real
+  // del catálogo (0 coincidencias): los proveedores siempre lo normalizan
+  // como "Solución" (p. ej. "SOL OFT GTS" = Solución Oftálmica en Gotas).
+  // Antes mapeaba a una categoría "Gotas" separada que ningún producto real
+  // usaba, así que un cliente que escribía "gotas" (forma coloquial de
+  // referirse a un colirio) nunca podía coincidir con nada — bug real
+  // reportado por el cliente (Carboximetilcelulosa).
+  GOTAS: "Solución",
   GRAGEA: "Tableta",
   GRAGEAS: "Tableta",
   SUPOS: "Supositorio",
@@ -127,7 +141,6 @@ const PRESENTATION_UNIT_BY_FORM: Record<string, string> = {
   Jarabe: "ml",
   Suspensión: "ml",
   Solución: "ml",
-  Gotas: "ml",
   Crema: "g",
   "Crema vaginal": "g",
   Gel: "g",
