@@ -147,6 +147,32 @@ async function main() {
     });
   }
 
+  // Sulfametoxazol + Trimetoprim (cotrimoxazol): reportado por el cliente
+  // como "Trimetropin Sulfa" — "Trimetropin" es un typo de "Trimetoprim" con
+  // varias letras cambiadas de lugar (más allá de lo que tolera la
+  // corrección de errores de tipeo por distancia de edición) y "Sulfa" es
+  // una abreviatura clínica común de "Sulfametoxazol". No se registra
+  // "sulfa" sola como sinónimo porque el catálogo real tiene otros
+  // medicamentos genuinamente distintos que empiezan igual (Sulfadiazina,
+  // Sulfacetamida, Sulfadoxina, Sulfasalazina, Sulfametizol) — solo se
+  // registran las frases donde "sulfa" aparece junto a "trimetropin"/
+  // "trimetoprim", donde no hay ambigüedad posible, más "trimetropin" sola
+  // (el catálogo no tiene ningún producto de Trimetoprim en monoterapia).
+  const cotrimoxazolCanonical = "sulfametoxazol trimetoprim";
+  for (const term of [
+    "trimetropin sulfa",
+    "sulfa trimetropin",
+    "trimetoprim sulfa",
+    "sulfa trimetoprim",
+    "trimetropin",
+  ]) {
+    await prisma.ingredientSynonym.upsert({
+      where: { term },
+      update: {},
+      create: { term, canonicalTerm: cotrimoxazolCanonical, source: "Variante real reportada por el cliente (manual)" },
+    });
+  }
+
   console.log("Seed completado: proveedores, laboratorios, productos, ofertas y sinónimos de prueba creados.");
 }
 
