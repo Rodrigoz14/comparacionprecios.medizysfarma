@@ -256,6 +256,29 @@ describe("buildGenericKey", () => {
     const ramedicas = extractProductAttributes("VALPROICO ACIDO 250MG JARABE X120ML");
     expect(buildGenericKey(disfarma!.attributes)).toBe(buildGenericKey(ramedicas!.attributes));
   });
+
+  it("ignora un '+' suelto entre principios activos separados por espacio", () => {
+    // Bug real: "ALUMINIO HIDROXIDO + MAGNESIO + SIMETICONA" (con espacios
+    // alrededor del "+") dejaba el "+" como si fuera una palabra mas del
+    // ingrediente al ordenar alfabeticamente ("+ + aluminio hidroxido...").
+    // Afectaba decenas de combinados reales de ambos proveedores. (Nota: un
+    // "+" pegado sin espacios, como "HIDROXIDO+MAGNESIO", sigue siendo un
+    // problema aparte — ahí el token fusionado no calza con la forma
+    // separada por espacios; no es lo que corrige este fix.)
+    const conEspacios = extractProductAttributes("ALUMINIO HIDROXIDO + MAGNESIO + SIMETICONA 4G X150ML");
+    expect(buildGenericKey(conEspacios!.attributes)).toBe("aluminio hidroxido magnesio simeticona 4 g no especificada");
+    expect(buildGenericKey(conEspacios!.attributes)).not.toMatch(/[+(]/);
+  });
+
+  it("no deja un parentesis colgando cuando la concentracion combinada viene entre parentesis", () => {
+    // Bug real: "...SIMETICONA (4G+4G+0.4G)/100ML..." corta el nombre del
+    // producto justo antes del primer numero dentro del parentesis, dejando
+    // el "(" pegado al final del ingrediente extraido ("...SIMETICONA (").
+    // Ese "(" terminaba ordenado como si fuera parte del ingrediente.
+    const result = extractProductAttributes("ALUMINIO HIDROXIDO + MAGNESIO + SIMETICONA (4G+4G+0.4G)/100ML X150ML");
+    expect(result?.attributes.activeIngredient).not.toMatch(/[(+]$/);
+    expect(buildGenericKey(result!.attributes)).not.toMatch(/[+(]/);
+  });
 });
 
 describe("buildNormalizedName", () => {

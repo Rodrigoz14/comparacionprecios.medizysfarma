@@ -20,9 +20,22 @@ export function normalizeText(value: string): string {
  * formas produzcan la misma clave sin necesidad de registrar cada variante
  * como sinónimo — es una normalización estructural, no una inferencia de
  * equivalencia entre sustancias distintas.
+ *
+ * Se descarta cualquier "palabra" que no tenga ninguna letra (p. ej. "+" o
+ * "(" sueltos, separados por espacio del resto). Sin esto, un combinado
+ * escrito como "ALUMINIO HIDROXIDO + SIMETICONA" (con espacios alrededor del
+ * "+") o con la concentración combinada entre paréntesis
+ * ("...SIMETICONA (4G+4G+0.4G)/100ML...", que deja un "(" colgando al
+ * cortar el nombre del producto) termina con "+" o "(" como si fueran una
+ * palabra más del ingrediente, ensuciando la clave — confirmado en datos
+ * reales: le pasaba a decenas de productos combinados de ambos proveedores.
  */
 export function canonicalizeIngredient(activeIngredient: string): string {
-  return normalizeText(activeIngredient).split(" ").filter(Boolean).sort().join(" ");
+  return normalizeText(activeIngredient)
+    .split(" ")
+    .filter((word) => /[a-z]/.test(word))
+    .sort()
+    .join(" ");
 }
 
 /**

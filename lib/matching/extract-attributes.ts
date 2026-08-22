@@ -281,7 +281,17 @@ export function extractProductAttributes(
     dosageFormTokenIndex >= 0
       ? Math.min(dosageFormTokenIndex, concentrationMatch.index)
       : concentrationMatch.index;
-  const activeIngredient = upper.slice(0, cutIndex).trim().replace(/\s+/g, " ");
+  // Cuando la concentración combinada de varios principios activos viene entre
+  // paréntesis ("...SIMETICONA (4G+4G+0.4G)/100ML..."), cortar justo antes del
+  // primer número dentro del paréntesis deja un "(" colgando al final. Se
+  // recorta esa puntuación suelta para no arrastrarla como si fuera parte del
+  // nombre del ingrediente (confirmado en datos reales de varios combinados).
+  const activeIngredient = upper
+    .slice(0, cutIndex)
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/[+(),./-]+$/, "")
+    .trim();
 
   if (!activeIngredient) {
     return null;
