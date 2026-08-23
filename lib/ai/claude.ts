@@ -25,10 +25,13 @@ export class ClaudeProvider implements AIProvider {
     const model = process.env.CLAUDE_MODEL ?? DEFAULT_MODEL;
     const systemMessage = request.messages.find((m) => m.role === "system")?.content;
 
+    // El modelo actual rechaza el parámetro "temperature" (error 400:
+    // "temperature is deprecated for this model") — se omite por completo en
+    // vez de reenviar lo que pida el llamador, que siempre pedía 0 para
+    // respuestas deterministas; el modelo ya no permite ajustarlo.
     const response = await client.messages.create({
       model,
       max_tokens: request.maxTokens ?? 1024,
-      temperature: request.temperature,
       system: systemMessage,
       messages: request.messages
         .filter((m) => m.role !== "system")

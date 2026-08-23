@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/db/client";
+import { guessIngredientWithAI } from "@/lib/matching/ai-ingredient-guess";
 import { judgeWithAI } from "@/lib/matching/ai-judge";
+import type { CandidateSearchResult } from "@/lib/matching/candidate-search";
 import { searchCandidates, searchCandidatesByIngredientText } from "@/lib/matching/candidate-search";
 import { compareAttributes } from "@/lib/matching/compare-attributes";
 import { decideFromScore } from "@/lib/matching/decision";
@@ -30,7 +32,12 @@ function dedupeByGenericKey(scored: ScoredCandidate[], limit = 8): ScoredCandida
   return result;
 }
 
-function toGuessCandidate(product: CandidateProduct, viaSubsetMatch = false, viaBrandMatch = false): ScoredCandidate {
+function toGuessCandidate(
+  product: CandidateProduct,
+  viaSubsetMatch = false,
+  viaBrandMatch = false,
+  viaAI = false,
+): ScoredCandidate {
   return {
     product,
     comparison: { activeIngredientMatch: true, concentrationMatch: false, dosageFormMatch: false, presentationMatch: false },
@@ -39,7 +46,33 @@ function toGuessCandidate(product: CandidateProduct, viaSubsetMatch = false, via
     viaFuzzyMatch: false,
     viaSubsetMatch,
     viaBrandMatch,
+    viaAI,
   };
+}
+
+/**
+ * Último recurso antes de rendirse: nada encontró nada por texto, ni exacto
+ * ni con ninguna de las tolerancias determinísticas. Se le pregunta a la IA a
+ * qué principio activo real podría referirse (útil para texto muy mal
+ * transcrito, más allá de lo que una letra de diferencia puede corregir), y
+ * cada sugerencia se busca en el catálogo real con las mismas reglas de
+ * siempre — si la IA no está configurada, la red falla, o ninguna sugerencia
+ * encuentra nada real, se devuelve una lista vacía sin ningún efecto.
+ */
+async function tryAIFallback(rawText: string): Promise<CandidateSearchResult[]> {
+  const guesses = await guessIngredientWithAI(rawText);
+  for (const guess of guesses) {
+    // La IA a veces separa los principios activos de un combinado con "/"
+    // (p. ej. "fenoterol/bromuro de ipratropio"), que no calza con ningún
+    // separador real del catálogo (espacio o "+"); se normaliza a espacio
+    // para que la búsqueda por subconjunto de palabras sí lo reconozca.
+    const normalizedGuess = guess.replace(/\//g, " ");
+    const found = await searchCandidatesByIngredientText(normalizedGuess);
+    if (found.length > 0) {
+      return found.map((f) => ({ ...f, viaAI: true }));
+    }
+  }
+  return [];
 }
 
 /**
@@ -104,35 +137,41 @@ async function resolveProductMatchCore(rawText: string): Promise<MatchResult> {
     // más, se busca el ingrediente solo para poder mostrar qué concentraciones
     // existen en el catálogo y que el cliente elija — nunca se adivina cuál es.
     const ingredientGuess = extractIngredientGuess(rawText);
-    if (ingredientGuess) {
-      const found = await searchCandidatesByIngredientText(ingredientGuess);
-      if (found.length > 0) {
-        const candidates = dedupeByGenericKey(
-          found.map((f) => toGuessCandidate(f.product, f.viaSubsetMatch, f.viaBrandMatch)),
-        );
-        const concentrations = [...new Set(found.map((f) => `${f.product.concentration}${f.product.concentrationUnit}`))];
-        const viaFuzzy = found.some((f) => f.viaFuzzyMatch);
-        const viaSubset = found.some((f) => f.viaSubsetMatch);
-        const viaBrand = found.some((f) => f.viaBrandMatch);
-        return {
-          decision: "REVIEW",
-          confidence: 0,
-          matchedProductIds: [],
-          candidates,
-          reasons: [
-            viaBrand
+    let found: CandidateSearchResult[] = ingredientGuess ? await searchCandidatesByIngredientText(ingredientGuess) : [];
+
+    if (found.length === 0) {
+      found = await tryAIFallback(rawText);
+    }
+
+    if (found.length > 0) {
+      const candidates = dedupeByGenericKey(
+        found.map((f) => toGuessCandidate(f.product, f.viaSubsetMatch, f.viaBrandMatch, f.viaAI)),
+      );
+      const concentrations = [...new Set(found.map((f) => `${f.product.concentration}${f.product.concentrationUnit}`))];
+      const viaFuzzy = found.some((f) => f.viaFuzzyMatch);
+      const viaSubset = found.some((f) => f.viaSubsetMatch);
+      const viaBrand = found.some((f) => f.viaBrandMatch);
+      const viaAI = found.some((f) => f.viaAI);
+      return {
+        decision: "REVIEW",
+        confidence: 0,
+        matchedProductIds: [],
+        candidates,
+        reasons: [
+          viaAI
+            ? `No se encontró "${rawText}" con las reglas normales; la IA sugirió un principio activo posible y estas opciones sí existen en el catálogo — confírmalo antes de cotizar.`
+            : viaBrand
               ? `"${ingredientGuess}" no coincide con ningún principio activo, pero sí con el nombre comercial de estas opciones — confírmalo antes de cotizar.`
               : `No se especificó la concentración de "${ingredientGuess}". Concentraciones disponibles: ${concentrations.join(", ")}. Elige la opción correcta.`,
-            ...(viaFuzzy
-              ? [`Se muestran principios activos con escritura parecida a "${ingredientGuess}" por si hubo un error de tipeo — confírmalo antes de cotizar.`]
-              : []),
-            ...(viaSubset
-              ? [`Se muestran combinados que incluyen "${ingredientGuess}" junto con otros principios activos adicionales — confírmalo antes de cotizar.`]
-              : []),
-          ],
-          source: "deterministic",
-        };
-      }
+          ...(viaFuzzy
+            ? [`Se muestran principios activos con escritura parecida a "${ingredientGuess}" por si hubo un error de tipeo — confírmalo antes de cotizar.`]
+            : []),
+          ...(viaSubset
+            ? [`Se muestran combinados que incluyen "${ingredientGuess}" junto con otros principios activos adicionales — confírmalo antes de cotizar.`]
+            : []),
+        ],
+        source: viaAI ? "ai" : "deterministic",
+      };
     }
 
     return {
@@ -158,7 +197,14 @@ async function resolveProductMatchCore(rawText: string): Promise<MatchResult> {
     };
   }
 
-  const found = await searchCandidates(extraction.attributes);
+  let found = await searchCandidates(extraction.attributes);
+  if (found.length === 0) {
+    // Nada por ninguna regla determinística (ni exacto, ni sinónimo, ni typo,
+    // ni subconjunto, ni marca): último recurso, preguntarle a la IA a qué
+    // principio activo real podría referirse un texto muy mal escrito o mal
+    // transcrito, y verificar esa sugerencia contra el catálogo real.
+    found = await tryAIFallback(rawText);
+  }
   if (found.length === 0) {
     return {
       decision: "NO_MATCH",
@@ -171,14 +217,15 @@ async function resolveProductMatchCore(rawText: string): Promise<MatchResult> {
   }
 
   const scored: ScoredCandidate[] = found
-    .map(({ product, viaSynonym, viaFuzzyMatch, viaSubsetMatch, viaBrandMatch }) => {
+    .map(({ product, viaSynonym, viaFuzzyMatch, viaSubsetMatch, viaBrandMatch, viaAI }) => {
       const comparison = compareAttributes(extraction.attributes, product);
       return {
         product,
         comparison,
-        score: scoreComparison(comparison, !viaSynonym && !viaFuzzyMatch && !viaSubsetMatch && !viaBrandMatch),
+        score: scoreComparison(comparison, !viaSynonym && !viaFuzzyMatch && !viaSubsetMatch && !viaBrandMatch && !viaAI),
         viaSynonym,
         viaFuzzyMatch,
+        viaAI,
         viaSubsetMatch,
         viaBrandMatch,
       };
@@ -203,6 +250,12 @@ async function resolveProductMatchCore(rawText: string): Promise<MatchResult> {
       ]
     : [];
 
+  const aiMatchNote = scored.some((c) => c.viaAI)
+    ? [
+        `No se encontró "${extraction.attributes.activeIngredient}" con las reglas normales; la IA sugirió un principio activo posible y estas opciones sí existen en el catálogo — confírmalo antes de cotizar.`,
+      ]
+    : [];
+
   // El cliente no siempre dice la forma farmacéutica ("Ácido Valproico 250mg",
   // sin decir cápsula/jarabe/tableta). No especificarla no es lo mismo que una
   // forma distinta: no se debe puntuar igual que un mismatch real, porque eso
@@ -220,7 +273,7 @@ async function resolveProductMatchCore(rawText: string): Promise<MatchResult> {
     // sinónimo o por tolerancia a typos, la identidad del principio activo ya
     // es incierta y no se debe sumar una segunda suposición (la forma) encima.
     const allExactIngredient = concentrationMatches.every(
-      (c) => !c.viaSynonym && !c.viaFuzzyMatch && !c.viaSubsetMatch && !c.viaBrandMatch,
+      (c) => !c.viaSynonym && !c.viaFuzzyMatch && !c.viaSubsetMatch && !c.viaBrandMatch && !c.viaAI,
     );
 
     if (distinctForms.size === 1 && allExactIngredient) {
@@ -266,7 +319,7 @@ async function resolveProductMatchCore(rawText: string): Promise<MatchResult> {
         confidence: concentrationMatches[0].score,
         matchedProductIds: [],
         candidates: dedupeByGenericKey(concentrationMatches),
-        reasons: [...reasons, ...fuzzyIngredientNote, ...subsetIngredientNote, ...brandMatchNote],
+        reasons: [...reasons, ...fuzzyIngredientNote, ...subsetIngredientNote, ...brandMatchNote, ...aiMatchNote],
         source: aiResult ? "ai" : "deterministic",
       };
     }
@@ -297,7 +350,7 @@ async function resolveProductMatchCore(rawText: string): Promise<MatchResult> {
       confidence: best.score,
       matchedProductIds: [],
       candidates: dedupeByGenericKey(scored),
-      reasons: [describeMatch(best), ...fuzzyIngredientNote, ...subsetIngredientNote, ...brandMatchNote],
+      reasons: [describeMatch(best), ...fuzzyIngredientNote, ...subsetIngredientNote, ...brandMatchNote, ...aiMatchNote],
       source: "deterministic",
     };
   }
@@ -328,7 +381,7 @@ async function resolveProductMatchCore(rawText: string): Promise<MatchResult> {
       confidence: aiResult.confidence,
       matchedProductIds: [],
       candidates: dedupeByGenericKey(scored),
-      reasons: [...aiResult.reasons, ...fuzzyIngredientNote, ...subsetIngredientNote, ...brandMatchNote],
+      reasons: [...aiResult.reasons, ...fuzzyIngredientNote, ...subsetIngredientNote, ...brandMatchNote, ...aiMatchNote],
       source: "ai",
     };
   }
@@ -338,7 +391,7 @@ async function resolveProductMatchCore(rawText: string): Promise<MatchResult> {
     confidence: best.score,
     matchedProductIds: [],
     candidates: dedupeByGenericKey(scored),
-    reasons: aiResult ? aiResult.reasons : [describeMatch(best), "Requiere revisión humana.", ...fuzzyIngredientNote, ...subsetIngredientNote, ...brandMatchNote],
+    reasons: aiResult ? aiResult.reasons : [describeMatch(best), "Requiere revisión humana.", ...fuzzyIngredientNote, ...subsetIngredientNote, ...brandMatchNote, ...aiMatchNote],
     source: aiResult ? "ai" : "deterministic",
   };
 }

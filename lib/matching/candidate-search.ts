@@ -14,6 +14,8 @@ export interface CandidateSearchResult {
   viaSubsetMatch: boolean;
   /** true si se encontró por el nombre comercial (marca) entre paréntesis en el nombre del proveedor, no por principio activo. */
   viaBrandMatch: boolean;
+  /** true si se encontró a partir de una sugerencia de la IA (nunca lo pone esta función: lo agrega matching-service.ts al reintentar con el texto que la IA sugirió). */
+  viaAI: boolean;
 }
 
 /**
@@ -65,6 +67,7 @@ export async function searchCandidatesByIngredientText(rawIngredient: string): P
       viaFuzzyMatch: false,
       viaSubsetMatch: false,
       viaBrandMatch: false,
+      viaAI: false,
     }));
   }
 
@@ -107,6 +110,7 @@ export async function searchCandidatesByIngredientText(rawIngredient: string): P
         viaFuzzyMatch: false,
         viaSubsetMatch: true,
         viaBrandMatch: false,
+        viaAI: false,
       }));
     }
   }
@@ -134,6 +138,7 @@ export async function searchCandidatesByIngredientText(rawIngredient: string): P
       viaFuzzyMatch: true,
       viaSubsetMatch: false,
       viaBrandMatch: false,
+      viaAI: false,
     }));
   }
 
@@ -171,6 +176,7 @@ export async function searchCandidatesByIngredientText(rawIngredient: string): P
     viaFuzzyMatch: false,
     viaSubsetMatch: false,
     viaBrandMatch: true,
+    viaAI: false,
   }));
 }
 

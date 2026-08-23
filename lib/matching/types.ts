@@ -44,6 +44,8 @@ export interface ScoredCandidate {
   viaSubsetMatch: boolean;
   /** true si se encontró por el nombre comercial (marca) entre paréntesis en el nombre del proveedor, no por principio activo. */
   viaBrandMatch: boolean;
+  /** true si se encontró porque la IA sugirió un principio activo real a partir de texto muy mal escrito/transcrito, cuando nada más encontró nada. */
+  viaAI: boolean;
 }
 
 export interface MatchResult {
