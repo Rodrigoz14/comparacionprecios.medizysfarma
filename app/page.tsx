@@ -30,7 +30,7 @@ export default async function Home() {
               <Link
                 key={module.label}
                 href={module.href}
-                className="rounded-lg border border-zinc-200 bg-white p-4 text-sm font-medium text-zinc-700 transition-colors hover:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:border-zinc-600"
+                className="rounded-lg border border-zinc-200 border-l-4 border-l-brand-blue bg-white p-4 text-sm font-medium text-zinc-700 transition-colors hover:border-zinc-300 hover:border-l-brand-green hover:shadow-sm dark:border-zinc-800 dark:border-l-brand-blue dark:bg-zinc-950 dark:text-zinc-300"
               >
                 {module.label}
               </Link>

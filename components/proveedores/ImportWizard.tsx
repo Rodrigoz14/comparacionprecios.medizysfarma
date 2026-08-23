@@ -187,7 +187,7 @@ export function ImportWizard() {
                   setCreatingSupplier(true);
                   setCreateSupplierError(null);
                 }}
-                className="text-xs font-medium text-zinc-600 underline hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+                className="text-xs font-medium text-zinc-600 underline hover:text-brand-blue dark:text-zinc-400 dark:hover:text-brand-blue"
               >
                 + Nuevo proveedor
               </button>
@@ -209,7 +209,7 @@ export function ImportWizard() {
                   type="button"
                   onClick={handleCreateSupplier}
                   disabled={!newSupplierName.trim() || savingSupplier}
-                  className="shrink-0 rounded bg-zinc-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-40 dark:bg-zinc-50 dark:text-zinc-900"
+                  className="shrink-0 rounded bg-brand-blue px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-navy disabled:opacity-40"
                 >
                   {savingSupplier ? "Creando..." : "Crear"}
                 </button>
@@ -256,7 +256,7 @@ export function ImportWizard() {
         <button
           onClick={handleAnalyze}
           disabled={!file || !supplierId || analyzing}
-          className="rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40 dark:bg-zinc-50 dark:text-zinc-900"
+          className="rounded bg-brand-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-navy disabled:opacity-40"
         >
           {analyzing ? "Analizando..." : "Analizar archivo"}
         </button>
@@ -366,7 +366,7 @@ export function ImportWizard() {
           <button
             onClick={handleConfirm}
             disabled={confirming || (Boolean(analysis.alreadyImported) && !force)}
-            className="rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40 dark:bg-zinc-50 dark:text-zinc-900"
+            className="rounded bg-brand-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-navy disabled:opacity-40"
           >
             {confirming ? "Importando..." : "Confirmar importación"}
           </button>

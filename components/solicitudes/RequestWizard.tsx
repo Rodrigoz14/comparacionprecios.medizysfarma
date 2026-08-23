@@ -247,7 +247,7 @@ export function RequestWizard() {
               <button
                 onClick={handleParsePaste}
                 disabled={!pasteText.trim()}
-                className="rounded bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40 dark:bg-zinc-50 dark:text-zinc-900"
+                className="rounded bg-brand-blue px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-navy disabled:opacity-40"
               >
                 Analizar lista
               </button>
@@ -310,7 +310,7 @@ export function RequestWizard() {
 
         <button
           onClick={addLine}
-          className="text-sm font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+          className="text-sm font-medium text-zinc-600 hover:text-brand-blue dark:text-zinc-400 dark:hover:text-brand-blue"
         >
           + Agregar producto
         </button>
@@ -319,7 +319,7 @@ export function RequestWizard() {
           <button
             onClick={handleSubmit}
             disabled={submitting || !customerName.trim() || lines.every((l) => !l.text.trim())}
-            className="rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40 dark:bg-zinc-50 dark:text-zinc-900"
+            className="rounded bg-brand-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-navy disabled:opacity-40"
           >
             {submitting ? "Analizando..." : "Comparar precios"}
           </button>

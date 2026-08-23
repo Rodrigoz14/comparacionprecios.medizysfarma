@@ -3,11 +3,21 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+
+  /* Colores de marca de Medizys Farma, tomados del sitio real
+     (medizysfarma.com): azul y verde extraídos de los píxeles del logo,
+     marina oscura tomada de --laboix-base en su hoja de estilos. */
+  --brand-blue: #004cac;
+  --brand-green: #89b950;
+  --brand-navy: #021936;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-brand-blue: var(--brand-blue);
+  --color-brand-green: var(--brand-green);
+  --color-brand-navy: var(--brand-navy);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }

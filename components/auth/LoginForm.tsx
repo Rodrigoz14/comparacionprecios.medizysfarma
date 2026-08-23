@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -32,11 +33,24 @@ export function LoginForm() {
   }
 
   return (
-    <div className="flex min-h-[70vh] items-center justify-center px-6">
-      <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-4 rounded-lg border border-zinc-200 p-6 dark:border-zinc-800">
-        <div>
-          <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">Medizys Procurement AI</h1>
-          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">Inicia sesión para continuar.</p>
+    <div className="flex min-h-[70vh] items-center justify-center bg-zinc-50 px-6 dark:bg-black">
+      <form
+        onSubmit={handleSubmit}
+        className="w-full max-w-sm space-y-4 rounded-xl border border-zinc-200 bg-white p-8 shadow-sm dark:border-zinc-800 dark:bg-zinc-950"
+      >
+        <div className="flex flex-col items-center text-center">
+          <Image src="/logo-dark.png" alt="Medizys Farma" width={180} height={53} priority className="h-11 w-auto dark:hidden" />
+          <Image
+            src="/logo-light.png"
+            alt="Medizys Farma"
+            width={180}
+            height={53}
+            priority
+            className="hidden h-11 w-auto dark:block"
+          />
+          <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-400">
+            Procurement AI — inicia sesión para continuar.
+          </p>
         </div>
 
         <div>
@@ -46,7 +60,7 @@ export function LoginForm() {
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="mt-1 w-full rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            className="mt-1 w-full rounded border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-brand-blue focus:ring-1 focus:ring-brand-blue dark:border-zinc-700 dark:bg-zinc-900"
           />
         </div>
 
@@ -57,7 +71,7 @@ export function LoginForm() {
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="mt-1 w-full rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            className="mt-1 w-full rounded border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-brand-blue focus:ring-1 focus:ring-brand-blue dark:border-zinc-700 dark:bg-zinc-900"
           />
         </div>
 
@@ -66,7 +80,7 @@ export function LoginForm() {
         <button
           type="submit"
           disabled={submitting}
-          className="w-full rounded bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40 dark:bg-zinc-50 dark:text-zinc-900"
+          className="w-full rounded bg-brand-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-navy disabled:opacity-40"
         >
           {submitting ? "Ingresando..." : "Ingresar"}
         </button>
