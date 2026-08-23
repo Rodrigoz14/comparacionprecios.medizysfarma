@@ -76,37 +76,61 @@ describe("resolveProductMatch (respaldo con IA cuando nada mas encuentra nada)",
     vi.mocked(getAIProvider).mockReset();
   });
 
-  it("encuentra el producto real a partir de una sugerencia de la IA cuando nada mas encontro nada", async () => {
-    mockAIGuesses("zoltrapenicilina");
-    const result = await resolveProductMatch("Xyzqwertzoltra tableta");
-    expect(result.decision).toBe("REVIEW");
-    expect(result.source).toBe("ai");
-    expect(result.matchedProductIds).toEqual([]);
-    const foundIds = result.candidates.map((c) => c.product.id);
-    expect(foundIds).toContain(productIds[0]);
-    expect(result.reasons.join(" ")).toMatch(/la ia sugirió/i);
-  });
+  // Estas pruebas usan un texto (ficticio) que no coincide con nada por
+  // ninguna regla determinística, así que cada una paga el costo real del
+  // último nivel de búsqueda (nombre comercial: trae el catálogo activo
+  // completo, ~11 mil productos) al menos una vez -- contra Neon (por red)
+  // eso mide varios segundos en datos reales, más que el timeout por
+  // defecto de la prueba. Se sube el timeout en vez de acortar el texto,
+  // para seguir probando el caso real (texto totalmente irreconocible).
 
-  it("prueba cada sugerencia de la IA en orden hasta encontrar una que exista en el catalogo", async () => {
-    mockAIGuesses("ingredienteinventadoxyz", "zoltrapenicilina");
-    const result = await resolveProductMatch("Xyzqwertzoltra tableta");
-    const foundIds = result.candidates.map((c) => c.product.id);
-    expect(foundIds).toContain(productIds[0]);
-  });
+  it(
+    "encuentra el producto real a partir de una sugerencia de la IA cuando nada mas encontro nada",
+    async () => {
+      mockAIGuesses("zoltrapenicilina");
+      const result = await resolveProductMatch("Xyzqwertzoltra tableta");
+      expect(result.decision).toBe("REVIEW");
+      expect(result.source).toBe("ai");
+      expect(result.matchedProductIds).toEqual([]);
+      const foundIds = result.candidates.map((c) => c.product.id);
+      expect(foundIds).toContain(productIds[0]);
+      expect(result.reasons.join(" ")).toMatch(/la ia sugirió/i);
+    },
+    15000,
+  );
 
-  it("sigue en NO_MATCH si ninguna sugerencia de la IA existe en el catalogo (nunca inventa)", async () => {
-    mockAIGuesses("ingredienteinventadoxyz", "otroinventadoabc");
-    const result = await resolveProductMatch("Xyzqwertzoltra tableta");
-    expect(result.decision).toBe("NO_MATCH");
-    expect(result.candidates).toEqual([]);
-  });
+  it(
+    "prueba cada sugerencia de la IA en orden hasta encontrar una que exista en el catalogo",
+    async () => {
+      mockAIGuesses("ingredienteinventadoxyz", "zoltrapenicilina");
+      const result = await resolveProductMatch("Xyzqwertzoltra tableta");
+      const foundIds = result.candidates.map((c) => c.product.id);
+      expect(foundIds).toContain(productIds[0]);
+    },
+    20000,
+  );
 
-  it("no rompe la busqueda si la IA no esta configurada o falla (se comporta como sin IA)", async () => {
-    vi.mocked(getAIProvider).mockReturnValue({
-      name: "claude",
-      complete: vi.fn().mockRejectedValue(new Error("CLAUDE_API_KEY no está configurada.")),
-    });
-    const result = await resolveProductMatch("Xyzqwertzoltra tableta");
-    expect(result.decision).toBe("NO_MATCH");
-  });
+  it(
+    "sigue en NO_MATCH si ninguna sugerencia de la IA existe en el catalogo (nunca inventa)",
+    async () => {
+      mockAIGuesses("ingredienteinventadoxyz", "otroinventadoabc");
+      const result = await resolveProductMatch("Xyzqwertzoltra tableta");
+      expect(result.decision).toBe("NO_MATCH");
+      expect(result.candidates).toEqual([]);
+    },
+    20000,
+  );
+
+  it(
+    "no rompe la busqueda si la IA no esta configurada o falla (se comporta como sin IA)",
+    async () => {
+      vi.mocked(getAIProvider).mockReturnValue({
+        name: "claude",
+        complete: vi.fn().mockRejectedValue(new Error("CLAUDE_API_KEY no está configurada.")),
+      });
+      const result = await resolveProductMatch("Xyzqwertzoltra tableta");
+      expect(result.decision).toBe("NO_MATCH");
+    },
+    15000,
+  );
 });
