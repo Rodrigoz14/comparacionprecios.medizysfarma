@@ -49,6 +49,11 @@ export function ImportWizard() {
   const [supplierId, setSupplierId] = useState("");
   const [file, setFile] = useState<File | null>(null);
 
+  const [creatingSupplier, setCreatingSupplier] = useState(false);
+  const [newSupplierName, setNewSupplierName] = useState("");
+  const [createSupplierError, setCreateSupplierError] = useState<string | null>(null);
+  const [savingSupplier, setSavingSupplier] = useState(false);
+
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeError, setAnalyzeError] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<AnalyzeResult | null>(null);
@@ -93,6 +98,32 @@ export function ImportWizard() {
       setAnalyzeError(err instanceof Error ? err.message : "Error inesperado.");
     } finally {
       setAnalyzing(false);
+    }
+  }
+
+  async function handleCreateSupplier() {
+    const name = newSupplierName.trim();
+    if (!name) return;
+    setSavingSupplier(true);
+    setCreateSupplierError(null);
+    try {
+      const res = await fetch("/api/suppliers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Error al crear el proveedor.");
+
+      const created = data.supplier as Supplier;
+      setSuppliers((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
+      setSupplierId(created.id);
+      setNewSupplierName("");
+      setCreatingSupplier(false);
+    } catch (err) {
+      setCreateSupplierError(err instanceof Error ? err.message : "Error inesperado.");
+    } finally {
+      setSavingSupplier(false);
     }
   }
 
@@ -147,19 +178,69 @@ export function ImportWizard() {
 
       <section className="space-y-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
         <div>
-          <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Proveedor</label>
-          <select
-            value={supplierId}
-            onChange={(e) => setSupplierId(e.target.value)}
-            className="mt-1 w-full rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-          >
-            <option value="">Selecciona un proveedor</option>
-            {suppliers.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
+          <div className="flex items-center justify-between">
+            <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Proveedor</label>
+            {!creatingSupplier && (
+              <button
+                type="button"
+                onClick={() => {
+                  setCreatingSupplier(true);
+                  setCreateSupplierError(null);
+                }}
+                className="text-xs font-medium text-zinc-600 underline hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+              >
+                + Nuevo proveedor
+              </button>
+            )}
+          </div>
+
+          {creatingSupplier ? (
+            <div className="mt-1 space-y-2">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newSupplierName}
+                  onChange={(e) => setNewSupplierName(e.target.value)}
+                  placeholder="Nombre del proveedor"
+                  autoFocus
+                  className="w-full rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                />
+                <button
+                  type="button"
+                  onClick={handleCreateSupplier}
+                  disabled={!newSupplierName.trim() || savingSupplier}
+                  className="shrink-0 rounded bg-zinc-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-40 dark:bg-zinc-50 dark:text-zinc-900"
+                >
+                  {savingSupplier ? "Creando..." : "Crear"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCreatingSupplier(false);
+                    setNewSupplierName("");
+                    setCreateSupplierError(null);
+                  }}
+                  className="shrink-0 rounded border border-zinc-300 px-3 py-2 text-sm text-zinc-600 dark:border-zinc-700 dark:text-zinc-400"
+                >
+                  Cancelar
+                </button>
+              </div>
+              {createSupplierError && <p className="text-sm text-red-600">{createSupplierError}</p>}
+            </div>
+          ) : (
+            <select
+              value={supplierId}
+              onChange={(e) => setSupplierId(e.target.value)}
+              className="mt-1 w-full rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            >
+              <option value="">Selecciona un proveedor</option>
+              {suppliers.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
 
         <div>

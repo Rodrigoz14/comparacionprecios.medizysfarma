@@ -231,13 +231,21 @@ describe("resolveProductMatch (tolerancia a errores de tipeo en el ingrediente)"
     expect(result.reasons.join(" ")).toMatch(/error de tipeo/i);
   });
 
-  it("un ingrediente totalmente distinto no encuentra nada por mas tolerancia que se de", async () => {
-    // Ficticio y muy distinto a cualquier ingrediente real del catalogo, para
-    // no depender de qué productos reales existan en la base de datos compartida.
-    const result = await resolveProductMatch("INGREDIENTEDESCONOCIDOPQZ 250MG TABLETA X30");
-    expect(result.decision).toBe("NO_MATCH");
-    expect(result.matchedProductIds).toEqual([]);
-  });
+  it(
+    "un ingrediente totalmente distinto no encuentra nada por mas tolerancia que se de",
+    async () => {
+      // Ficticio y muy distinto a cualquier ingrediente real del catalogo, para
+      // no depender de qué productos reales existan en la base de datos compartida.
+      // Este caso llega hasta el ultimo nivel de busqueda (nombre comercial), que
+      // trae el catalogo activo completo (~11 mil productos) para compararlo en
+      // memoria -- contra una base de datos alojada por red, eso mide unos
+      // segundos en datos reales, mas que el timeout por defecto de la prueba.
+      const result = await resolveProductMatch("INGREDIENTEDESCONOCIDOPQZ 250MG TABLETA X30");
+      expect(result.decision).toBe("NO_MATCH");
+      expect(result.matchedProductIds).toEqual([]);
+    },
+    15000,
+  );
 });
 
 // Caso real reportado por el cliente: buscar "Hioscina" no encontraba nada,
