@@ -40,6 +40,8 @@ export async function POST(_request: Request, { params }: { params: Promise<{ it
   const pricing = {
     customerRequestItemId: itemId,
     requestedQuantity: item.requestedQuantity,
+    warehouseStock: null,
+    quantityToPurchase: null,
     status: "NOT_FOUND" as const,
     selected: null,
     alternatives: [],

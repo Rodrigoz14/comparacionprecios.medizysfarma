@@ -45,7 +45,9 @@ interface ItemResult {
     candidates: MatchCandidate[];
   };
   pricing: {
-    status: "SELECTED" | "REVIEW" | "NOT_FOUND" | "NO_STOCK" | "NO_VALID_OFFER";
+    status: "SELECTED" | "REVIEW" | "NOT_FOUND" | "NO_STOCK" | "NO_VALID_OFFER" | "COVERED_BY_STOCK";
+    warehouseStock: number | null;
+    quantityToPurchase: number | null;
     selected: OfferOption | null;
     alternatives: OfferOption[];
     totalPrice: number | null;
@@ -60,6 +62,7 @@ const STATUS_LABEL: Record<ItemResult["pricing"]["status"], string> = {
   NOT_FOUND: "No encontrado",
   NO_STOCK: "Sin disponibilidad",
   NO_VALID_OFFER: "Sin oferta válida",
+  COVERED_BY_STOCK: "Cubierto por bodega",
 };
 
 const STATUS_COLOR: Record<ItemResult["pricing"]["status"], string> = {
@@ -68,6 +71,7 @@ const STATUS_COLOR: Record<ItemResult["pricing"]["status"], string> = {
   NOT_FOUND: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300",
   NO_STOCK: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300",
   NO_VALID_OFFER: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300",
+  COVERED_BY_STOCK: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300",
 };
 
 const formatCOP = (value: number) =>
@@ -81,6 +85,7 @@ export function RequestWizard() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<ItemResult[] | null>(null);
+  const [customerRequestId, setCustomerRequestId] = useState<string | null>(null);
 
   const [inputMode, setInputMode] = useState<InputMode>("manual");
   const [pasteText, setPasteText] = useState("");
@@ -127,6 +132,7 @@ export function RequestWizard() {
     setSubmitting(true);
     setError(null);
     setResults(null);
+    setCustomerRequestId(null);
     try {
       const items = lines.filter((l) => l.text.trim() !== "");
       const res = await fetch("/api/customer-requests", {
@@ -137,6 +143,7 @@ export function RequestWizard() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Error al procesar la solicitud.");
       setResults(data.items as ItemResult[]);
+      setCustomerRequestId(data.customerRequestId as string);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error inesperado.");
     } finally {
@@ -340,6 +347,14 @@ export function RequestWizard() {
               <span className="text-zinc-600 dark:text-zinc-400">Ahorro estimado frente a la oferta más cara</span>
               <span className="font-semibold text-green-700 dark:text-green-400">{formatCOP(totalAhorro)}</span>
             </div>
+            {customerRequestId && (
+              <a
+                href={`/api/customer-requests/${customerRequestId}/purchase-order`}
+                className="mt-3 inline-block rounded bg-brand-green px-3 py-1.5 text-xs font-medium text-white transition-colors hover:opacity-90"
+              >
+                Descargar pedido a proveedores (Excel)
+              </a>
+            )}
           </div>
 
           {results.map((r) => (
@@ -348,6 +363,13 @@ export function RequestWizard() {
                 <div>
                   <p className="font-medium text-zinc-900 dark:text-zinc-50">{r.originalText}</p>
                   <p className="text-xs text-zinc-500">Cantidad solicitada: {r.requestedQuantity}</p>
+                  {r.pricing.warehouseStock !== null && r.pricing.warehouseStock > 0 && (
+                    <p className="text-xs text-blue-700 dark:text-blue-400">
+                      En bodega: {r.pricing.warehouseStock} — {r.pricing.quantityToPurchase === 0
+                        ? "cubre todo el pedido"
+                        : `se cotizan ${r.pricing.quantityToPurchase}`}
+                    </p>
+                  )}
                 </div>
                 <span className={`whitespace-nowrap rounded px-2 py-1 text-xs font-medium ${STATUS_COLOR[r.pricing.status]}`}>
                   {STATUS_LABEL[r.pricing.status]}
@@ -371,7 +393,13 @@ export function RequestWizard() {
                 </div>
               )}
 
-              {!r.pricing.selected && (
+              {!r.pricing.selected && r.pricing.status === "COVERED_BY_STOCK" && (
+                <div className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
+                  <p>{r.pricing.reason}</p>
+                </div>
+              )}
+
+              {!r.pricing.selected && r.pricing.status !== "COVERED_BY_STOCK" && (
                 <div className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
                   <p>{r.pricing.reason}</p>
                   {r.match.reasons.length > 0 && (
@@ -384,7 +412,7 @@ export function RequestWizard() {
                 </div>
               )}
 
-              {!r.pricing.selected && (
+              {!r.pricing.selected && r.pricing.status !== "COVERED_BY_STOCK" && (
                 <div className="mt-3 rounded border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/40">
                   {r.match.candidates.length > 0 && (
                     <>

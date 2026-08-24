@@ -23,6 +23,8 @@ export async function selectBestOffer(
   const empty = (status: SelectionResult["status"], reason: string): SelectionResult => ({
     customerRequestItemId,
     requestedQuantity: item.requestedQuantity,
+    warehouseStock: null,
+    quantityToPurchase: null,
     status,
     selected: null,
     alternatives: [],
@@ -40,6 +42,33 @@ export async function selectBestOffer(
 
   const matchedProduct = await prisma.product.findUniqueOrThrow({ where: { id: item.matchedProductId } });
 
+  // Se descuenta lo que ya hay en bodega antes de cotizar (por genericKey,
+  // igual que la selección de oferta: el laboratorio no importa). Si la
+  // bodega ya cubre lo pedido, no tiene sentido comparar ni comprar nada.
+  const stock = await prisma.warehouseStock.findUnique({ where: { genericKey: matchedProduct.genericKey } });
+  const warehouseStock = stock?.quantity ?? 0;
+  const quantityToPurchase = Math.max(0, item.requestedQuantity - warehouseStock);
+  await prisma.customerRequestItem.update({
+    where: { id: item.id },
+    data: { warehouseStock, quantityToPurchase },
+  });
+
+  if (quantityToPurchase === 0) {
+    await prisma.priceComparison.deleteMany({ where: { customerRequestItemId: item.id } });
+    return {
+      customerRequestItemId,
+      requestedQuantity: item.requestedQuantity,
+      warehouseStock,
+      quantityToPurchase,
+      status: "COVERED_BY_STOCK",
+      selected: null,
+      alternatives: [],
+      totalPrice: 0,
+      savings: null,
+      reason: `Ya hay ${warehouseStock} unidades en bodega, suficientes para las ${item.requestedQuantity} solicitadas — no es necesario comprar ni cotizar.`,
+    };
+  }
+
   const genericFamily = await prisma.product.findMany({
     where: { genericKey: matchedProduct.genericKey, status: "ACTIVE" },
     select: { id: true },
@@ -52,17 +81,21 @@ export async function selectBestOffer(
   });
 
   if (offers.length === 0) {
-    return empty("NOT_FOUND", "No hay ninguna oferta de proveedor registrada para este producto.");
+    return {
+      ...empty("NOT_FOUND", "No hay ninguna oferta de proveedor registrada para este producto."),
+      warehouseStock,
+      quantityToPurchase,
+    };
   }
 
   const options: OfferOption[] = offers.map((offer) => {
     const packageSize = offer.product.presentationQuantity;
     // No se compran unidades sueltas: siempre se redondea hacia arriba a
-    // empaques completos para cubrir lo solicitado.
-    const packagesNeeded = calculatePackagesNeeded(item.requestedQuantity, packageSize);
+    // empaques completos para cubrir lo que falta después de descontar bodega.
+    const packagesNeeded = calculatePackagesNeeded(quantityToPurchase, packageSize);
     // stockQuantity se interpreta en unidades, igual que antes de este cambio
     // (ambigüedad preexistente del dato de proveedor, no resuelta aquí).
-    const check = checkAvailability(offer.availability, offer.stockQuantity, item.requestedQuantity);
+    const check = checkAvailability(offer.availability, offer.stockQuantity, quantityToPurchase);
     const packagePrice = Number(offer.price);
     return {
       supplierOfferId: offer.id,
@@ -89,7 +122,9 @@ export async function selectBestOffer(
 
   if (eligible.length === 0) {
     result = {
-      ...empty("NO_STOCK", "Ninguna oferta tiene disponibilidad suficiente para la cantidad solicitada."),
+      ...empty("NO_STOCK", "Ninguna oferta tiene disponibilidad suficiente para la cantidad que falta por comprar."),
+      warehouseStock,
+      quantityToPurchase,
       alternatives: options,
     };
   } else {
@@ -101,6 +136,8 @@ export async function selectBestOffer(
     result = {
       customerRequestItemId,
       requestedQuantity: item.requestedQuantity,
+      warehouseStock,
+      quantityToPurchase,
       status: "SELECTED",
       selected,
       alternatives: options,

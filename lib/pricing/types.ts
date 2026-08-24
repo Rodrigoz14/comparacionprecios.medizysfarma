@@ -1,6 +1,6 @@
 import type { Availability } from "@/lib/generated/prisma/client";
 
-export type SelectionStatus = "SELECTED" | "REVIEW" | "NOT_FOUND" | "NO_STOCK" | "NO_VALID_OFFER";
+export type SelectionStatus = "SELECTED" | "REVIEW" | "NOT_FOUND" | "NO_STOCK" | "NO_VALID_OFFER" | "COVERED_BY_STOCK";
 
 export interface OfferOption {
   supplierOfferId: string;
@@ -34,6 +34,10 @@ export interface PricingRules {
 export interface SelectionResult {
   customerRequestItemId: string;
   requestedQuantity: number;
+  /** Existencia en bodega del genérico homologado. Null si el ítem aún no tiene producto homologado. */
+  warehouseStock: number | null;
+  /** = max(0, requestedQuantity - warehouseStock). Lo que realmente se cotiza. Null si aún no se calculó. */
+  quantityToPurchase: number | null;
   status: SelectionStatus;
   selected: OfferOption | null;
   alternatives: OfferOption[];

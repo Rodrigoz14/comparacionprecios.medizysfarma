@@ -187,3 +187,89 @@ describe("selectBestOffer (comparacion entre presentaciones distintas del mismo 
     expect(result.totalPrice).toBe(25000);
   });
 });
+
+// Caso pedido por el cliente: si ya hay existencia en bodega, no se debe
+// cotizar lo que ya se tiene -- solo el faltante, y si bodega cubre todo, no
+// se cotiza nada.
+describe("selectBestOffer (descuento de inventario propio en bodega)", () => {
+  const productIds: string[] = [];
+  const laboratoryIds: string[] = [];
+  const supplierIds: string[] = [];
+  let genericKey: string;
+
+  beforeAll(async () => {
+    const product = await createProduct("BODEGATEST JBE 100MG X1", "TestLab Bodega");
+    productIds.push(product.id);
+    laboratoryIds.push(product.laboratoryId!);
+    genericKey = product.genericKey;
+
+    const supplier = await prisma.supplier.create({ data: { name: "Proveedor Bodega Test" } });
+    supplierIds.push(supplier.id);
+
+    await prisma.supplierOffer.create({
+      data: { supplierId: supplier.id, productId: product.id, price: 1000, availability: "AVAILABLE", stockQuantity: 1000 },
+    });
+  });
+
+  afterAll(async () => {
+    await prisma.warehouseStock.deleteMany({ where: { genericKey } });
+    await prisma.priceComparison.deleteMany({ where: { productId: { in: productIds } } });
+    await prisma.supplierOffer.deleteMany({ where: { productId: { in: productIds } } });
+    await prisma.supplier.deleteMany({ where: { id: { in: supplierIds } } });
+    await prisma.product.deleteMany({ where: { id: { in: productIds } } });
+    await prisma.laboratory.deleteMany({ where: { id: { in: laboratoryIds } } });
+  });
+
+  it("COVERED_BY_STOCK cuando la bodega ya cubre toda la cantidad pedida", async () => {
+    await prisma.warehouseStock.upsert({
+      where: { genericKey },
+      update: { quantity: 50 },
+      create: { genericKey, quantity: 50 },
+    });
+
+    const { itemId } = await createRequestItem("BODEGATEST JBE 100MG X1", 30);
+    await resolveCustomerRequestItem(itemId);
+
+    const result = await selectBestOffer(itemId);
+    expect(result.status).toBe("COVERED_BY_STOCK");
+    expect(result.warehouseStock).toBe(50);
+    expect(result.quantityToPurchase).toBe(0);
+    expect(result.selected).toBeNull();
+    expect(result.totalPrice).toBe(0);
+
+    // No debe quedar ninguna comparacion de precio pendiente para este item.
+    const persisted = await prisma.priceComparison.findMany({ where: { customerRequestItemId: itemId } });
+    expect(persisted.length).toBe(0);
+  });
+
+  it("cotiza solo el faltante cuando la bodega cubre parte de lo pedido", async () => {
+    await prisma.warehouseStock.upsert({
+      where: { genericKey },
+      update: { quantity: 20 },
+      create: { genericKey, quantity: 20 },
+    });
+
+    const { itemId } = await createRequestItem("BODEGATEST JBE 100MG X1", 30); // faltan 10
+    await resolveCustomerRequestItem(itemId);
+
+    const result = await selectBestOffer(itemId);
+    expect(result.status).toBe("SELECTED");
+    expect(result.warehouseStock).toBe(20);
+    expect(result.quantityToPurchase).toBe(10);
+    expect(result.selected?.packagesNeeded).toBe(10); // caja x1, faltan 10 unidades
+    expect(result.totalPrice).toBe(10000); // 10 x $1000
+  });
+
+  it("sin inventario de bodega, se cotiza la cantidad completa como antes", async () => {
+    await prisma.warehouseStock.deleteMany({ where: { genericKey } });
+
+    const { itemId } = await createRequestItem("BODEGATEST JBE 100MG X1", 30);
+    await resolveCustomerRequestItem(itemId);
+
+    const result = await selectBestOffer(itemId);
+    expect(result.status).toBe("SELECTED");
+    expect(result.warehouseStock).toBe(0);
+    expect(result.quantityToPurchase).toBe(30);
+    expect(result.totalPrice).toBe(30000);
+  });
+});

@@ -200,6 +200,21 @@ model Product {
   @@map("products")
 }
 
+/// Existencia propia en bodega (Medizys, no de un proveedor). Se lleva por
+/// `genericKey` y no por producto exacto: igual que el motor de precios, no
+/// importa el laboratorio ni la presentación para decidir si hay que comprar
+/// -- "tener 40 de acetaminofén jarabe" cubre el pedido sin importar de qué
+/// laboratorio. Cada importación reemplaza el contenido completo (es una
+/// foto del inventario actual, no un incremental).
+model WarehouseStock {
+  id         String   @id @default(cuid())
+  genericKey String   @unique @map("generic_key")
+  quantity   Int
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("warehouse_stock")
+}
+
 /// Catálogo controlado de equivalencias de principio activo (p. ej.
 /// "paracetamol" = "acetaminofen"). Requiere fuente explícita: nunca se crea
 /// automáticamente por similitud de texto.
@@ -347,6 +362,14 @@ model CustomerRequestItem {
   notes             String?
   matchStatus       MatchStatus @default(PENDING) @map("match_status")
   matchConfidence   Decimal?    @map("match_confidence") @db.Decimal(5, 4)
+  /// Existencia en bodega del genérico homologado, al momento de calcular el
+  /// precio (snapshot: no se recalcula si el inventario cambia después). Null
+  /// hasta que el ítem tenga un producto homologado.
+  warehouseStock      Int? @map("warehouse_stock")
+  /// = max(0, requestedQuantity - warehouseStock). Es la cantidad que
+  /// realmente hay que comprar/cotizar; si es 0 el ítem no genera ninguna
+  /// comparación de precios (ya está cubierto por bodega).
+  quantityToPurchase  Int? @map("quantity_to_purchase")
 
   customerRequest CustomerRequest @relation(fields: [customerRequestId], references: [id])
   matchedProduct  Product?        @relation(fields: [matchedProductId], references: [id])

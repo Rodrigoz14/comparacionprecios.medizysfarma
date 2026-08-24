@@ -27,6 +27,18 @@ const MODULES = [
     ),
   },
   {
+    label: "Bodega",
+    description: "Inventario propio",
+    href: "/bodega",
+    icon: (
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M3 21h18M4 21V8.5L12 3l8 5.5V21M9 21v-6h6v6"
+      />
+    ),
+  },
+  {
     label: "Productos",
     description: "Catálogo homologado",
     href: null,
