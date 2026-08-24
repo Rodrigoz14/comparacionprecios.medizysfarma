@@ -65,6 +65,7 @@ describe("importador de Excel (integracion contra base de datos real)", () => {
     const report = await confirmSupplierImport({
       buffer: baseBuffer,
       originalName: "test-ramedicas.xlsx",
+      storagePath: null,
       supplierId,
       sheetName: analysis.selectedSheet,
       headerRowIndex: analysis.headerRowIndex,
@@ -96,6 +97,7 @@ describe("importador de Excel (integracion contra base de datos real)", () => {
       confirmSupplierImport({
         buffer: baseBuffer,
         originalName: "test-ramedicas.xlsx",
+        storagePath: null,
         supplierId,
         sheetName: analysis.selectedSheet,
         headerRowIndex: analysis.headerRowIndex,
@@ -119,6 +121,7 @@ describe("importador de Excel (integracion contra base de datos real)", () => {
     const report = await confirmSupplierImport({
       buffer,
       originalName: "test-ramedicas-v2.xlsx",
+      storagePath: null,
       supplierId,
       sheetName: analysis.selectedSheet,
       headerRowIndex: analysis.headerRowIndex,

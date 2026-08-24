@@ -4,7 +4,7 @@ import { detectPriceFormat, normalizeAvailability, parsePrice } from "@/lib/exce
 import { parseWorkbook } from "@/lib/excel/parser";
 import { buildGenericKey, buildNormalizedName, canonicalizeIngredient, normalizeText } from "@/lib/matching/normalize";
 import { extractProductAttributes, normalizeDosageForm } from "@/lib/matching/extract-attributes";
-import { hashBuffer, persistSupplierFile } from "@/lib/excel/storage";
+import { hashBuffer } from "@/lib/excel/storage";
 import type {
   AnalyzeResult,
   ColumnMapping,
@@ -188,6 +188,11 @@ function readMappedRow(
 export interface ConfirmImportInput {
   buffer: Buffer;
   originalName: string;
+  /// URL del archivo en Vercel Blob (almacenamiento real, persistente y
+  /// accesible desde cualquier instancia) -- reemplaza la copia local en
+  /// disco de antes, que no sobrevivía entre peticiones en un entorno
+  /// serverless. Puede ser null si el archivo se subió por otra vía.
+  storagePath: string | null;
   supplierId: string;
   sheetName: string;
   headerRowIndex: number;
@@ -242,8 +247,6 @@ export async function confirmSupplierImport(input: ConfirmImportInput): Promise<
     });
   }
 
-  const storagePath = await persistSupplierFile(buffer, input.supplierId, fileHash, originalName);
-
   const supplierFile = await prisma.supplierFile.upsert({
     where: { supplierId_fileHash: { supplierId: input.supplierId, fileHash } },
     update: {
@@ -255,7 +258,7 @@ export async function confirmSupplierImport(input: ConfirmImportInput): Promise<
       supplierId: input.supplierId,
       originalName,
       fileType: originalName.split(".").pop() ?? "unknown",
-      storagePath,
+      storagePath: input.storagePath,
       fileHash,
       status: "PROCESSING",
       totalRows: dataRows.length,

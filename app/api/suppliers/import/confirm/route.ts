@@ -2,9 +2,9 @@ import { z } from "zod";
 import { confirmSupplierImport } from "@/lib/excel/importer";
 import { getVerifiedSession } from "@/lib/auth/dal";
 
-const MAX_FILE_SIZE_BYTES = 30 * 1024 * 1024; // 30 MB
-
-const metadataSchema = z.object({
+const bodySchema = z.object({
+  blobUrl: z.string().min(1),
+  originalName: z.string().min(1),
   supplierId: z.string().min(1),
   sheetName: z.string().min(1),
   headerRowIndex: z.number().int().min(0),
@@ -16,48 +16,41 @@ const metadataSchema = z.object({
   force: z.boolean().optional(),
 });
 
-// El archivo se reenvía completo aquí (no solo un token que apunte a algo
-// guardado por el servidor entre peticiones): en un entorno serverless
-// (Vercel) no hay garantía de que "analizar" y "confirmar" caigan en la
-// misma instancia con el mismo disco -- bug real reportado por el cliente,
-// donde el archivo temporal "ya no existía" al confirmar. El cliente
-// (ImportWizard.tsx) ya tiene el archivo completo en memoria desde que el
-// usuario lo seleccionó, así que reenviarlo es la forma confiable.
+// Se reutiliza la misma URL de Vercel Blob que ya generó /api/suppliers/import/analyze
+// -- el archivo no se vuelve a subir, así que el cuerpo de esta petición es
+// pequeño (solo metadatos) sin importar el tamaño real del archivo.
 export async function POST(request: Request) {
   if (!(await getVerifiedSession())) {
     return Response.json({ error: "No autenticado." }, { status: 401 });
   }
 
-  const formData = await request.formData();
-  const file = formData.get("file");
-  const metadataRaw = formData.get("metadata");
-
-  if (!(file instanceof File)) {
-    return Response.json({ error: "Falta el archivo." }, { status: 400 });
-  }
-  if (file.size > MAX_FILE_SIZE_BYTES) {
-    return Response.json({ error: "El archivo supera el límite de 30 MB." }, { status: 400 });
-  }
-  if (typeof metadataRaw !== "string") {
-    return Response.json({ error: "Faltan los datos de importación." }, { status: 400 });
-  }
-
-  let metadataJson: unknown;
-  try {
-    metadataJson = JSON.parse(metadataRaw);
-  } catch {
-    return Response.json({ error: "Datos de importación inválidos." }, { status: 400 });
-  }
-
-  const parsed = metadataSchema.safeParse(metadataJson);
+  const body = await request.json();
+  const parsed = bodySchema.safeParse(body);
   if (!parsed.success) {
     return Response.json({ error: "Datos de importación inválidos.", details: parsed.error.issues }, { status: 400 });
   }
 
-  const buffer = Buffer.from(await file.arrayBuffer());
+  let buffer: Buffer;
+  try {
+    const fileRes = await fetch(parsed.data.blobUrl);
+    if (!fileRes.ok) throw new Error(`status ${fileRes.status}`);
+    buffer = Buffer.from(await fileRes.arrayBuffer());
+  } catch {
+    return Response.json({ error: "No se pudo leer el archivo subido. Vuelve a intentarlo." }, { status: 400 });
+  }
 
   try {
-    const report = await confirmSupplierImport({ ...parsed.data, buffer, originalName: file.name });
+    const report = await confirmSupplierImport({
+      buffer,
+      originalName: parsed.data.originalName,
+      storagePath: parsed.data.blobUrl,
+      supplierId: parsed.data.supplierId,
+      sheetName: parsed.data.sheetName,
+      headerRowIndex: parsed.data.headerRowIndex,
+      mapping: parsed.data.mapping,
+      priceFormat: parsed.data.priceFormat,
+      force: parsed.data.force,
+    });
     return Response.json(report);
   } catch (error) {
     const message = error instanceof Error ? error.message : "No se pudo completar la importación.";

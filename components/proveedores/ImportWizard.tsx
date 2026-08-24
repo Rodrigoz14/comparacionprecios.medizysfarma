@@ -1,5 +1,6 @@
 "use client";
 
+import { upload } from "@vercel/blob/client";
 import { useEffect, useState } from "react";
 import type { AnalyzeResult, ColumnMapping, ColumnTarget, ImportReport, PriceFormat } from "@/lib/excel/types";
 
@@ -57,6 +58,7 @@ export function ImportWizard() {
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeError, setAnalyzeError] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<AnalyzeResult | null>(null);
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
 
   const [mapping, setMapping] = useState<ColumnMapping>({});
   const [priceFormat, setPriceFormat] = useState<PriceFormat>({ thousands: ".", decimal: "," });
@@ -78,10 +80,19 @@ export function ImportWizard() {
     setAnalyzeError(null);
     setReport(null);
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("supplierId", supplierId);
-      const res = await fetch("/api/suppliers/import/analyze", { method: "POST", body: formData });
+      // El archivo se sube directo desde el navegador a Vercel Blob (sin
+      // pasar por el cuerpo de una función serverless, que en Vercel tiene
+      // un límite de 4.5 MB, insuficiente para una lista real de precios de
+      // un proveedor con miles de filas) -- bug real reportado por el
+      // cliente al confirmar una importación de Disfarma.
+      const blob = await upload(file.name, file, { access: "public", handleUploadUrl: "/api/blob-upload" });
+      setBlobUrl(blob.url);
+
+      const res = await fetch("/api/suppliers/import/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ blobUrl: blob.url, originalName: file.name, supplierId }),
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Error al analizar el archivo.");
 
@@ -139,15 +150,19 @@ export function ImportWizard() {
   }
 
   async function handleConfirm() {
-    if (!analysis || !file) return;
+    if (!analysis || !file || !blobUrl) return;
     setConfirming(true);
     setConfirmError(null);
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append(
-        "metadata",
-        JSON.stringify({
+      // Se reutiliza la misma URL de Blob obtenida al analizar -- no hace
+      // falta volver a subir el archivo, así el cuerpo de esta petición es
+      // pequeño (solo metadatos) sin importar el tamaño real del archivo.
+      const res = await fetch("/api/suppliers/import/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          blobUrl,
+          originalName: file.name,
           supplierId,
           sheetName: analysis.selectedSheet,
           headerRowIndex: analysis.headerRowIndex,
@@ -155,8 +170,7 @@ export function ImportWizard() {
           priceFormat,
           force,
         }),
-      );
-      const res = await fetch("/api/suppliers/import/confirm", { method: "POST", body: formData });
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Error al importar.");
       setReport(data as ImportReport);

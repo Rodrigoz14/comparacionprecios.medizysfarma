@@ -45,3 +45,6 @@ next-env.d.ts
 
 # archivos privados subidos por proveedores
 /storage
+
+.vercel
+.env*
