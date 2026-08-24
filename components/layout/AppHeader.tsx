@@ -11,32 +11,17 @@ export async function AppHeader() {
     : null;
 
   return (
-    <header className="border-b-2 border-brand-blue bg-white dark:bg-zinc-950">
+    <header className="bg-gradient-to-r from-brand-navy to-brand-blue shadow-md">
       <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-3">
         <Link href="/" className="flex items-center gap-3">
-          <Image
-            src="/logo-dark.png"
-            alt="Medizys Farma"
-            width={140}
-            height={41}
-            priority
-            className="h-8 w-auto dark:hidden"
-          />
-          <Image
-            src="/logo-light.png"
-            alt="Medizys Farma"
-            width={140}
-            height={41}
-            priority
-            className="hidden h-8 w-auto dark:block"
-          />
-          <span className="hidden text-sm font-medium text-zinc-500 sm:inline dark:text-zinc-400">
+          <Image src="/logo-light.png" alt="Medizys Farma" width={140} height={41} priority className="h-8 w-auto" />
+          <span className="hidden border-l border-white/30 pl-3 text-sm font-medium text-white/80 sm:inline">
             Procurement AI
           </span>
         </Link>
         {user && (
           <div className="flex items-center gap-4 text-sm">
-            <span className="text-zinc-600 dark:text-zinc-400">{user.name}</span>
+            <span className="text-white/80">{user.name}</span>
             <LogoutButton />
           </div>
         )}

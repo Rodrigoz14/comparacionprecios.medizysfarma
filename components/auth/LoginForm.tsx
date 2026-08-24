@@ -33,10 +33,10 @@ export function LoginForm() {
   }
 
   return (
-    <div className="flex min-h-[70vh] items-center justify-center bg-zinc-50 px-6 dark:bg-black">
+    <div className="flex min-h-[70vh] items-center justify-center bg-gradient-to-br from-blue-50 via-white to-green-50 px-6 dark:from-zinc-950 dark:via-black dark:to-zinc-950">
       <form
         onSubmit={handleSubmit}
-        className="w-full max-w-sm space-y-4 rounded-xl border border-zinc-200 bg-white p-8 shadow-sm dark:border-zinc-800 dark:bg-zinc-950"
+        className="w-full max-w-sm space-y-4 rounded-xl border border-zinc-200 bg-white p-8 shadow-xl dark:border-zinc-800 dark:bg-zinc-950"
       >
         <div className="flex flex-col items-center text-center">
           <Image src="/logo-dark.png" alt="Medizys Farma" width={180} height={53} priority className="h-11 w-auto dark:hidden" />

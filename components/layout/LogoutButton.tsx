@@ -12,7 +12,7 @@ export function LogoutButton() {
   }
 
   return (
-    <button onClick={handleLogout} className="text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100">
+    <button onClick={handleLogout} className="text-sm text-white/80 transition-colors hover:text-white">
       Cerrar sesión
     </button>
   );

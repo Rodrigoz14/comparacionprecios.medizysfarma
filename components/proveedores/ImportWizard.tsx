@@ -168,7 +168,8 @@ export function ImportWizard() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8 px-6 py-12">
+    <div className="flex-1 bg-zinc-50 px-6 py-12 dark:bg-black">
+      <div className="mx-auto max-w-3xl space-y-8">
       <div>
         <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">Importar lista de proveedor</h1>
         <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
@@ -176,7 +177,7 @@ export function ImportWizard() {
         </p>
       </div>
 
-      <section className="space-y-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+      <section className="space-y-4 rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
         <div>
           <div className="flex items-center justify-between">
             <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Proveedor</label>
@@ -265,7 +266,7 @@ export function ImportWizard() {
       </section>
 
       {analysis && (
-        <section className="space-y-6 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+        <section className="space-y-6 rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
           {analysis.alreadyImported && (
             <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
               <p>
@@ -375,7 +376,7 @@ export function ImportWizard() {
       )}
 
       {report && (
-        <section className="space-y-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+        <section className="space-y-4 rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
           <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Importación completada</h2>
           <dl className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-3">
             <Stat label="Filas encontradas" value={report.totalRows} />
@@ -413,6 +414,7 @@ export function ImportWizard() {
           )}
         </section>
       )}
+      </div>
     </div>
   );
 }

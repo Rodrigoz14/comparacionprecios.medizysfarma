@@ -188,7 +188,8 @@ export function RequestWizard() {
   const totalAhorro = results ? results.reduce((sum, r) => sum + (r.pricing.savings ?? 0), 0) : 0;
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8 px-6 py-12">
+    <div className="flex-1 bg-zinc-50 px-6 py-12 dark:bg-black">
+      <div className="mx-auto max-w-3xl space-y-8">
       <div>
         <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">Nueva solicitud de cliente</h1>
         <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
@@ -196,7 +197,7 @@ export function RequestWizard() {
         </p>
       </div>
 
-      <section className="space-y-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+      <section className="space-y-4 rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
         <div>
           <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Cliente</label>
           <input
@@ -330,7 +331,7 @@ export function RequestWizard() {
 
       {results && (
         <section className="space-y-4">
-          <div className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+          <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
             <div className="flex justify-between text-sm">
               <span className="text-zinc-600 dark:text-zinc-400">Total cotizado (precio de compra)</span>
               <span className="font-semibold text-zinc-900 dark:text-zinc-50">{formatCOP(totalCotizado)}</span>
@@ -342,7 +343,7 @@ export function RequestWizard() {
           </div>
 
           {results.map((r) => (
-            <div key={r.itemId} className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+            <div key={r.itemId} className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="font-medium text-zinc-900 dark:text-zinc-50">{r.originalText}</p>
@@ -438,6 +439,7 @@ export function RequestWizard() {
           ))}
         </section>
       )}
+      </div>
     </div>
   );
 }
