@@ -81,7 +81,7 @@ export default async function Home() {
 
   return (
     <div className="flex flex-1 flex-col bg-zinc-50 dark:bg-black">
-      <div className="bg-gradient-to-br from-brand-navy via-brand-blue to-brand-navy px-6 py-14">
+      <div className="bg-gradient-to-br from-brand-navy via-brand-blue to-brand-green px-6 py-14">
         <div className="mx-auto max-w-3xl">
           <h1 className="text-3xl font-semibold tracking-tight text-white">Medizys Procurement AI</h1>
           <p className="mt-2 max-w-xl text-blue-100">

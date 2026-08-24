@@ -11,7 +11,7 @@ export async function AppHeader() {
     : null;
 
   return (
-    <header className="bg-gradient-to-r from-brand-navy to-brand-blue shadow-md">
+    <header className="border-b-4 border-brand-green bg-gradient-to-r from-brand-navy to-brand-blue shadow-md">
       <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-3">
         <Link href="/" className="flex items-center gap-3">
           <Image src="/logo-light.png" alt="Medizys Farma" width={140} height={41} priority className="h-8 w-auto" />
