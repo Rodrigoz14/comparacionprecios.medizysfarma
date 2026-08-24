@@ -85,6 +85,10 @@ export function ImportWizard() {
       // un límite de 4.5 MB, insuficiente para una lista real de precios de
       // un proveedor con miles de filas) -- bug real reportado por el
       // cliente al confirmar una importación de Disfarma.
+      // El servidor (app/api/blob-upload/route.ts) fija addRandomSuffix en
+      // el token para evitar el error "This blob already exists" al volver
+      // a subir un archivo con el mismo nombre: no es una opción disponible
+      // aquí en el cliente, la autoriza el token generado en el servidor.
       const blob = await upload(file.name, file, { access: "public", handleUploadUrl: "/api/blob-upload" });
       setBlobUrl(blob.url);
 

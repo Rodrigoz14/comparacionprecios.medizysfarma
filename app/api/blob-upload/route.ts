@@ -31,6 +31,12 @@ export async function POST(request: Request): Promise<Response> {
         return {
           allowedContentTypes: ALLOWED_CONTENT_TYPES,
           maximumSizeInBytes: 30 * 1024 * 1024, // 30 MB
+          // El token, no la opción del cliente, es lo que realmente autoriza
+          // esto -- se fija aquí para no depender de que el navegador la
+          // pida. Sin esto, volver a subir un archivo con el mismo nombre
+          // (reintentar la misma lista de precios) falla con "This blob
+          // already exists".
+          addRandomSuffix: true,
         };
       },
       onUploadCompleted: async () => {
