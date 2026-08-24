@@ -274,7 +274,11 @@ model SupplierFile {
   supplierEmailId String?    @map("supplier_email_id")
   originalName    String     @map("original_name")
   fileType        String     @map("file_type")
-  storagePath     String     @map("storage_path")
+  /// Ruta de referencia al archivo original, en el directorio temporal del
+  /// servidor -- best-effort, no persiste indefinidamente en producción y
+  /// nada la lee de vuelta hoy (no hay función de descargar el archivo
+  /// importado). Puede quedar sin valor si no se pudo escribir.
+  storagePath     String?    @map("storage_path")
   fileHash        String     @map("file_hash")
   status          FileStatus @default(RECEIVED)
   totalRows       Int?       @map("total_rows")

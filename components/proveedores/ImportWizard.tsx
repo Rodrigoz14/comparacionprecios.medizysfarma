@@ -139,15 +139,15 @@ export function ImportWizard() {
   }
 
   async function handleConfirm() {
-    if (!analysis) return;
+    if (!analysis || !file) return;
     setConfirming(true);
     setConfirmError(null);
     try {
-      const res = await fetch("/api/suppliers/import/confirm", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fileToken: analysis.fileToken,
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append(
+        "metadata",
+        JSON.stringify({
           supplierId,
           sheetName: analysis.selectedSheet,
           headerRowIndex: analysis.headerRowIndex,
@@ -155,7 +155,8 @@ export function ImportWizard() {
           priceFormat,
           force,
         }),
-      });
+      );
+      const res = await fetch("/api/suppliers/import/confirm", { method: "POST", body: formData });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Error al importar.");
       setReport(data as ImportReport);

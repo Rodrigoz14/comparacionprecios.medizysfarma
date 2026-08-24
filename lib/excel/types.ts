@@ -44,7 +44,6 @@ export interface AnalyzeResult {
   columns: DetectedColumn[];
   proposedPriceFormat: PriceFormat;
   previewRows: RawRow[];
-  fileToken: string;
   alreadyImported: {
     supplierFileId: string;
     processedAt: Date | null;

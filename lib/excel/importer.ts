@@ -4,12 +4,7 @@ import { detectPriceFormat, normalizeAvailability, parsePrice } from "@/lib/exce
 import { parseWorkbook } from "@/lib/excel/parser";
 import { buildGenericKey, buildNormalizedName, canonicalizeIngredient, normalizeText } from "@/lib/matching/normalize";
 import { extractProductAttributes, normalizeDosageForm } from "@/lib/matching/extract-attributes";
-import {
-  hashBuffer,
-  persistSupplierFile,
-  readTemporaryUpload,
-  saveTemporaryUpload,
-} from "@/lib/excel/storage";
+import { hashBuffer, persistSupplierFile } from "@/lib/excel/storage";
 import type {
   AnalyzeResult,
   ColumnMapping,
@@ -79,8 +74,6 @@ export async function analyzeSupplierFile(
     where: { supplierId_fileHash: { supplierId, fileHash } },
   });
 
-  const fileToken = await saveTemporaryUpload(buffer, originalName);
-
   return {
     sheets: workbook.sheets,
     selectedSheet,
@@ -88,7 +81,6 @@ export async function analyzeSupplierFile(
     columns,
     proposedPriceFormat,
     previewRows,
-    fileToken,
     alreadyImported: existingFile
       ? {
           supplierFileId: existingFile.id,
@@ -194,7 +186,8 @@ function readMappedRow(
 }
 
 export interface ConfirmImportInput {
-  fileToken: string;
+  buffer: Buffer;
+  originalName: string;
   supplierId: string;
   sheetName: string;
   headerRowIndex: number;
@@ -204,7 +197,7 @@ export interface ConfirmImportInput {
 }
 
 export async function confirmSupplierImport(input: ConfirmImportInput): Promise<ImportReport> {
-  const { buffer, originalName } = await readTemporaryUpload(input.fileToken);
+  const { buffer, originalName } = input;
   const fileHash = hashBuffer(buffer);
 
   const existingFile = await prisma.supplierFile.findUnique({

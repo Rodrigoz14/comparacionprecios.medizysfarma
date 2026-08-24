@@ -63,7 +63,8 @@ describe("importador de Excel (integracion contra base de datos real)", () => {
     const priceFormat: PriceFormat = { thousands: ".", decimal: "," };
 
     const report = await confirmSupplierImport({
-      fileToken: analysis.fileToken,
+      buffer: baseBuffer,
+      originalName: "test-ramedicas.xlsx",
       supplierId,
       sheetName: analysis.selectedSheet,
       headerRowIndex: analysis.headerRowIndex,
@@ -93,7 +94,8 @@ describe("importador de Excel (integracion contra base de datos real)", () => {
 
     await expect(
       confirmSupplierImport({
-        fileToken: analysis.fileToken,
+        buffer: baseBuffer,
+        originalName: "test-ramedicas.xlsx",
         supplierId,
         sheetName: analysis.selectedSheet,
         headerRowIndex: analysis.headerRowIndex,
@@ -115,7 +117,8 @@ describe("importador de Excel (integracion contra base de datos real)", () => {
     for (const col of analysis.columns) if (col.proposedTarget) mapping[col.proposedTarget] = col.index;
 
     const report = await confirmSupplierImport({
-      fileToken: analysis.fileToken,
+      buffer,
+      originalName: "test-ramedicas-v2.xlsx",
       supplierId,
       sheetName: analysis.selectedSheet,
       headerRowIndex: analysis.headerRowIndex,

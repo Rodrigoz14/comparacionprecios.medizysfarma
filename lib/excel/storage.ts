@@ -1,73 +1,55 @@
-import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 // En Vercel (y cualquier entorno serverless) el disco del despliegue es de
-// solo lectura -- solo el directorio temporal del sistema operativo admite
-// escritura, y ni siquiera ese es garantizado entre invocaciones distintas.
-// Antes esto escribía en una carpeta "storage" propia del proyecto
-// (process.cwd() + "storage"), que funcionaba en desarrollo local (un solo
-// proceso de Node de larga duración) pero fallaba en producción con
-// "ENOENT: no such file or directory, mkdir '/var/task/storage'" -- bug real
-// reportado por el cliente al intentar subir una lista de Disfarma.
+// solo lectura, y cada petición puede caer en una instancia distinta sin
+// disco compartido entre ellas -- por eso el archivo ya NO se guarda entre
+// la petición de "analizar" y la de "confirmar" (bug real reportado por el
+// cliente: fallaba con "ENOENT: no such file or directory, mkdir
+// '/var/task/storage'" al intentar escribir, y aun corrigiendo eso con el
+// directorio temporal del sistema, "confirmar" a veces caía en una
+// instancia distinta a la de "analizar" y no encontraba el archivo).
+// El cliente (ImportWizard.tsx) ya tiene el archivo completo en memoria
+// desde que el usuario lo selecciona, así que ahora se reenvía completo en
+// ambas peticiones -- ninguna de las dos depende de que el servidor
+// recuerde nada entre una y otra.
 //
-// UPLOADS_ROOT sí necesita funcionar de forma confiable: el archivo temporal
-// debe sobrevivir entre la petición de "analizar" y la de "confirmar" del
-// mismo asistente de importación, que ocurren segundos aparte -- Vercel
-// normalmente reutiliza la misma instancia "caliente" para peticiones tan
-// seguidas, así que esto funciona en la práctica aunque no esté 100%
-// garantizado por el modelo serverless.
-//
-// STORAGE_ROOT (la copia "permanente" del archivo original) no se lee de
-// vuelta en ningún lugar de la aplicación hoy (no hay función de descargar
-// el archivo importado) -- guardarla en el directorio temporal evita que la
-// importación falle, pero esa copia no sobrevive indefinidamente en
-// producción. Si más adelante se necesita poder descargar el archivo
-// original importado, hace falta almacenamiento real persistente (Vercel
-// Blob o similar), no el disco local.
+// Lo único que sigue guardándose en disco es la copia "permanente" del
+// archivo original (SupplierFile.storagePath), y solo como intento best-effort:
+// no se lee de vuelta en ningún lugar de la aplicación hoy (no hay función
+// de descargar el archivo importado), así que si falla no debe interrumpir
+// la importación. Esa copia tampoco sobrevive indefinidamente en
+// producción -- si más adelante se necesita poder descargar el archivo
+// original, hace falta almacenamiento real persistente (Vercel Blob o
+// similar), no el disco local.
 const STORAGE_ROOT = path.join(tmpdir(), "medizys-storage", "supplier-files");
-const UPLOADS_ROOT = path.join(tmpdir(), "medizys-storage", "uploads");
 
 export function hashBuffer(buffer: Buffer): string {
   return createHash("sha256").update(buffer).digest("hex");
 }
 
-/** Guarda un archivo recién subido bajo un token temporal, antes de confirmar la importación. */
-export async function saveTemporaryUpload(buffer: Buffer, originalName: string): Promise<string> {
-  await mkdir(UPLOADS_ROOT, { recursive: true });
-  const token = randomUUID();
-  const filePath = path.join(UPLOADS_ROOT, `${token}__${originalName}`);
-  await writeFile(filePath, buffer);
-  return token;
-}
-
-async function findUploadPath(token: string): Promise<string> {
-  const { readdir } = await import("node:fs/promises");
-  const files = await readdir(UPLOADS_ROOT).catch(() => [] as string[]);
-  const match = files.find((f) => f.startsWith(`${token}__`));
-  if (!match) throw new Error("El archivo temporal ya no existe. Vuelve a subirlo.");
-  return path.join(UPLOADS_ROOT, match);
-}
-
-export async function readTemporaryUpload(token: string): Promise<{ buffer: Buffer; originalName: string }> {
-  const filePath = await findUploadPath(token);
-  const buffer = await readFile(filePath);
-  const originalName = path.basename(filePath).split("__").slice(1).join("__");
-  return { buffer, originalName };
-}
-
-/** Copia el archivo temporal a su ubicación definitiva, asociada al proveedor. */
+/**
+ * Copia el archivo a una ubicación de referencia asociada al proveedor.
+ * Best-effort: si el directorio temporal no está disponible por alguna
+ * razón, no debe tumbar la importación completa -- devuelve null en vez de
+ * lanzar, ya que nada depende de que esta copia exista.
+ */
 export async function persistSupplierFile(
   buffer: Buffer,
   supplierId: string,
   fileHash: string,
   originalName: string,
-): Promise<string> {
-  const dir = path.join(STORAGE_ROOT, supplierId);
-  await mkdir(dir, { recursive: true });
-  const safeName = originalName.replace(/[^a-zA-Z0-9._-]/g, "_");
-  const filePath = path.join(dir, `${fileHash}__${safeName}`);
-  await writeFile(filePath, buffer);
-  return filePath;
+): Promise<string | null> {
+  try {
+    const dir = path.join(STORAGE_ROOT, supplierId);
+    await mkdir(dir, { recursive: true });
+    const safeName = originalName.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const filePath = path.join(dir, `${fileHash}__${safeName}`);
+    await writeFile(filePath, buffer);
+    return filePath;
+  } catch {
+    return null;
+  }
 }
