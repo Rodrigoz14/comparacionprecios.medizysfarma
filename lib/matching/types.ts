@@ -55,4 +55,13 @@ export interface MatchResult {
   candidates: ScoredCandidate[];
   reasons: string[];
   source: "deterministic" | "ai" | "manual" | "none";
+  /**
+   * Tamaño de envase que el cliente pidió explícitamente (p. ej. "30" de
+   * "jarabe X 30ML"), en las mismas unidades que `presentationUnit` del
+   * producto. Null si no especificó ningún tamaño -- se distingue de "no
+   * importa" porque para formas medidas (líquidos/cremas) determina si un
+   * envase de otro tamaño se compara por costo total o simplemente se pide
+   * esa cantidad de envases tal cual venga.
+   */
+  requestedPresentationQuantity: number | null;
 }

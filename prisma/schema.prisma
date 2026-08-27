@@ -370,6 +370,13 @@ model CustomerRequestItem {
   /// realmente hay que comprar/cotizar; si es 0 el ítem no genera ninguna
   /// comparación de precios (ya está cubierto por bodega).
   quantityToPurchase  Int? @map("quantity_to_purchase")
+  /// Tamaño de envase que el cliente pidió explícitamente (p. ej. 30 de
+  /// "jarabe X 30ML"), en las mismas unidades que product.presentationUnit.
+  /// Null si no especificó ninguno. Para formas medidas (líquidos/cremas,
+  /// ver PRESENTATION_UNIT_BY_FORM), determina si un envase de otro tamaño
+  /// se compara por costo total o si se pide esa cantidad de envases tal
+  /// cual venga -- ver lib/pricing/selection-engine.ts.
+  requestedPresentationQuantity Int? @map("requested_presentation_quantity")
 
   customerRequest CustomerRequest @relation(fields: [customerRequestId], references: [id])
   matchedProduct  Product?        @relation(fields: [matchedProductId], references: [id])

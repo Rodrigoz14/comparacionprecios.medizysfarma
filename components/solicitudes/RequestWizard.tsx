@@ -189,6 +189,25 @@ export function RequestWizard() {
     }
   }
 
+  async function handleSelectOffer(itemId: string, supplierOfferId: string) {
+    setSelectingItemId(itemId);
+    setError(null);
+    try {
+      const res = await fetch(`/api/customer-requests/items/${itemId}/select-offer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ supplierOfferId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "No se pudo cambiar la oferta seleccionada.");
+      setResults((prev) => (prev ? prev.map((r) => (r.itemId === itemId ? { ...r, pricing: data.pricing } : r)) : prev));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error inesperado al cambiar la oferta.");
+    } finally {
+      setSelectingItemId(null);
+    }
+  }
+
   const totalCotizado = results
     ? results.reduce((sum, r) => sum + (r.pricing.totalPrice ?? 0), 0)
     : 0;
@@ -452,14 +471,28 @@ export function RequestWizard() {
                     Ver {r.pricing.alternatives.length} ofertas consideradas
                   </summary>
                   <ul className="mt-2 space-y-1 text-xs text-zinc-600 dark:text-zinc-400">
-                    {r.pricing.alternatives.map((a) => (
-                      <li key={a.supplierOfferId}>
-                        {a.eligible ? "✓" : "✗"} {a.supplierName}
-                        {a.laboratoryName ? ` (${a.laboratoryName})` : ""} — {a.packagesNeeded} x{a.packageSize}{" "}
-                        {a.presentationUnit} = {formatCOP(a.totalCost)} ({formatCOP(a.unitPrice)}/unidad)
-                        {a.discardReason ? ` — ${a.discardReason}` : ""}
-                      </li>
-                    ))}
+                    {r.pricing.alternatives.map((a) => {
+                      const isSelected = a.supplierOfferId === r.pricing.selected?.supplierOfferId;
+                      return (
+                        <li key={a.supplierOfferId} className="flex items-center justify-between gap-2">
+                          <span>
+                            {isSelected ? "★" : a.eligible ? "✓" : "✗"} {a.supplierName}
+                            {a.laboratoryName ? ` (${a.laboratoryName})` : ""} — {a.packagesNeeded} x{a.packageSize}{" "}
+                            {a.presentationUnit} = {formatCOP(a.totalCost)} ({formatCOP(a.unitPrice)}/unidad)
+                            {a.discardReason ? ` — ${a.discardReason}` : ""}
+                          </span>
+                          {!isSelected && (
+                            <button
+                              onClick={() => handleSelectOffer(r.itemId, a.supplierOfferId)}
+                              disabled={selectingItemId === r.itemId}
+                              className="shrink-0 rounded border border-zinc-300 px-2 py-0.5 text-[11px] font-medium text-zinc-600 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                            >
+                              Usar esta
+                            </button>
+                          )}
+                        </li>
+                      );
+                    })}
                   </ul>
                 </details>
               )}

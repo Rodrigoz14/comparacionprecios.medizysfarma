@@ -269,7 +269,7 @@ export function extractIngredientGuess(rawText: string): string | null {
 export function extractProductAttributes(
   rawName: string,
   options: ExtractOptions = {},
-): { attributes: ExtractedAttributes; warnings: string[] } | null {
+): { attributes: ExtractedAttributes; warnings: string[]; presentationSpecified: boolean } | null {
   const requirePresentation = options.requirePresentation ?? true;
   const upper = stripAccents(rawName).toUpperCase().replace(CHANNEL_PREFIX_RE, "");
   const warnings: string[] = [];
@@ -413,5 +413,12 @@ export function extractProductAttributes(
       presentationUnit,
     },
     warnings,
+    // true solo si el texto realmente traía un tamaño de envase explícito
+    // (p. ej. "X30ML"), no cuando se asumió 1 por defecto (envase de una sola
+    // unidad o cantidad no exigida). Distingue "el cliente pidió un tamaño
+    // específico" de "no dijo ningún tamaño" -- necesario para saber si un
+    // envase de otro tamaño puede compararse por costo total o si hay que
+    // respetar el tamaño pedido (Sección: formas medidas/líquidas).
+    presentationSpecified: presentationMatch !== null,
   };
 }

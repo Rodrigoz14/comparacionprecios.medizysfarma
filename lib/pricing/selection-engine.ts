@@ -1,9 +1,22 @@
 import { prisma } from "@/lib/db/client";
 import { checkAvailability } from "@/lib/pricing/availability";
-import { calculatePackagesNeeded, calculateSavings, calculateTotal } from "@/lib/pricing/price-calculator";
+import {
+  calculatePackagesNeeded,
+  calculatePackagesNeededMeasured,
+  calculateSavings,
+  calculateTotal,
+} from "@/lib/pricing/price-calculator";
 import { DEFAULT_PRICING_RULES } from "@/lib/pricing/rules";
 import { rankOffers } from "@/lib/pricing/supplier-ranking";
 import type { OfferOption, PricingRules, SelectionResult } from "@/lib/pricing/types";
+
+/**
+ * Formas cuyo envase se mide en volumen/peso (ver PRESENTATION_UNIT_BY_FORM
+ * en lib/matching/extract-attributes.ts) en vez de contarse en unidades
+ * discretas (tabletas, ampollas...): un frasco de jarabe de 15ml no es medio
+ * frasco de 30ml para efectos de cuántos envases hay que pedir.
+ */
+const MEASURED_UNITS = new Set(["ml", "g"]);
 
 /**
  * Selecciona la mejor oferta para un ítem de solicitud ya homologado (Sección 5).
@@ -90,12 +103,21 @@ export async function selectBestOffer(
 
   const options: OfferOption[] = offers.map((offer) => {
     const packageSize = offer.product.presentationQuantity;
-    // No se compran unidades sueltas: siempre se redondea hacia arriba a
-    // empaques completos para cubrir lo que falta después de descontar bodega.
-    const packagesNeeded = calculatePackagesNeeded(quantityToPurchase, packageSize);
+    const isMeasured = MEASURED_UNITS.has(offer.product.presentationUnit);
+    // Para formas medidas, "quantityToPurchase" son envases del tamaño que
+    // pidió el cliente (si lo dijo), no unidades sueltas de ml/g -- se
+    // convierte a cuántos envases de ESTE tamaño hacen falta para cubrir el
+    // mismo volumen/peso total (Sección: bug real del jarabe 30ml vs 15ml).
+    // Para formas discretas (tabletas...) sigue igual que antes.
+    const packagesNeeded = isMeasured
+      ? calculatePackagesNeededMeasured(quantityToPurchase, item.requestedPresentationQuantity, packageSize)
+      : calculatePackagesNeeded(quantityToPurchase, packageSize);
     // stockQuantity se interpreta en unidades, igual que antes de este cambio
-    // (ambigüedad preexistente del dato de proveedor, no resuelta aquí).
-    const check = checkAvailability(offer.availability, offer.stockQuantity, quantityToPurchase);
+    // (ambigüedad preexistente del dato de proveedor, no resuelta aquí). Para
+    // formas medidas se compara contra los envases de ESTE tamaño que hacen
+    // falta (packagesNeeded), no contra quantityToPurchase (que está en
+    // envases del tamaño pedido por el cliente, no el de esta oferta).
+    const check = checkAvailability(offer.availability, offer.stockQuantity, isMeasured ? packagesNeeded : quantityToPurchase);
     const packagePrice = Number(offer.price);
     return {
       supplierOfferId: offer.id,

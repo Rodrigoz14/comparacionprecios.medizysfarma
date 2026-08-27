@@ -171,6 +171,7 @@ async function resolveProductMatchCore(rawText: string): Promise<MatchResult> {
             : []),
         ],
         source: viaAI ? "ai" : "deterministic",
+        requestedPresentationQuantity: null,
       };
     }
 
@@ -181,19 +182,40 @@ async function resolveProductMatchCore(rawText: string): Promise<MatchResult> {
       candidates: [],
       reasons: [`No se pudo determinar la concentración de "${rawText}".`],
       source: "none",
+      requestedPresentationQuantity: null,
     };
   }
+
+  // Tamaño de envase que el cliente pidió explícitamente (p. ej. "30" de
+  // "jarabe X 30ML"), si lo dijo. Null si no especificó ninguno.
+  const requestedPresentationQuantity = extraction.presentationSpecified
+    ? extraction.attributes.presentationQuantity
+    : null;
 
   const genericKey = buildGenericKey(extraction.attributes);
   const exactMatches = await prisma.product.findMany({ where: { genericKey, status: "ACTIVE" } });
   if (exactMatches.length > 0) {
+    // Cuando el cliente pidió un tamaño de envase específico, se prefiere ese
+    // producto exacto como matchedProductId[0] (el que se muestra como "el
+    // producto homologado") -- el motor de precios igual compara TODA la
+    // familia de genericKey por costo total, esto solo mejora cuál se
+    // muestra como referencia principal.
+    const ordered =
+      requestedPresentationQuantity !== null
+        ? [...exactMatches].sort((a, b) => {
+            const aMatch = a.presentationQuantity === requestedPresentationQuantity ? 0 : 1;
+            const bMatch = b.presentationQuantity === requestedPresentationQuantity ? 0 : 1;
+            return aMatch - bMatch;
+          })
+        : exactMatches;
     return {
       decision: "MATCH",
       confidence: 1,
-      matchedProductIds: exactMatches.map((p) => p.id),
+      matchedProductIds: ordered.map((p) => p.id),
       candidates: [],
       reasons: ["Coincidencia exacta de ingrediente activo, concentración y forma farmacéutica."],
       source: "deterministic",
+      requestedPresentationQuantity,
     };
   }
 
@@ -213,6 +235,7 @@ async function resolveProductMatchCore(rawText: string): Promise<MatchResult> {
       candidates: [],
       reasons: ["No se encontró ningún producto con el mismo principio activo, ni con un sinónimo controlado conocido."],
       source: "deterministic",
+      requestedPresentationQuantity,
     };
   }
 
@@ -286,6 +309,7 @@ async function resolveProductMatchCore(rawText: string): Promise<MatchResult> {
           `Única forma farmacéutica disponible para este principio activo y concentración: ${[...distinctForms][0]}.`,
         ],
         source: "deterministic",
+        requestedPresentationQuantity,
       };
     }
 
@@ -302,6 +326,7 @@ async function resolveProductMatchCore(rawText: string): Promise<MatchResult> {
             candidates: dedupeByGenericKey(concentrationMatches),
             reasons: aiResult.reasons,
             source: "ai",
+            requestedPresentationQuantity,
           };
         }
       }
@@ -321,6 +346,7 @@ async function resolveProductMatchCore(rawText: string): Promise<MatchResult> {
         candidates: dedupeByGenericKey(concentrationMatches),
         reasons: [...reasons, ...fuzzyIngredientNote, ...subsetIngredientNote, ...brandMatchNote, ...aiMatchNote],
         source: aiResult ? "ai" : "deterministic",
+        requestedPresentationQuantity,
       };
     }
     // distinctForms.size === 0: ningún candidato coincide en concentración;
@@ -341,6 +367,7 @@ async function resolveProductMatchCore(rawText: string): Promise<MatchResult> {
       candidates: dedupeByGenericKey(scored),
       reasons: [describeMatch(best)],
       source: "deterministic",
+      requestedPresentationQuantity,
     };
   }
 
@@ -352,6 +379,7 @@ async function resolveProductMatchCore(rawText: string): Promise<MatchResult> {
       candidates: dedupeByGenericKey(scored),
       reasons: [describeMatch(best), ...fuzzyIngredientNote, ...subsetIngredientNote, ...brandMatchNote, ...aiMatchNote],
       source: "deterministic",
+      requestedPresentationQuantity,
     };
   }
 
@@ -371,6 +399,7 @@ async function resolveProductMatchCore(rawText: string): Promise<MatchResult> {
         candidates: dedupeByGenericKey(scored),
         reasons: aiResult.reasons,
         source: "ai",
+        requestedPresentationQuantity,
       };
     }
   }
@@ -383,6 +412,7 @@ async function resolveProductMatchCore(rawText: string): Promise<MatchResult> {
       candidates: dedupeByGenericKey(scored),
       reasons: [...aiResult.reasons, ...fuzzyIngredientNote, ...subsetIngredientNote, ...brandMatchNote, ...aiMatchNote],
       source: "ai",
+      requestedPresentationQuantity,
     };
   }
 
@@ -393,6 +423,7 @@ async function resolveProductMatchCore(rawText: string): Promise<MatchResult> {
     candidates: dedupeByGenericKey(scored),
     reasons: aiResult ? aiResult.reasons : [describeMatch(best), "Requiere revisión humana.", ...fuzzyIngredientNote, ...subsetIngredientNote, ...brandMatchNote, ...aiMatchNote],
     source: aiResult ? "ai" : "deterministic",
+    requestedPresentationQuantity,
   };
 }
 
@@ -418,6 +449,7 @@ export async function resolveCustomerRequestItem(customerRequestItemId: string):
       matchStatus: result.decision,
       matchConfidence: result.confidence,
       matchedProductId: result.matchedProductIds[0] ?? null,
+      requestedPresentationQuantity: result.requestedPresentationQuantity,
     },
   });
 

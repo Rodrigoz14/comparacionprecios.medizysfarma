@@ -273,3 +273,77 @@ describe("selectBestOffer (descuento de inventario propio en bodega)", () => {
     expect(result.totalPrice).toBe(30000);
   });
 });
+
+// Caso real reportado por el cliente: pidió un jarabe de 30ml y el sistema
+// ofreció uno de 15ml sin darse cuenta de que hacían falta el doble para
+// cubrir lo mismo -- "cantidad" en un líquido es número de FRASCOS, no
+// mililitros sueltos, y un frasco de otro tamaño se compara por costo total
+// (como una caja de tabletas de 30 vs 100), nunca 1 a 1.
+describe("selectBestOffer (formas medidas: frascos de distinto tamaño)", () => {
+  const productIds: string[] = [];
+  const laboratoryIds: string[] = [];
+  const supplierIds: string[] = [];
+
+  beforeAll(async () => {
+    const frasco30 = await createProduct("JARABETEST 100MG/5ML JBE X30ML", "TestLab Jarabe");
+    const frasco15 = await createProduct("JARABETEST 100MG/5ML JBE X15ML", "TestLab Jarabe");
+    productIds.push(frasco30.id, frasco15.id);
+    laboratoryIds.push(frasco30.laboratoryId!, frasco15.laboratoryId!);
+    expect(frasco30.genericKey).toBe(frasco15.genericKey);
+
+    const supplierA = await prisma.supplier.create({ data: { name: "Proveedor Jarabe A" } });
+    const supplierB = await prisma.supplier.create({ data: { name: "Proveedor Jarabe B" } });
+    supplierIds.push(supplierA.id, supplierB.id);
+
+    // A vende el frasco de 30ml a $5000. B vende el de 15ml, mas barato por
+    // frasco ($2000), pero se necesitan el doble de frascos para el mismo volumen.
+    await prisma.supplierOffer.create({
+      data: { supplierId: supplierA.id, productId: frasco30.id, price: 5000, availability: "AVAILABLE", stockQuantity: 100 },
+    });
+    await prisma.supplierOffer.create({
+      data: { supplierId: supplierB.id, productId: frasco15.id, price: 2000, availability: "AVAILABLE", stockQuantity: 100 },
+    });
+  });
+
+  afterAll(async () => {
+    await prisma.priceComparison.deleteMany({ where: { productId: { in: productIds } } });
+    await prisma.supplierOffer.deleteMany({ where: { productId: { in: productIds } } });
+    await prisma.supplier.deleteMany({ where: { id: { in: supplierIds } } });
+    await prisma.product.deleteMany({ where: { id: { in: productIds } } });
+    await prisma.laboratory.deleteMany({ where: { id: { in: laboratoryIds } } });
+  });
+
+  it("con tamaño de frasco especificado, compara por costo total real (no 1 frasco de cada uno)", async () => {
+    // Pide 2 frascos de 30ml (= 60ml en total). B necesita 4 frascos de 15ml
+    // para cubrir lo mismo (no 2, que era el bug real reportado).
+    const { itemId } = await createRequestItem("JARABETEST 100MG/5ML JBE X30ML", 2);
+    await resolveCustomerRequestItem(itemId);
+
+    const result = await selectBestOffer(itemId);
+    expect(result.status).toBe("SELECTED");
+
+    const optionA = result.alternatives.find((a) => a.supplierName === "Proveedor Jarabe A")!;
+    const optionB = result.alternatives.find((a) => a.supplierName === "Proveedor Jarabe B")!;
+    expect(optionA.packagesNeeded).toBe(2); // 2 frascos de 30ml = 60ml
+    expect(optionA.totalCost).toBe(10000);
+    expect(optionB.packagesNeeded).toBe(4); // 4 frascos de 15ml = 60ml (no 2)
+    expect(optionB.totalCost).toBe(8000);
+
+    // B gana por costo TOTAL real (8000 < 10000), no por precio de frasco a ciegas.
+    expect(result.selected?.supplierName).toBe("Proveedor Jarabe B");
+    expect(result.totalPrice).toBe(8000);
+  });
+
+  it("sin tamaño de frasco especificado, se piden esa cantidad de frascos tal cual venga cada oferta", async () => {
+    const { itemId } = await createRequestItem("JARABETEST 100MG/5ML JBE", 2);
+    await resolveCustomerRequestItem(itemId);
+
+    const result = await selectBestOffer(itemId);
+    const optionA = result.alternatives.find((a) => a.supplierName === "Proveedor Jarabe A")!;
+    const optionB = result.alternatives.find((a) => a.supplierName === "Proveedor Jarabe B")!;
+    expect(optionA.packagesNeeded).toBe(2); // 2 frascos de A, sea cual sea su tamaño
+    expect(optionB.packagesNeeded).toBe(2); // 2 frascos de B, sea cual sea su tamaño
+    expect(result.selected?.supplierName).toBe("Proveedor Jarabe B"); // mas barato por frasco
+    expect(result.totalPrice).toBe(4000);
+  });
+});
