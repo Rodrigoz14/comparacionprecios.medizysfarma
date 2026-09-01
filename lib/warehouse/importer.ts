@@ -18,6 +18,27 @@ export interface WarehouseImportReport {
 }
 
 /**
+ * Corre `fn` sobre `items` con un máximo de `concurrency` en vuelo a la vez,
+ * en vez de uno por uno. Homologar cada fila implica al menos una consulta
+ * real a la base de datos (y a veces una llamada a la IA); en serie, un
+ * inventario de varios miles de filas superaba el límite de tiempo de la
+ * función (5 minutos) sin terminar -- bug real reportado por el cliente.
+ */
+async function mapWithConcurrency<T, R>(items: T[], concurrency: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+  async function worker() {
+    while (nextIndex < items.length) {
+      const i = nextIndex++;
+      results[i] = await fn(items[i]);
+    }
+  }
+  const workerCount = Math.min(concurrency, items.length);
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return results;
+}
+
+/**
  * Reemplaza el inventario de bodega completo a partir de un Excel con
  * producto + cantidad. Se homologa cada fila con el mismo motor de
  * homologación que las solicitudes de cliente (Sección 5): solo las filas
@@ -47,26 +68,40 @@ export async function importWarehouseStock(buffer: Buffer, originalName: string)
     })
     .filter((row) => row.text !== "");
 
+  const matches = await mapWithConcurrency(parsedRows, 8, (row) => resolveProductMatch(row.text));
+
+  // Una sola consulta para todos los productos matcheados, en vez de una por
+  // fila: el genericKey no depende de cuál fila lo pidió.
+  const matchedProductIds = [
+    ...new Set(
+      matches
+        .filter((m) => m.decision === "MATCH" && m.matchedProductIds.length > 0)
+        .map((m) => m.matchedProductIds[0]),
+    ),
+  ];
+  const products = await prisma.product.findMany({
+    where: { id: { in: matchedProductIds } },
+    select: { id: true, genericKey: true },
+  });
+  const genericKeyByProductId = new Map(products.map((p) => [p.id, p.genericKey]));
+
   const stockByGenericKey = new Map<string, number>();
   const errors: WarehouseImportRowError[] = [];
 
-  for (const row of parsedRows) {
-    const match = await resolveProductMatch(row.text);
+  parsedRows.forEach((row, i) => {
+    const match = matches[i];
     if (match.decision !== "MATCH" || match.matchedProductIds.length === 0) {
       errors.push({
         text: row.text,
         quantity: row.quantity,
         reason: match.reasons[0] ?? "No se pudo identificar el producto con certeza.",
       });
-      continue;
+      return;
     }
 
-    const product = await prisma.product.findUniqueOrThrow({
-      where: { id: match.matchedProductIds[0] },
-      select: { genericKey: true },
-    });
-    stockByGenericKey.set(product.genericKey, (stockByGenericKey.get(product.genericKey) ?? 0) + row.quantity);
-  }
+    const genericKey = genericKeyByProductId.get(match.matchedProductIds[0])!;
+    stockByGenericKey.set(genericKey, (stockByGenericKey.get(genericKey) ?? 0) + row.quantity);
+  });
 
   await prisma.$transaction([
     prisma.warehouseStock.deleteMany({}),
