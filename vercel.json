@@ -1,0 +1,12 @@
+{
+  "functions": {
+    "app/api/suppliers/import/analyze/route.ts": {
+      "memory": 3009,
+      "maxDuration": 60
+    },
+    "app/api/suppliers/import/confirm/route.ts": {
+      "memory": 3009,
+      "maxDuration": 60
+    }
+  }
+}
