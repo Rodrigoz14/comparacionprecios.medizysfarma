@@ -2,6 +2,10 @@ import { z } from "zod";
 import { confirmSupplierImport } from "@/lib/excel/importer";
 import { getVerifiedSession } from "@/lib/auth/dal";
 
+// Confirmar la importación de un archivo grande (miles de filas) puede
+// tardar más que el límite por defecto (10s).
+export const maxDuration = 60;
+
 const bodySchema = z.object({
   blobUrl: z.string().min(1),
   originalName: z.string().min(1),

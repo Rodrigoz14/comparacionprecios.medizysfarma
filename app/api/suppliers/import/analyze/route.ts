@@ -3,6 +3,12 @@ import { getVerifiedSession } from "@/lib/auth/dal";
 
 const ALLOWED_EXTENSIONS = [".xlsx", ".xlsm", ".csv"];
 
+// Analizar un archivo de proveedor grande (miles de filas) puede tardar más
+// que el límite por defecto (10s) -- el límite de memoria se configura por
+// fuera del código, en Project Settings > Functions de Vercel (bajo el
+// modelo de facturación "Active CPU", vercel.json no tiene efecto ahí).
+export const maxDuration = 60;
+
 // El archivo ya no llega en el cuerpo de esta petición: el navegador lo sube
 // primero directo a Vercel Blob (ver /api/blob-upload), y aquí solo se
 // recibe la URL -- así el tamaño real del archivo nunca choca con el
