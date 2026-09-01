@@ -3,7 +3,13 @@ import { getVerifiedSession } from "@/lib/auth/dal";
 
 const ALLOWED_CONTENT_TYPES = [
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", // .xlsx
-  "application/vnd.ms-excel.sheet.macroEnabled.12", // .xlsm
+  // .xlsm: distintos navegadores/sistemas operativos reportan la mayúscula
+  // de "macroEnabled" de forma distinta (algunos en minúscula) -- la
+  // comparación de Vercel Blob es sensible a mayúsculas, así que se
+  // permiten ambas formas (bug real: se rechazaba un archivo real de
+  // Ramédicas por esta diferencia).
+  "application/vnd.ms-excel.sheet.macroEnabled.12",
+  "application/vnd.ms-excel.sheet.macroenabled.12",
   "application/vnd.ms-excel",
   "text/csv",
   "application/octet-stream",
