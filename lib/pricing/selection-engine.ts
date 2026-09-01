@@ -6,17 +6,10 @@ import {
   calculateSavings,
   calculateTotal,
 } from "@/lib/pricing/price-calculator";
+import { isMeasuredForm } from "@/lib/pricing/measured-forms";
 import { DEFAULT_PRICING_RULES } from "@/lib/pricing/rules";
 import { rankOffers } from "@/lib/pricing/supplier-ranking";
 import type { OfferOption, PricingRules, SelectionResult } from "@/lib/pricing/types";
-
-/**
- * Formas cuyo envase se mide en volumen/peso (ver PRESENTATION_UNIT_BY_FORM
- * en lib/matching/extract-attributes.ts) en vez de contarse en unidades
- * discretas (tabletas, ampollas...): un frasco de jarabe de 15ml no es medio
- * frasco de 30ml para efectos de cuántos envases hay que pedir.
- */
-const MEASURED_UNITS = new Set(["ml", "g"]);
 
 /**
  * Selecciona la mejor oferta para un ítem de solicitud ya homologado (Sección 5).
@@ -103,7 +96,7 @@ export async function selectBestOffer(
 
   const options: OfferOption[] = offers.map((offer) => {
     const packageSize = offer.product.presentationQuantity;
-    const isMeasured = MEASURED_UNITS.has(offer.product.presentationUnit);
+    const isMeasured = isMeasuredForm(offer.product.dosageForm);
     // Para formas medidas, "quantityToPurchase" son envases del tamaño que
     // pidió el cliente (si lo dijo), no unidades sueltas de ml/g -- se
     // convierte a cuántos envases de ESTE tamaño hacen falta para cubrir el

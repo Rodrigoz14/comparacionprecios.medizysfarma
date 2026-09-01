@@ -274,6 +274,63 @@ describe("selectBestOffer (descuento de inventario propio en bodega)", () => {
   });
 });
 
+// Caso real reportado por el cliente: "Beta metildigoxina solucion inyectable"
+// y "Furosemida solucion inyectable" -- el sistema ofrecia una ampolla de
+// 100ml como si fuera intercambiable "1 a 1" con una de 2ml para la misma
+// cantidad de "unidades" pedidas (una ampolla sellada de un solo uso no se
+// fracciona ni se agrega como un frasco de jarabe). La causa real era que
+// "solucion/suspension inyectable" se clasificaba como dosageForm "Solución"
+// a secas -- ver COMPOUND_DOSAGE_FORM_MAP en extract-attributes.ts.
+describe("selectBestOffer (ampollas/viales inyectables no se tratan como formas medidas)", () => {
+  const productIds: string[] = [];
+  const laboratoryIds: string[] = [];
+  const supplierIds: string[] = [];
+
+  beforeAll(async () => {
+    const ampolla2ml = await createProduct("AMPOLLATEST SOLUCION INYECTABLE 20MG/2ML X2ML", "TestLab Ampolla");
+    const ampolla100ml = await createProduct("AMPOLLATEST SOLUCION INYECTABLE 20MG/2ML X100ML", "TestLab Ampolla");
+    productIds.push(ampolla2ml.id, ampolla100ml.id);
+    laboratoryIds.push(ampolla2ml.laboratoryId!, ampolla100ml.laboratoryId!);
+    expect(ampolla2ml.dosageForm).toBe("Inyectable"); // no "Solución"
+    expect(ampolla2ml.genericKey).toBe(ampolla100ml.genericKey);
+
+    const supplierA = await prisma.supplier.create({ data: { name: "Proveedor Ampolla A" } });
+    const supplierB = await prisma.supplier.create({ data: { name: "Proveedor Ampolla B" } });
+    supplierIds.push(supplierA.id, supplierB.id);
+
+    await prisma.supplierOffer.create({
+      data: { supplierId: supplierA.id, productId: ampolla2ml.id, price: 500, availability: "AVAILABLE", stockQuantity: 1000 },
+    });
+    await prisma.supplierOffer.create({
+      data: { supplierId: supplierB.id, productId: ampolla100ml.id, price: 20000, availability: "AVAILABLE", stockQuantity: 1000 },
+    });
+  });
+
+  afterAll(async () => {
+    await prisma.priceComparison.deleteMany({ where: { productId: { in: productIds } } });
+    await prisma.supplierOffer.deleteMany({ where: { productId: { in: productIds } } });
+    await prisma.supplier.deleteMany({ where: { id: { in: supplierIds } } });
+    await prisma.product.deleteMany({ where: { id: { in: productIds } } });
+    await prisma.laboratory.deleteMany({ where: { id: { in: laboratoryIds } } });
+  });
+
+  it("cada ampolla se compara con la division normal (empaques = ceil(cantidad/tamano)), no como si todos los tamanos costaran lo mismo por unidad pedida", async () => {
+    const { itemId } = await createRequestItem("AMPOLLATEST SOLUCION INYECTABLE 20MG/2ML X2ML", 100);
+    await resolveCustomerRequestItem(itemId);
+
+    const result = await selectBestOffer(itemId);
+    expect(result.status).toBe("SELECTED");
+
+    const optionA = result.alternatives.find((a) => a.supplierName === "Proveedor Ampolla A")!;
+    const optionB = result.alternatives.find((a) => a.supplierName === "Proveedor Ampolla B")!;
+    // Antes del fix, ambas mostraban packagesNeeded=100 (se ignoraba el
+    // tamano de cada ampolla). Ahora cada una usa su propio tamano.
+    expect(optionA.packagesNeeded).toBe(50); // ceil(100/2)
+    expect(optionB.packagesNeeded).toBe(1); // ceil(100/100)
+    expect(optionA.packagesNeeded).not.toBe(optionB.packagesNeeded);
+  });
+});
+
 // Caso real reportado por el cliente: pidió un jarabe de 30ml y el sistema
 // ofreció uno de 15ml sin darse cuenta de que hacían falta el doble para
 // cubrir lo mismo -- "cantidad" en un líquido es número de FRASCOS, no

@@ -1,12 +1,11 @@
 import { z } from "zod";
 import { prisma } from "@/lib/db/client";
 import { getVerifiedSession } from "@/lib/auth/dal";
+import { isMeasuredForm } from "@/lib/pricing/measured-forms";
 import { calculatePackagesNeeded, calculatePackagesNeededMeasured, calculateSavings, calculateTotal } from "@/lib/pricing/price-calculator";
 import type { OfferOption } from "@/lib/pricing/types";
 
 const bodySchema = z.object({ supplierOfferId: z.string().min(1) });
-
-const MEASURED_UNITS = new Set(["ml", "g"]);
 
 /**
  * Deja que el usuario elija manualmente cuál de las ofertas ya comparadas
@@ -52,7 +51,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ ite
 
   const toOption = (c: (typeof comparisons)[number]): OfferOption => {
     const packageSize = c.product.presentationQuantity;
-    const isMeasured = MEASURED_UNITS.has(c.product.presentationUnit);
+    const isMeasured = isMeasuredForm(c.product.dosageForm);
     const packagesNeeded = isMeasured
       ? calculatePackagesNeededMeasured(item!.quantityToPurchase!, item!.requestedPresentationQuantity, packageSize)
       : calculatePackagesNeeded(item!.quantityToPurchase!, packageSize);

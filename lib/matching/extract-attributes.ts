@@ -85,6 +85,20 @@ const DOSAGE_FORM_MAP: Record<string, string> = {
  * o Ramédicas durante esta sesión, nunca inventada.
  */
 const COMPOUND_DOSAGE_FORM_MAP: [string, string][] = [
+  // "Solución/Suspensión inyectable" son ampollas/viales sellados de un solo
+  // uso, no un líquido a granel del que se sirven dosis parciales (como un
+  // jarabe): no son intercambiables entre tamaños de ampolla igual que una
+  // caja de tabletas. Sin esta regla, DOSAGE_FORM_MAP encuentra "SOLUCION"
+  // (palabra suelta) antes que "INYECTABLE" porque aparece primero en el
+  // texto, y el producto queda clasificado como "Solución" a secas -- mismo
+  // grupo que un jarabe o una solución oral, con el mismo bug real
+  // reportado por el cliente (Furosemida, Beta-metildigoxina): el sistema
+  // ofrecía una ampolla de 100ml como si fuera intercambiable con una de
+  // 2ml para la misma cantidad de "unidades" pedidas.
+  ["SOLUCION INYECTABLE", "Inyectable"],
+  ["SUSPENSION INYECTABLE", "Inyectable"],
+  ["SOL INY", "Inyectable"],
+  ["SUSP INY", "Inyectable"],
   // Crema vaginal vs tópica (reportado por el cliente).
   ["CREMA VAGINAL", "Crema vaginal"],
   ["CREM VAG", "Crema vaginal"],

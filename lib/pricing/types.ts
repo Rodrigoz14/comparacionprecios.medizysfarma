@@ -1,6 +1,13 @@
 import type { Availability } from "@/lib/generated/prisma/client";
 
-export type SelectionStatus = "SELECTED" | "REVIEW" | "NOT_FOUND" | "NO_STOCK" | "NO_VALID_OFFER" | "COVERED_BY_STOCK";
+export type SelectionStatus =
+  | "SELECTED"
+  | "REVIEW"
+  | "NOT_FOUND"
+  | "NO_STOCK"
+  | "NO_VALID_OFFER"
+  | "COVERED_BY_STOCK"
+  | "EXCLUDED";
 
 export interface OfferOption {
   supplierOfferId: string;

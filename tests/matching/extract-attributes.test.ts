@@ -310,7 +310,11 @@ describe("extractProductAttributes", () => {
 
 describe("normalizeDosageForm", () => {
   it("normaliza una forma compuesta reportada por columna al vocabulario controlado", () => {
-    expect(normalizeDosageForm("SOLUCION INYECTABLE")).toBe("Solución");
+    // "Solución inyectable" es una ampolla/vial sellado de un solo uso, no un
+    // líquido a granel del que se sirven dosis parciales como un jarabe: se
+    // clasifica como "Inyectable", no "Solución" a secas (bug real -- ver
+    // COMPOUND_DOSAGE_FORM_MAP).
+    expect(normalizeDosageForm("SOLUCION INYECTABLE")).toBe("Inyectable");
     expect(normalizeDosageForm("TABLETA RECUBIERTA")).toBe("Tableta");
   });
 

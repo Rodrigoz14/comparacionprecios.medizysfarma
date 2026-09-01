@@ -45,7 +45,7 @@ interface ItemResult {
     candidates: MatchCandidate[];
   };
   pricing: {
-    status: "SELECTED" | "REVIEW" | "NOT_FOUND" | "NO_STOCK" | "NO_VALID_OFFER" | "COVERED_BY_STOCK";
+    status: "SELECTED" | "REVIEW" | "NOT_FOUND" | "NO_STOCK" | "NO_VALID_OFFER" | "COVERED_BY_STOCK" | "EXCLUDED";
     warehouseStock: number | null;
     quantityToPurchase: number | null;
     selected: OfferOption | null;
@@ -63,6 +63,7 @@ const STATUS_LABEL: Record<ItemResult["pricing"]["status"], string> = {
   NO_STOCK: "Sin disponibilidad",
   NO_VALID_OFFER: "Sin oferta válida",
   COVERED_BY_STOCK: "Cubierto por bodega",
+  EXCLUDED: "Excluido — no se compra",
 };
 
 const STATUS_COLOR: Record<ItemResult["pricing"]["status"], string> = {
@@ -72,6 +73,7 @@ const STATUS_COLOR: Record<ItemResult["pricing"]["status"], string> = {
   NO_STOCK: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300",
   NO_VALID_OFFER: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300",
   COVERED_BY_STOCK: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300",
+  EXCLUDED: "bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
 };
 
 const formatCOP = (value: number) =>
@@ -91,6 +93,7 @@ export function RequestWizard() {
   const [pasteText, setPasteText] = useState("");
   const [fileLoading, setFileLoading] = useState(false);
   const [selectingItemId, setSelectingItemId] = useState<string | null>(null);
+  const [expandedCandidates, setExpandedCandidates] = useState<Record<string, boolean>>({});
 
   function updateLine(index: number, patch: Partial<ItemLine>) {
     setLines((prev) => prev.map((l, i) => (i === index ? { ...l, ...patch } : l)));
@@ -162,8 +165,15 @@ export function RequestWizard() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "No se pudo confirmar el producto elegido.");
+      // Se conserva la lista original de candidatos (el servidor la devuelve
+      // vacía tras confirmar) para poder volver a elegir otro más adelante,
+      // por si el usuario se equivocó de opción.
       setResults((prev) =>
-        prev ? prev.map((r) => (r.itemId === itemId ? { ...r, match: data.match, pricing: data.pricing } : r)) : prev,
+        prev
+          ? prev.map((r) =>
+              r.itemId === itemId ? { ...r, match: { ...data.match, candidates: r.match.candidates }, pricing: data.pricing } : r,
+            )
+          : prev,
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error inesperado al confirmar el producto.");
@@ -180,7 +190,11 @@ export function RequestWizard() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "No se pudo marcar el ítem.");
       setResults((prev) =>
-        prev ? prev.map((r) => (r.itemId === itemId ? { ...r, match: data.match, pricing: data.pricing } : r)) : prev,
+        prev
+          ? prev.map((r) =>
+              r.itemId === itemId ? { ...r, match: { ...data.match, candidates: r.match.candidates }, pricing: data.pricing } : r,
+            )
+          : prev,
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error inesperado al marcar el ítem.");
@@ -203,6 +217,21 @@ export function RequestWizard() {
       setResults((prev) => (prev ? prev.map((r) => (r.itemId === itemId ? { ...r, pricing: data.pricing } : r)) : prev));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error inesperado al cambiar la oferta.");
+    } finally {
+      setSelectingItemId(null);
+    }
+  }
+
+  async function handleExcludeOffer(itemId: string) {
+    setSelectingItemId(itemId);
+    setError(null);
+    try {
+      const res = await fetch(`/api/customer-requests/items/${itemId}/exclude-offer`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "No se pudo excluir el ítem.");
+      setResults((prev) => (prev ? prev.map((r) => (r.itemId === itemId ? { ...r, pricing: data.pricing } : r)) : prev));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error inesperado al excluir el ítem.");
     } finally {
       setSelectingItemId(null);
     }
@@ -406,7 +435,8 @@ export function RequestWizard() {
                     <span className="font-semibold">{formatCOP(r.pricing.totalPrice ?? 0)}</span>
                   </p>
                   <p className="mt-1 text-xs text-zinc-500">
-                    Referencia: {formatCOP(r.pricing.selected.unitPrice)} por unidad
+                    Referencia: {formatCOP(r.pricing.selected.unitPrice)} por {r.pricing.selected.presentationUnit}
+                    {" "}(no es el precio del empaque completo, es solo para comparar entre presentaciones)
                   </p>
                   <p className="mt-1 text-xs text-zinc-500">{r.pricing.reason}</p>
                 </div>
@@ -431,29 +461,33 @@ export function RequestWizard() {
                 </div>
               )}
 
-              {!r.pricing.selected && r.pricing.status !== "COVERED_BY_STOCK" && (
-                <div className="mt-3 rounded border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/40">
-                  {r.match.candidates.length > 0 && (
-                    <>
-                      <p className="text-xs font-medium text-amber-800 dark:text-amber-300">
-                        ¿Cuál de estos es? Elige el correcto para cotizarlo:
-                      </p>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {r.match.candidates.map((c) => (
-                          <button
-                            key={c.product.id}
-                            onClick={() => handleSelectCandidate(r.itemId, c.product.id)}
-                            disabled={selectingItemId === r.itemId}
-                            className="rounded border border-amber-300 bg-white px-3 py-1.5 text-left text-xs font-medium text-zinc-800 hover:bg-amber-100 disabled:opacity-50 dark:border-amber-800 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-amber-950"
-                          >
-                            {c.product.dosageForm} — {c.product.concentration}
-                            {c.product.concentrationUnit}
-                            <span className="block text-[11px] font-normal text-zinc-500">{c.product.standardName}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </>
-                  )}
+              {r.match.candidates.length > 0 && (
+                <details
+                  className="mt-3 rounded border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/40"
+                  open={expandedCandidates[r.itemId] ?? !r.pricing.selected}
+                  onToggle={(e) =>
+                    setExpandedCandidates((prev) => ({ ...prev, [r.itemId]: e.currentTarget.open }))
+                  }
+                >
+                  <summary className="cursor-pointer text-xs font-medium text-amber-800 dark:text-amber-300">
+                    {r.pricing.selected
+                      ? "¿No es el producto correcto? Cambiarlo"
+                      : "¿Cuál de estos es? Elige el correcto para cotizarlo:"}
+                  </summary>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {r.match.candidates.map((c) => (
+                      <button
+                        key={c.product.id}
+                        onClick={() => handleSelectCandidate(r.itemId, c.product.id)}
+                        disabled={selectingItemId === r.itemId}
+                        className="rounded border border-amber-300 bg-white px-3 py-1.5 text-left text-xs font-medium text-zinc-800 hover:bg-amber-100 disabled:opacity-50 dark:border-amber-800 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-amber-950"
+                      >
+                        {c.product.dosageForm} — {c.product.concentration}
+                        {c.product.concentrationUnit}
+                        <span className="block text-[11px] font-normal text-zinc-500">{c.product.standardName}</span>
+                      </button>
+                    ))}
+                  </div>
                   <button
                     onClick={() => handleNoneOfAbove(r.itemId)}
                     disabled={selectingItemId === r.itemId}
@@ -462,7 +496,7 @@ export function RequestWizard() {
                     Ninguno de los anteriores
                   </button>
                   {selectingItemId === r.itemId && <p className="mt-2 text-xs text-amber-700">Confirmando...</p>}
-                </div>
+                </details>
               )}
 
               {r.pricing.alternatives.length > 1 && (
@@ -478,7 +512,7 @@ export function RequestWizard() {
                           <span>
                             {isSelected ? "★" : a.eligible ? "✓" : "✗"} {a.supplierName}
                             {a.laboratoryName ? ` (${a.laboratoryName})` : ""} — {a.packagesNeeded} x{a.packageSize}{" "}
-                            {a.presentationUnit} = {formatCOP(a.totalCost)} ({formatCOP(a.unitPrice)}/unidad)
+                            {a.presentationUnit} = {formatCOP(a.totalCost)} ({formatCOP(a.unitPrice)}/{a.presentationUnit})
                             {a.discardReason ? ` — ${a.discardReason}` : ""}
                           </span>
                           {!isSelected && (
@@ -494,6 +528,13 @@ export function RequestWizard() {
                       );
                     })}
                   </ul>
+                  <button
+                    onClick={() => handleExcludeOffer(r.itemId)}
+                    disabled={selectingItemId === r.itemId || r.pricing.status === "EXCLUDED"}
+                    className="mt-2 rounded border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-600 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                  >
+                    Ninguna de las anteriores — no comprar este producto
+                  </button>
                 </details>
               )}
             </div>
