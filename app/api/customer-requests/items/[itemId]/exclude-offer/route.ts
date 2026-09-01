@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db/client";
 import { getVerifiedSession } from "@/lib/auth/dal";
-import { isMeasuredForm } from "@/lib/pricing/measured-forms";
+import { isMeasuredForm, isSealedUnitForm } from "@/lib/pricing/measured-forms";
 import { calculatePackagesNeeded, calculatePackagesNeededMeasured, calculateTotal } from "@/lib/pricing/price-calculator";
 import type { OfferOption } from "@/lib/pricing/types";
 
@@ -39,9 +39,13 @@ export async function POST(_request: Request, { params }: { params: Promise<{ it
   const toOption = (c: (typeof comparisons)[number]): OfferOption => {
     const packageSize = c.product.presentationQuantity;
     const isMeasured = isMeasuredForm(c.product.dosageForm);
+    const isSealedUnit = isSealedUnitForm(c.product.dosageForm);
+    const quantity = item.quantityToPurchase ?? item.requestedQuantity;
     const packagesNeeded = isMeasured
-      ? calculatePackagesNeededMeasured(item.quantityToPurchase ?? item.requestedQuantity, item.requestedPresentationQuantity, packageSize)
-      : calculatePackagesNeeded(item.quantityToPurchase ?? item.requestedQuantity, packageSize);
+      ? calculatePackagesNeededMeasured(quantity, item.requestedPresentationQuantity, packageSize)
+      : isSealedUnit
+        ? quantity
+        : calculatePackagesNeeded(quantity, packageSize);
     const packagePrice = Number(c.price);
     return {
       supplierOfferId: c.supplierOfferId,

@@ -29,3 +29,20 @@ const MEASURED_DOSAGE_FORMS = new Set([
 export function isMeasuredForm(dosageForm: string): boolean {
   return MEASURED_DOSAGE_FORMS.has(dosageForm);
 }
+
+/**
+ * Ampollas/viales: el precio que reporta el proveedor es por UNA sola
+ * unidad sellada, sin importar que el texto mencione una caja de varias
+ * (p. ej. "C*10 AMP X 2ML" -- confirmado con el cliente, no es una
+ * suposición: el precio es por ampolla individual, no por la caja). El
+ * "2ML" que trae el texto es el contenido de una ampolla, no un multiplicador
+ * de empaque -- a diferencia de una tableta, donde el tamaño de caja sí
+ * multiplica cuántas unidades trae. Por eso presentationQuantity se ignora
+ * para calcular cuántos empaques hacen falta: piden N ampollas, se compran
+ * exactamente N al precio de cada una.
+ */
+const SEALED_UNIT_DOSAGE_FORMS = new Set(["Inyectable", "Ampolla"]);
+
+export function isSealedUnitForm(dosageForm: string): boolean {
+  return SEALED_UNIT_DOSAGE_FORMS.has(dosageForm);
+}

@@ -314,7 +314,7 @@ describe("selectBestOffer (ampollas/viales inyectables no se tratan como formas 
     await prisma.laboratory.deleteMany({ where: { id: { in: laboratoryIds } } });
   });
 
-  it("cada ampolla se compara con la division normal (empaques = ceil(cantidad/tamano)), no como si todos los tamanos costaran lo mismo por unidad pedida", async () => {
+  it("se piden exactamente las ampollas solicitadas, sin dividir por el contenido en ml de cada una (confirmado con el cliente: el precio es por ampolla individual)", async () => {
     const { itemId } = await createRequestItem("AMPOLLATEST SOLUCION INYECTABLE 20MG/2ML X2ML", 100);
     await resolveCustomerRequestItem(itemId);
 
@@ -323,11 +323,14 @@ describe("selectBestOffer (ampollas/viales inyectables no se tratan como formas 
 
     const optionA = result.alternatives.find((a) => a.supplierName === "Proveedor Ampolla A")!;
     const optionB = result.alternatives.find((a) => a.supplierName === "Proveedor Ampolla B")!;
-    // Antes del fix, ambas mostraban packagesNeeded=100 (se ignoraba el
-    // tamano de cada ampolla). Ahora cada una usa su propio tamano.
-    expect(optionA.packagesNeeded).toBe(50); // ceil(100/2)
-    expect(optionB.packagesNeeded).toBe(1); // ceil(100/100)
-    expect(optionA.packagesNeeded).not.toBe(optionB.packagesNeeded);
+    // El "2ML"/"100ML" del texto es el contenido de UNA ampolla, no un
+    // multiplicador de empaque: se compran 100 ampollas de cada proveedor,
+    // sin importar su contenido -- por eso gana la de menor precio por
+    // ampolla (A: $500 c/u), no la de menor "precio por ml".
+    expect(optionA.packagesNeeded).toBe(100);
+    expect(optionB.packagesNeeded).toBe(100);
+    expect(result.selected?.supplierName).toBe("Proveedor Ampolla A");
+    expect(result.totalPrice).toBe(50000); // 100 x $500
   });
 });
 
