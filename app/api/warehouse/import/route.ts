@@ -4,6 +4,12 @@ import { importWarehouseStock } from "@/lib/warehouse/importer";
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 const ALLOWED_EXTENSIONS = [".xlsx", ".xlsm", ".csv"];
 
+// Homologar cada fila contra el catálogo implica al menos una consulta real
+// a la base de datos por fila, en serie -- un inventario de varios cientos
+// o miles de productos puede superar fácilmente el límite de tiempo por
+// defecto de la función.
+export const maxDuration = 300;
+
 export async function POST(request: Request) {
   if (!(await getVerifiedSession())) {
     return Response.json({ error: "No autenticado." }, { status: 401 });

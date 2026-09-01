@@ -7,7 +7,7 @@ const ALLOWED_EXTENSIONS = [".xlsx", ".xlsm", ".csv"];
 // que el límite por defecto (10s) -- el límite de memoria se configura por
 // fuera del código, en Project Settings > Functions de Vercel (bajo el
 // modelo de facturación "Active CPU", vercel.json no tiene efecto ahí).
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 // El archivo ya no llega en el cuerpo de esta petición: el navegador lo sube
 // primero directo a Vercel Blob (ver /api/blob-upload), y aquí solo se

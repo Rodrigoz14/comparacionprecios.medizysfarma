@@ -4,7 +4,7 @@ import { getVerifiedSession } from "@/lib/auth/dal";
 
 // Confirmar la importación de un archivo grande (miles de filas) puede
 // tardar más que el límite por defecto (10s).
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 const bodySchema = z.object({
   blobUrl: z.string().min(1),
