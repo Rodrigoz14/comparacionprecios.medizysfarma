@@ -1,3 +1,4 @@
+import { mapWithConcurrency } from "@/lib/concurrency";
 import { prisma } from "@/lib/db/client";
 import { parseWorkbook } from "@/lib/excel/parser";
 import { resolveProductMatch } from "@/lib/matching/matching-service";
@@ -15,27 +16,6 @@ export interface WarehouseImportReport {
   unmatchedRows: number;
   distinctProducts: number;
   errors: WarehouseImportRowError[];
-}
-
-/**
- * Corre `fn` sobre `items` con un máximo de `concurrency` en vuelo a la vez,
- * en vez de uno por uno. Homologar cada fila implica al menos una consulta
- * real a la base de datos (y a veces una llamada a la IA); en serie, un
- * inventario de varios miles de filas superaba el límite de tiempo de la
- * función (5 minutos) sin terminar -- bug real reportado por el cliente.
- */
-async function mapWithConcurrency<T, R>(items: T[], concurrency: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let nextIndex = 0;
-  async function worker() {
-    while (nextIndex < items.length) {
-      const i = nextIndex++;
-      results[i] = await fn(items[i]);
-    }
-  }
-  const workerCount = Math.min(concurrency, items.length);
-  await Promise.all(Array.from({ length: workerCount }, () => worker()));
-  return results;
 }
 
 /**

@@ -1,8 +1,14 @@
 import { z } from "zod";
+import { mapWithConcurrency } from "@/lib/concurrency";
 import { prisma } from "@/lib/db/client";
 import { resolveCustomerRequestItem } from "@/lib/matching/matching-service";
 import { selectBestOffer } from "@/lib/pricing/selection-engine";
 import { getVerifiedSession } from "@/lib/auth/dal";
+
+// Homologar y cotizar cada producto implica varias consultas reales a la
+// base de datos (y a veces una llamada a la IA); un pedido grande puede
+// tardar más que el límite de tiempo por defecto de la función.
+export const maxDuration = 300;
 
 const bodySchema = z.object({
   customerName: z.string().min(1),
@@ -32,8 +38,7 @@ export async function POST(request: Request) {
     data: { customerName: parsed.data.customerName, status: "ANALYZING", responsibleUserId: session.userId },
   });
 
-  const results = [];
-  for (const line of parsed.data.items) {
+  const results = await mapWithConcurrency(parsed.data.items, 8, async (line) => {
     const item = await prisma.customerRequestItem.create({
       data: {
         customerRequestId: customerRequest.id,
@@ -45,8 +50,8 @@ export async function POST(request: Request) {
     const match = await resolveCustomerRequestItem(item.id);
     const pricing = await selectBestOffer(item.id);
 
-    results.push({ itemId: item.id, originalText: line.text, requestedQuantity: line.quantity, match, pricing });
-  }
+    return { itemId: item.id, originalText: line.text, requestedQuantity: line.quantity, match, pricing };
+  });
 
   await prisma.customerRequest.update({
     where: { id: customerRequest.id },
