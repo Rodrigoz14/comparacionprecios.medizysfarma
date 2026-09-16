@@ -106,7 +106,13 @@ export async function selectBestOffer(
       ? quantityToPurchase
       : calculatePackagesNeededMeasured(quantityToPurchase, item.requestedPresentationQuantity, packageSize);
     const check = checkAvailability(offer.availability, offer.stockQuantity, packagesNeeded);
-    const packagePrice = Number(offer.price);
+    // El precio que reporta el proveedor es por UNIDAD (tableta, cápsula,
+    // ml/g...), nunca por el empaque completo -- confirmado con el cliente:
+    // el precio de un empaque es unidades-por-empaque x precio unitario. Para
+    // ampollas/viales el "empaque" ya es una sola unidad sellada, así que no
+    // hay nada que multiplicar.
+    const unitPrice = Number(offer.price);
+    const packagePrice = isSealedUnit ? unitPrice : Math.round(unitPrice * packageSize * 100) / 100;
     return {
       supplierOfferId: offer.id,
       supplierId: offer.supplierId,
@@ -116,7 +122,7 @@ export async function selectBestOffer(
       packageSize,
       presentationUnit: offer.product.presentationUnit,
       packagePrice,
-      unitPrice: Math.round((packagePrice / packageSize) * 10000) / 10000,
+      unitPrice,
       packagesNeeded,
       totalCost: calculateTotal(packagePrice, packagesNeeded),
       availability: offer.availability,
