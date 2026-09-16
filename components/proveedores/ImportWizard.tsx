@@ -45,7 +45,12 @@ function samePriceFormat(a: PriceFormat, b: PriceFormat) {
   return a.thousands === b.thousands && a.decimal === b.decimal;
 }
 
+const PRODUCT_CATEGORIES = ["Medicamentos", "Dispositivos médicos", "Aseo", "Papelería", "Odontología"] as const;
+type ProductCategory = (typeof PRODUCT_CATEGORIES)[number];
+
 export function ImportWizard() {
+  const [category, setCategory] = useState<ProductCategory>("Medicamentos");
+
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [supplierId, setSupplierId] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -73,6 +78,18 @@ export function ImportWizard() {
       .then((res) => res.json())
       .then((data) => setSuppliers(data.suppliers ?? []));
   }, []);
+
+  function handleCategoryChange(next: ProductCategory) {
+    setCategory(next);
+    setFile(null);
+    setAnalysis(null);
+    setAnalyzeError(null);
+    setBlobUrl(null);
+    setMapping({});
+    setForce(false);
+    setReport(null);
+    setConfirmError(null);
+  }
 
   async function handleAnalyze() {
     if (!file || !supplierId) return;
@@ -195,6 +212,24 @@ export function ImportWizard() {
           Sube un archivo .xlsx o .csv con los precios del proveedor.
         </p>
       </div>
+
+      <nav className="flex flex-wrap gap-1 border-b border-zinc-200 dark:border-zinc-800">
+        {PRODUCT_CATEGORIES.map((c) => (
+          <button
+            key={c}
+            type="button"
+            onClick={() => handleCategoryChange(c)}
+            aria-current={category === c ? "page" : undefined}
+            className={`-mb-px rounded-t px-3 py-2 text-sm font-medium transition-colors ${
+              category === c
+                ? "border-b-2 border-brand-blue text-brand-blue"
+                : "border-b-2 border-transparent text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+            }`}
+          >
+            {c}
+          </button>
+        ))}
+      </nav>
 
       <section className="space-y-4 rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
         <div>
