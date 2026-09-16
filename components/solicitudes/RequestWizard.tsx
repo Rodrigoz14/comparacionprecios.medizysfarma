@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { parsePastedList } from "@/lib/solicitudes/parse-pasted-list";
 
 interface ItemLine {
@@ -80,6 +80,99 @@ const formatCOP = (value: number) =>
   new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(value);
 
 type InputMode = "manual" | "paste" | "file";
+
+const CUSTOMERS = ["Salud Vital", "Clinica Chinita", "Hospital Las Nieves/Los Santos", "Salud Darien"];
+
+interface ProductSuggestion {
+  id: string;
+  standardName: string;
+  dosageForm: string;
+  concentration: string;
+  concentrationUnit: string;
+  presentationQuantity: number | null;
+  presentationUnit: string;
+}
+
+function ProductNameInput({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  onChange: (text: string) => void;
+  placeholder?: string;
+}) {
+  const [suggestions, setSuggestions] = useState<ProductSuggestion[]>([]);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const query = value.trim();
+    if (query.length < 2) {
+      setSuggestions([]);
+      return;
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      setLoading(true);
+      fetch(`/api/products/search?q=${encodeURIComponent(query)}`, { signal: controller.signal })
+        .then((res) => res.json())
+        .then((data) => setSuggestions(data.products ?? []))
+        .catch(() => {})
+        .finally(() => setLoading(false));
+    }, 250);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [value]);
+
+  function handleSelect(s: ProductSuggestion) {
+    onChange(s.standardName);
+    setOpen(false);
+  }
+
+  return (
+    <div className="relative flex-1">
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => {
+          onChange(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => value.trim().length >= 2 && setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        placeholder={placeholder}
+        className="w-full rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+      />
+      {open && value.trim().length >= 2 && (loading || suggestions.length > 0) && (
+        <ul className="absolute z-10 mt-1 max-h-64 w-full overflow-y-auto rounded border border-zinc-300 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+          {loading && suggestions.length === 0 && (
+            <li className="px-3 py-2 text-xs text-zinc-500">Buscando...</li>
+          )}
+          {suggestions.map((s) => (
+            <li key={s.id}>
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => handleSelect(s)}
+                className="block w-full px-3 py-2 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800"
+              >
+                <span className="block text-zinc-900 dark:text-zinc-50">{s.standardName}</span>
+                <span className="block text-xs text-zinc-500">
+                  {s.dosageForm} — {s.concentration}
+                  {s.concentrationUnit}
+                  {s.presentationQuantity ? ` x${s.presentationQuantity} ${s.presentationUnit}` : ""}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 export function RequestWizard() {
   const [customerName, setCustomerName] = useState("");
@@ -255,13 +348,18 @@ export function RequestWizard() {
       <section className="space-y-4 rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
         <div>
           <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Cliente</label>
-          <input
-            type="text"
+          <select
             value={customerName}
             onChange={(e) => setCustomerName(e.target.value)}
-            placeholder="Nombre del cliente"
             className="mt-1 w-full rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-          />
+          >
+            <option value="">Selecciona un cliente</option>
+            {CUSTOMERS.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div>
@@ -339,12 +437,10 @@ export function RequestWizard() {
         <div className="space-y-2">
           {lines.map((line, i) => (
             <div key={i} className="flex gap-2">
-              <input
-                type="text"
+              <ProductNameInput
                 value={line.text}
-                onChange={(e) => updateLine(i, { text: e.target.value })}
+                onChange={(text) => updateLine(i, { text })}
                 placeholder="Ej: Acetaminofén 500 mg x 100"
-                className="flex-1 rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
               />
               <input
                 type="number"
