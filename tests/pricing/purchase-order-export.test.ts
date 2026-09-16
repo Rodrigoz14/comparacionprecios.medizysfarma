@@ -84,7 +84,7 @@ describe("buildPurchaseOrderWorkbook (integracion contra base de datos real)", (
     requestIds.push(request.id);
 
     const itemA = await prisma.customerRequestItem.create({
-      data: { customerRequestId: request.id, originalText: "PEDIDOTEST TAB 500MG X10", requestedQuantity: 25 },
+      data: { customerRequestId: request.id, originalText: "PEDIDOTEST TAB 500MG X10", requestedQuantity: 3 },
     });
     const itemB = await prisma.customerRequestItem.create({
       data: { customerRequestId: request.id, originalText: "PEDIDOTEST2 JBE 100MG X1", requestedQuantity: 8 },
@@ -108,7 +108,7 @@ describe("buildPurchaseOrderWorkbook (integracion contra base de datos real)", (
     expect(sheetNames).toContain("Ramedicas Test Pedido");
 
     const disfarmaSheet = workbook.getWorksheet("Disfarma Test Pedido")!;
-    // Fila 1 = encabezados, fila 2 = el producto. 3 cajas x10 = 30 >= 25 pedidas.
+    // Fila 1 = encabezados, fila 2 = el producto. Piden 3 cajas x10 directamente.
     expect(disfarmaSheet.getRow(2).getCell(5).value).toBe(3); // empaques a pedir
     expect(disfarmaSheet.getRow(2).getCell(1).value).toBe("DIS-001");
   });

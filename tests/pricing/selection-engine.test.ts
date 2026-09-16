@@ -80,6 +80,8 @@ describe("selectBestOffer (integracion contra base de datos real)", () => {
   });
 
   it("elige el precio mas bajo entre laboratorios distintos del mismo generico", async () => {
+    // "Cantidad" son empaques pedidos del tamaño que menciona el texto (X10),
+    // no unidades sueltas -- confirmado con el cliente: se compra por caja.
     const { itemId } = await createRequestItem("PRICETEST TAB 50MG X10", 10);
     await resolveCustomerRequestItem(itemId);
 
@@ -88,8 +90,8 @@ describe("selectBestOffer (integracion contra base de datos real)", () => {
     expect(result.status).toBe("SELECTED");
     expect(result.selected?.supplierId).toBe(supplierIds[0]); // Proveedor X + Genfar, el mas barato
     expect(result.selected?.packagePrice).toBe(5000);
-    expect(result.selected?.packagesNeeded).toBe(1); // 10 solicitadas, caja x10
-    expect(result.totalPrice).toBe(5000);
+    expect(result.selected?.packagesNeeded).toBe(10); // 10 cajas x10 pedidas
+    expect(result.totalPrice).toBe(50000); // 10 x $5000
     expect(result.alternatives.length).toBeGreaterThanOrEqual(3); // X/Genfar, X/Pfizer, Y/Genfar
 
     const persisted = await prisma.priceComparison.findMany({ where: { customerRequestItemId: itemId } });
@@ -162,8 +164,9 @@ describe("selectBestOffer (comparacion entre presentaciones distintas del mismo 
   });
 
   it("para un pedido pequeno, gana la presentacion mas chica aunque su precio unitario sea mas alto", async () => {
-    // Piden 30: Ramedicas cubre con 1 caja x30 ($9000). Disfarma necesita 1 caja x100 igual ($25000).
-    const { itemId } = await createRequestItem("ZOLTRAXINA TAB 100MG X30", 30);
+    // Piden 1 caja x30 (= 30 unidades equivalentes): Ramedicas cubre con 1
+    // caja x30 ($9000). Disfarma necesita 1 caja x100 igual ($25000).
+    const { itemId } = await createRequestItem("ZOLTRAXINA TAB 100MG X30", 1);
     await resolveCustomerRequestItem(itemId);
 
     const result = await selectBestOffer(itemId);
@@ -176,8 +179,9 @@ describe("selectBestOffer (comparacion entre presentaciones distintas del mismo 
   });
 
   it("para un pedido grande, gana la presentacion que minimiza empaques desperdiciados", async () => {
-    // Piden 90: Ramedicas necesita 3 cajas x30 (3*9000=27000). Disfarma cubre con 1 caja x100 (25000).
-    const { itemId } = await createRequestItem("ZOLTRAXINA TAB 100MG X30", 90);
+    // Piden 3 cajas x30 (= 90 unidades equivalentes): Ramedicas necesita 3
+    // cajas x30 (3*9000=27000). Disfarma cubre con 1 caja x100 (25000).
+    const { itemId } = await createRequestItem("ZOLTRAXINA TAB 100MG X30", 3);
     await resolveCustomerRequestItem(itemId);
 
     const result = await selectBestOffer(itemId);

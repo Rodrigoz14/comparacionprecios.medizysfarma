@@ -1,12 +1,7 @@
 import { prisma } from "@/lib/db/client";
 import { checkAvailability } from "@/lib/pricing/availability";
-import {
-  calculatePackagesNeeded,
-  calculatePackagesNeededMeasured,
-  calculateSavings,
-  calculateTotal,
-} from "@/lib/pricing/price-calculator";
-import { isMeasuredForm, isSealedUnitForm } from "@/lib/pricing/measured-forms";
+import { calculatePackagesNeededMeasured, calculateSavings, calculateTotal } from "@/lib/pricing/price-calculator";
+import { isSealedUnitForm } from "@/lib/pricing/measured-forms";
 import { DEFAULT_PRICING_RULES } from "@/lib/pricing/rules";
 import { rankOffers } from "@/lib/pricing/supplier-ranking";
 import type { OfferOption, PricingRules, SelectionResult } from "@/lib/pricing/types";
@@ -96,28 +91,21 @@ export async function selectBestOffer(
 
   const options: OfferOption[] = offers.map((offer) => {
     const packageSize = offer.product.presentationQuantity;
-    const isMeasured = isMeasuredForm(offer.product.dosageForm);
     const isSealedUnit = isSealedUnitForm(offer.product.dosageForm);
-    // Para formas medidas, "quantityToPurchase" son envases del tamaño que
-    // pidió el cliente (si lo dijo), no unidades sueltas de ml/g -- se
-    // convierte a cuántos envases de ESTE tamaño hacen falta para cubrir el
-    // mismo volumen/peso total (Sección: bug real del jarabe 30ml vs 15ml).
-    // Para ampollas/viales (confirmado con el cliente: el precio siempre es
-    // por una sola unidad, sin importar que el texto mencione una caja de
-    // varias), se piden exactamente las unidades solicitadas -- el "2ML" del
-    // texto es el contenido de una ampolla, no un multiplicador de empaque.
-    // Para formas discretas normales (tabletas...) sigue igual que antes.
-    const packagesNeeded = isMeasured
-      ? calculatePackagesNeededMeasured(quantityToPurchase, item.requestedPresentationQuantity, packageSize)
-      : isSealedUnit
-        ? quantityToPurchase
-        : calculatePackagesNeeded(quantityToPurchase, packageSize);
-    // stockQuantity se interpreta en unidades, igual que antes de este cambio
-    // (ambigüedad preexistente del dato de proveedor, no resuelta aquí). Para
-    // formas medidas se compara contra los envases de ESTE tamaño que hacen
-    // falta (packagesNeeded), no contra quantityToPurchase (que está en
-    // envases del tamaño pedido por el cliente, no el de esta oferta).
-    const check = checkAvailability(offer.availability, offer.stockQuantity, isMeasured ? packagesNeeded : quantityToPurchase);
+    // "Cantidad" es el número de empaques que pide el cliente del tamaño que
+    // mencionó (caja, frasco...), nunca unidades sueltas dentro de ellos --
+    // confirmado con el cliente (Medizys compra y factura por empaque
+    // completo, no por tableta individual). Si esta oferta viene en un
+    // tamaño distinto al que el cliente mencionó, se convierte por unidades
+    // totales equivalentes (Sección: bug real del jarabe 30ml vs 15ml) --
+    // aplica a cualquier forma, excepto ampollas/viales, que siempre son 1
+    // unidad sellada = 1 empaque, sin conversión (el precio es por ampolla
+    // individual, confirmado con el cliente, sin importar que el texto
+    // mencione una caja de varias).
+    const packagesNeeded = isSealedUnit
+      ? quantityToPurchase
+      : calculatePackagesNeededMeasured(quantityToPurchase, item.requestedPresentationQuantity, packageSize);
+    const check = checkAvailability(offer.availability, offer.stockQuantity, packagesNeeded);
     const packagePrice = Number(offer.price);
     return {
       supplierOfferId: offer.id,

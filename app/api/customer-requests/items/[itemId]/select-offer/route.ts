@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { prisma } from "@/lib/db/client";
 import { getVerifiedSession } from "@/lib/auth/dal";
-import { isMeasuredForm, isSealedUnitForm } from "@/lib/pricing/measured-forms";
-import { calculatePackagesNeeded, calculatePackagesNeededMeasured, calculateSavings, calculateTotal } from "@/lib/pricing/price-calculator";
+import { isSealedUnitForm } from "@/lib/pricing/measured-forms";
+import { calculatePackagesNeededMeasured, calculateSavings, calculateTotal } from "@/lib/pricing/price-calculator";
 import type { OfferOption } from "@/lib/pricing/types";
 
 const bodySchema = z.object({ supplierOfferId: z.string().min(1) });
@@ -51,13 +51,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ ite
 
   const toOption = (c: (typeof comparisons)[number]): OfferOption => {
     const packageSize = c.product.presentationQuantity;
-    const isMeasured = isMeasuredForm(c.product.dosageForm);
     const isSealedUnit = isSealedUnitForm(c.product.dosageForm);
-    const packagesNeeded = isMeasured
-      ? calculatePackagesNeededMeasured(item!.quantityToPurchase!, item!.requestedPresentationQuantity, packageSize)
-      : isSealedUnit
-        ? item!.quantityToPurchase!
-        : calculatePackagesNeeded(item!.quantityToPurchase!, packageSize);
+    // "Cantidad" es el número de empaques que pide el cliente, no unidades
+    // sueltas -- ver el comentario en selection-engine.ts.
+    const packagesNeeded = isSealedUnit
+      ? item!.quantityToPurchase!
+      : calculatePackagesNeededMeasured(item!.quantityToPurchase!, item!.requestedPresentationQuantity, packageSize);
     const packagePrice = Number(c.price);
     return {
       supplierOfferId: c.supplierOfferId,
