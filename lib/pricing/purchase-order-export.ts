@@ -14,6 +14,7 @@ interface SupplierOrderLine {
   packagesNeeded: number;
   packagePrice: number;
   totalCost: number;
+  unitPrice: number;
 }
 
 /**
@@ -62,6 +63,7 @@ export async function buildPurchaseOrderWorkbook(
       packagesNeeded,
       packagePrice,
       totalCost: calculateTotal(packagePrice, packagesNeeded),
+      unitPrice: packagePrice / packageSize,
     };
 
     const list = linesBySupplier.get(comparison.supplier.name) ?? [];
@@ -101,10 +103,11 @@ export async function buildPurchaseOrderWorkbook(
       { header: "Empaques a pedir", key: "packages", width: 16 },
       { header: "Precio empaque", key: "packagePrice", width: 16 },
       { header: "Total", key: "total", width: 16 },
+      { header: "Precio unitario (ref.)", key: "unitPrice", width: 18 },
     ];
     sheet.getRow(1).font = { bold: true };
     for (const line of lines) {
-      sheet.addRow({
+      const row = sheet.addRow({
         code: line.supplierProductCode ?? "",
         product: line.productName,
         lab: line.laboratoryName ?? "",
@@ -112,10 +115,17 @@ export async function buildPurchaseOrderWorkbook(
         packages: line.packagesNeeded,
         packagePrice: line.packagePrice,
         total: line.totalCost,
+        unitPrice: line.unitPrice,
       });
+      // Lo que se paga es el total del empaque, no el precio unitario -- se
+      // resalta el Total y se deja el precio unitario en letra chica y gris,
+      // como referencia para comparar presentaciones, no como precio a pagar.
+      row.getCell("total").font = { bold: true };
+      row.getCell("unitPrice").font = { size: 9, italic: true, color: { argb: "FF808080" } };
     }
     sheet.getColumn("packagePrice").numFmt = CURRENCY_FORMAT;
     sheet.getColumn("total").numFmt = CURRENCY_FORMAT;
+    sheet.getColumn("unitPrice").numFmt = '"$"#,##0.00';
   }
 
   const arrayBuffer = await workbook.xlsx.writeBuffer();

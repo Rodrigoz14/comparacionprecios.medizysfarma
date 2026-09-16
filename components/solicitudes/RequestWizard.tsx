@@ -79,6 +79,13 @@ const STATUS_COLOR: Record<ItemResult["pricing"]["status"], string> = {
 const formatCOP = (value: number) =>
   new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(value);
 
+// El precio unitario es solo de referencia (no es lo que se paga, ni se
+// compra por unidad) y suele quedar en centavos de peso -- con 0 decimales
+// redondeaba a "$0" y parecía un error. Se usa solo donde se muestra ese
+// precio de referencia, nunca para el total que sí se paga.
+const formatUnitCOP = (value: number) =>
+  new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 2 }).format(value);
+
 type InputMode = "manual" | "paste" | "file";
 
 const CUSTOMERS = ["Salud Vital", "Clinica Chinita", "Hospital Las Nieves/Los Santos", "Salud Darien"];
@@ -521,18 +528,20 @@ export function RequestWizard() {
               </div>
 
               {r.pricing.selected && (
-                <div className="mt-3 rounded bg-zinc-50 p-3 text-sm dark:bg-zinc-900">
-                  <p>
+                <div className="mt-3 rounded bg-zinc-50 p-3 dark:bg-zinc-900">
+                  <p className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">
+                    {formatCOP(r.pricing.totalPrice ?? 0)}
+                  </p>
+                  <p className="text-sm text-zinc-700 dark:text-zinc-300">
                     <span className="font-medium">{r.pricing.selected.supplierName}</span>
                     {r.pricing.selected.laboratoryName ? ` (${r.pricing.selected.laboratoryName})` : ""} —{" "}
                     {r.pricing.selected.packagesNeeded} {r.pricing.selected.packagesNeeded === 1 ? "empaque" : "empaques"} x
                     {r.pricing.selected.packageSize} {r.pricing.selected.presentationUnit} a{" "}
-                    {formatCOP(r.pricing.selected.packagePrice)} c/u ={" "}
-                    <span className="font-semibold">{formatCOP(r.pricing.totalPrice ?? 0)}</span>
+                    {formatCOP(r.pricing.selected.packagePrice)} el empaque
                   </p>
                   <p className="mt-1 text-xs text-zinc-500">
-                    Referencia: {formatCOP(r.pricing.selected.unitPrice)} por {r.pricing.selected.presentationUnit}
-                    {" "}(no es el precio del empaque completo, es solo para comparar entre presentaciones)
+                    Referencia: {formatUnitCOP(r.pricing.selected.unitPrice)} por {r.pricing.selected.presentationUnit}
+                    {" "}(no es lo que se paga ni se compra por unidad, es solo para comparar entre presentaciones)
                   </p>
                   <p className="mt-1 text-xs text-zinc-500">{r.pricing.reason}</p>
                 </div>
@@ -608,7 +617,13 @@ export function RequestWizard() {
                           <span>
                             {isSelected ? "★" : a.eligible ? "✓" : "✗"} {a.supplierName}
                             {a.laboratoryName ? ` (${a.laboratoryName})` : ""} — {a.packagesNeeded} x{a.packageSize}{" "}
-                            {a.presentationUnit} = {formatCOP(a.totalCost)} ({formatCOP(a.unitPrice)}/{a.presentationUnit})
+                            {a.presentationUnit} ={" "}
+                            <span className="font-semibold text-zinc-800 dark:text-zinc-200">
+                              {formatCOP(a.totalCost)}
+                            </span>{" "}
+                            <span className="text-zinc-400 dark:text-zinc-500">
+                              ({formatUnitCOP(a.unitPrice)}/{a.presentationUnit})
+                            </span>
                             {a.discardReason ? ` — ${a.discardReason}` : ""}
                           </span>
                           {!isSelected && (
