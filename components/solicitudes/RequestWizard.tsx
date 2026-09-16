@@ -528,20 +528,18 @@ export function RequestWizard() {
               </div>
 
               {r.pricing.selected && (
-                <div className="mt-3 rounded bg-zinc-50 p-3 dark:bg-zinc-900">
-                  <p className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">
-                    {formatCOP(r.pricing.totalPrice ?? 0)}
-                  </p>
-                  <p className="text-sm text-zinc-700 dark:text-zinc-300">
+                <div className="mt-3 rounded bg-zinc-50 p-3 text-sm dark:bg-zinc-900">
+                  <p>
                     <span className="font-medium">{r.pricing.selected.supplierName}</span>
                     {r.pricing.selected.laboratoryName ? ` (${r.pricing.selected.laboratoryName})` : ""} —{" "}
                     {r.pricing.selected.packagesNeeded} {r.pricing.selected.packagesNeeded === 1 ? "empaque" : "empaques"} x
                     {r.pricing.selected.packageSize} {r.pricing.selected.presentationUnit} a{" "}
-                    {formatCOP(r.pricing.selected.packagePrice)} el empaque
+                    {formatCOP(r.pricing.selected.packagePrice)} c/u ={" "}
+                    <span className="font-semibold">{formatCOP(r.pricing.totalPrice ?? 0)}</span>
                   </p>
                   <p className="mt-1 text-xs text-zinc-500">
                     Referencia: {formatUnitCOP(r.pricing.selected.unitPrice)} por {r.pricing.selected.presentationUnit}
-                    {" "}(no es lo que se paga ni se compra por unidad, es solo para comparar entre presentaciones)
+                    {" "}(no es el precio del empaque completo, es solo para comparar entre presentaciones)
                   </p>
                   <p className="mt-1 text-xs text-zinc-500">{r.pricing.reason}</p>
                 </div>
