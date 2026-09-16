@@ -513,7 +513,9 @@ export function RequestWizard() {
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="font-medium text-zinc-900 dark:text-zinc-50">{r.originalText}</p>
-                  <p className="text-xs text-zinc-500">Cantidad solicitada: {r.requestedQuantity}</p>
+                  <p className="text-xs text-zinc-500">
+                    Empaques solicitados: {r.requestedQuantity}
+                  </p>
                   {r.pricing.warehouseStock !== null && r.pricing.warehouseStock > 0 && (
                     <p className="text-xs text-blue-700 dark:text-blue-400">
                       En bodega: {r.pricing.warehouseStock} — {r.pricing.quantityToPurchase === 0
@@ -537,7 +539,7 @@ export function RequestWizard() {
                     {formatCOP(r.pricing.selected.packagePrice)} c/u ={" "}
                     <span className="font-semibold">{formatCOP(r.pricing.totalPrice ?? 0)}</span>
                   </p>
-                  <p className="mt-1 text-xs text-zinc-500">
+                  <p className="mt-1 text-xs font-bold text-zinc-500">
                     Referencia: {formatUnitCOP(r.pricing.selected.unitPrice)} por {r.pricing.selected.presentationUnit}
                     {" "}(no es el precio del empaque completo, es solo para comparar entre presentaciones)
                   </p>
