@@ -161,8 +161,8 @@ export async function selectBestOffer(
       savings,
       reason:
         ranked.length === 1
-          ? `Única oferta elegible: ${selected.supplierName}, ${selected.packagesNeeded} empaque(s) x${selected.packageSize} a $${selected.packagePrice} c/u = $${selected.totalCost}.`
-          : `Menor costo total entre ${ranked.length} ofertas elegibles: ${selected.supplierName}, ${selected.packagesNeeded} empaque(s) x${selected.packageSize} a $${selected.packagePrice} c/u = $${selected.totalCost}.`,
+          ? `Única oferta elegible: ${selected.supplierName}, ${selected.packagesNeeded} empaque(s) x${selected.packageSize} a $${selected.unitPrice} c/u = $${selected.totalCost}.`
+          : `Menor costo total entre ${ranked.length} ofertas elegibles: ${selected.supplierName}, ${selected.packagesNeeded} empaque(s) x${selected.packageSize} a $${selected.unitPrice} c/u = $${selected.totalCost}.`,
     };
   }
 

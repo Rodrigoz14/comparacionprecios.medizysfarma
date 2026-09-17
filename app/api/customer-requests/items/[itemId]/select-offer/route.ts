@@ -93,7 +93,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ ite
     alternatives,
     totalPrice: selected.totalCost,
     savings,
-    reason: `Selección manual: ${selected.supplierName}, ${selected.packagesNeeded} empaque(s) x${selected.packageSize} ${selected.presentationUnit} a $${selected.packagePrice} c/u = $${selected.totalCost}.`,
+    reason: `Selección manual: ${selected.supplierName}, ${selected.packagesNeeded} empaque(s) x${selected.packageSize} ${selected.presentationUnit} a $${selected.unitPrice} c/u = $${selected.totalCost}.`,
   };
 
   return Response.json({ itemId, pricing });

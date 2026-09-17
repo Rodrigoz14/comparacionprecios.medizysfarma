@@ -536,7 +536,7 @@ export function RequestWizard() {
                     {r.pricing.selected.laboratoryName ? ` (${r.pricing.selected.laboratoryName})` : ""} —{" "}
                     {r.pricing.selected.packagesNeeded} {r.pricing.selected.packagesNeeded === 1 ? "empaque" : "empaques"} x
                     {r.pricing.selected.packageSize} {r.pricing.selected.presentationUnit} a{" "}
-                    {formatCOP(r.pricing.selected.packagePrice)} c/u ={" "}
+                    {formatUnitCOP(r.pricing.selected.unitPrice)} c/u ={" "}
                     <span className="font-semibold">{formatCOP(r.pricing.totalPrice ?? 0)}</span>
                   </p>
                   <p className="mt-1 text-xs font-bold text-zinc-500">
