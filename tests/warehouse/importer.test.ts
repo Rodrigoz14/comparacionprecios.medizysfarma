@@ -97,15 +97,14 @@ describe("importWarehouseStock (integracion contra base de datos real)", () => {
   // Bug real: un Kardex de bodega trae un título y una fecha antes del
   // encabezado real -- el detector solo miraba la fila 0 y nunca encontraba
   // el encabezado, así que el título y la fecha se importaban como si fueran
-  // filas de producto. Además, las existencias en 0 (muy comunes en un
-  // Kardex real) no se reconocían como cantidad válida.
-  it("ignora filas de titulo/fecha antes del encabezado real y reconoce existencias en cero", async () => {
+  // filas de producto.
+  it("ignora filas de titulo/fecha antes del encabezado real", async () => {
     const buffer = await buildXlsxBuffer([
       ["Rotación Kardex"],
       ["Fecha I", "1/01/2026"],
       ["Código", "Nombre Articulo", "Saldo Fin"],
-      ["ME0001", "BODEGAIMPORT TAB 250MG X20", 0],
-      ["ME0002", "INGREDIENTEDESCONOCIDOXYZ TAB 999MG X1", 0],
+      ["ME0001", "BODEGAIMPORT TAB 250MG X20", 12],
+      ["ME0002", "INGREDIENTEDESCONOCIDOXYZ TAB 999MG X1", 5],
     ]);
 
     const report = await importWarehouseStock(buffer, "kardex-test.xlsx");
@@ -115,6 +114,22 @@ describe("importWarehouseStock (integracion contra base de datos real)", () => {
     expect(report.errors[0].text).toContain("INGREDIENTEDESCONOCIDOXYZ");
 
     const stock = await prisma.warehouseStock.findUnique({ where: { genericKey: genericKeys[0] } });
-    expect(stock?.quantity).toBe(0);
+    expect(stock?.quantity).toBe(12);
+  });
+
+  it("una fila en existencia 0 se reconoce (no es un error), pero no queda guardada en bodega", async () => {
+    const buffer = await buildXlsxBuffer([
+      ["Producto", "Cantidad"],
+      ["BODEGAIMPORT TAB 250MG X20", 0],
+    ]);
+
+    const report = await importWarehouseStock(buffer, "bodega-cero.xlsx");
+
+    expect(report.matchedRows).toBe(1); // se identificó el producto correctamente
+    expect(report.unmatchedRows).toBe(0); // no es un error de homologación
+    expect(report.distinctProducts).toBe(0); // pero no se guarda en 0, para no confundir
+
+    const stock = await prisma.warehouseStock.findUnique({ where: { genericKey: genericKeys[0] } });
+    expect(stock).toBeNull();
   });
 });

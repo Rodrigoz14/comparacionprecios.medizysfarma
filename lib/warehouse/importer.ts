@@ -83,10 +83,15 @@ export async function importWarehouseStock(buffer: Buffer, originalName: string)
     stockByGenericKey.set(genericKey, (stockByGenericKey.get(genericKey) ?? 0) + row.quantity);
   });
 
+  // Un genérico en 0 (incluida la suma de varias filas que dan 0 entre sí) no
+  // aporta nada al inventario y solo genera confusión al mostrarlo -- no se
+  // guarda, ni cuenta como producto distinto en el reporte.
+  const stockToSave = [...stockByGenericKey.entries()].filter(([, quantity]) => quantity > 0);
+
   await prisma.$transaction([
     prisma.warehouseStock.deleteMany({}),
     prisma.warehouseStock.createMany({
-      data: [...stockByGenericKey.entries()].map(([genericKey, quantity]) => ({ genericKey, quantity })),
+      data: stockToSave.map(([genericKey, quantity]) => ({ genericKey, quantity })),
     }),
   ]);
 
@@ -94,7 +99,7 @@ export async function importWarehouseStock(buffer: Buffer, originalName: string)
     totalRows: parsedRows.length,
     matchedRows: parsedRows.length - errors.length,
     unmatchedRows: errors.length,
-    distinctProducts: stockByGenericKey.size,
+    distinctProducts: stockToSave.length,
     errors,
   };
 }

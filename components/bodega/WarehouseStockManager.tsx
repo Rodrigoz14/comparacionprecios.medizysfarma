@@ -98,6 +98,10 @@ export function WarehouseStockManager() {
               Importación completada: {report.matchedRows} de {report.totalRows} filas identificadas (
               {report.distinctProducts} productos distintos en bodega).
             </p>
+            <p className="text-xs text-zinc-500">
+              Las filas identificadas con existencia en 0 no se guardan en el inventario (por eso puede haber menos
+              productos que filas identificadas).
+            </p>
             {report.errors.length > 0 && (
               <details className="mt-2">
                 <summary className="cursor-pointer text-xs text-amber-700 dark:text-amber-400">
