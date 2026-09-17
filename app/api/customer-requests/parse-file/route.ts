@@ -3,7 +3,7 @@ import { parseWorkbook } from "@/lib/excel/parser";
 import { detectRequestColumns } from "@/lib/solicitudes/detect-columns";
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
-const ALLOWED_EXTENSIONS = [".xlsx", ".xlsm", ".csv"];
+const ALLOWED_EXTENSIONS = [".xlsx", ".xls", ".xlsm", ".csv"];
 
 export async function POST(request: Request) {
   if (!(await getVerifiedSession())) {
@@ -19,7 +19,7 @@ export async function POST(request: Request) {
   const lowerName = file.name.toLowerCase();
   if (!ALLOWED_EXTENSIONS.some((ext) => lowerName.endsWith(ext))) {
     return Response.json(
-      { error: "Formato no soportado. Solo se aceptan archivos .xlsx, .xlsm o .csv." },
+      { error: "Formato no soportado. Solo se aceptan archivos .xlsx, .xls, .xlsm o .csv." },
       { status: 400 },
     );
   }

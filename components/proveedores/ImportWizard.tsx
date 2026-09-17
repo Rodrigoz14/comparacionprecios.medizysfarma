@@ -209,7 +209,7 @@ export function ImportWizard() {
       <div>
         <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">Importar lista de proveedor</h1>
         <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          Sube un archivo .xlsx o .csv con los precios del proveedor.
+          Sube un archivo .xlsx, .xls o .csv con los precios del proveedor.
         </p>
       </div>
 
@@ -302,7 +302,7 @@ export function ImportWizard() {
           <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Archivo</label>
           <input
             type="file"
-            accept=".xlsx,.xlsm,.csv"
+            accept=".xlsx,.xls,.xlsm,.csv"
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             className="mt-1 w-full text-sm"
           />

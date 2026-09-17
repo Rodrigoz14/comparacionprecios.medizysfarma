@@ -79,7 +79,7 @@ export function WarehouseStockManager() {
           </p>
           <input
             type="file"
-            accept=".xlsx,.xlsm,.csv"
+            accept=".xlsx,.xls,.xlsm,.csv"
             disabled={uploading}
             onChange={(e) => {
               const file = e.target.files?.[0];

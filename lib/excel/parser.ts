@@ -1,5 +1,6 @@
 import { Readable } from "node:stream";
 import ExcelJS from "exceljs";
+import * as XLS from "xlsx";
 import type { RawRow, SheetInfo } from "@/lib/excel/types";
 
 export interface ParsedWorkbook {
@@ -22,22 +23,15 @@ function cellToValue(value: ExcelJS.CellValue): string | number | null {
   return String(value);
 }
 
-export async function parseWorkbook(buffer: Buffer, originalName: string): Promise<ParsedWorkbook> {
+async function parseWithExcelJS(buffer: Buffer, isCsv: boolean): Promise<ParsedWorkbook> {
   const workbook = new ExcelJS.Workbook();
-  const lowerName = originalName.toLowerCase();
-
-  if (lowerName.endsWith(".csv")) {
+  if (isCsv) {
     await workbook.csv.read(Readable.from(buffer));
-  } else if (lowerName.endsWith(".xlsx") || lowerName.endsWith(".xlsm")) {
-    // .xlsm (Excel con macros) usa el mismo formato interno OOXML que .xlsx.
+  } else {
     // exceljs's bundled type for `Buffer` resolves against a different nested
     // @types/node (via @fast-csv) than this project's, so the two Buffer
     // generics don't structurally match even though they're identical at runtime.
     await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
-  } else {
-    throw new Error(
-      "Formato de archivo no soportado. Usa .xlsx, .xlsm o .csv (el formato .xls antiguo no está soportado; expórtalo como .xlsx).",
-    );
   }
 
   const sheets: SheetInfo[] = workbook.worksheets.map((sheet) => ({
@@ -62,4 +56,65 @@ export async function parseWorkbook(buffer: Buffer, originalName: string): Promi
       return rows;
     },
   };
+}
+
+function xlsCellToValue(value: unknown): string | number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "number" || typeof value === "string") return value;
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (value instanceof Date) return value.toISOString();
+  return String(value);
+}
+
+/**
+ * El formato binario .xls (Excel 97-2003) no lo lee exceljs (solo entiende
+ * el formato OOXML de .xlsx/.xlsm) -- se usa la librería `xlsx` (SheetJS)
+ * solo para este caso. Instalada desde el paquete oficial de SheetJS
+ * (cdn.sheetjs.com), no desde el registro de npm: la versión publicada ahí
+ * (0.18.5) tiene vulnerabilidades conocidas (prototype pollution y ReDoS)
+ * que SheetJS solo corrigió en versiones posteriores distribuidas por fuera
+ * de npm -- justo el vector de ataque relevante aquí, un archivo subido por
+ * el usuario.
+ */
+function parseWithXls(buffer: Buffer): ParsedWorkbook {
+  const workbook = XLS.read(buffer, { type: "buffer", cellDates: true });
+
+  const sheets: SheetInfo[] = workbook.SheetNames.map((name) => {
+    const sheet = workbook.Sheets[name];
+    const rowCount = XLS.utils.sheet_to_json<unknown[]>(sheet, { header: 1 }).length;
+    return { name, rowCount };
+  });
+
+  return {
+    sheets,
+    getRows(sheetName: string): RawRow[] {
+      const sheet = workbook.Sheets[sheetName];
+      if (!sheet) throw new Error(`La hoja "${sheetName}" no existe en el archivo.`);
+
+      const rawRows = XLS.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: true, defval: null });
+      const rows: RawRow[] = [];
+      for (const rawRow of rawRows) {
+        const raw: RawRow = {};
+        let hasValue = false;
+        rawRow.forEach((cell, index) => {
+          const value = xlsCellToValue(cell);
+          if (value === null) return;
+          raw[index] = value;
+          hasValue = true;
+        });
+        if (hasValue) rows.push(raw);
+      }
+      return rows;
+    },
+  };
+}
+
+export async function parseWorkbook(buffer: Buffer, originalName: string): Promise<ParsedWorkbook> {
+  const lowerName = originalName.toLowerCase();
+
+  if (lowerName.endsWith(".csv")) return parseWithExcelJS(buffer, true);
+  if (lowerName.endsWith(".xlsx") || lowerName.endsWith(".xlsm")) return parseWithExcelJS(buffer, false);
+  if (lowerName.endsWith(".xls")) return parseWithXls(buffer);
+
+  throw new Error("Formato de archivo no soportado. Usa .xlsx, .xls, .xlsm o .csv.");
 }

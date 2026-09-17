@@ -418,12 +418,12 @@ export function RequestWizard() {
           {inputMode === "file" && (
             <div className="space-y-2 rounded-b rounded-tr border border-zinc-300 p-3 dark:border-zinc-700">
               <p className="text-xs text-zinc-500">
-                Sube un archivo .xlsx o .csv con el producto en una columna y la cantidad en otra (con o sin
+                Sube un archivo .xlsx, .xls o .csv con el producto en una columna y la cantidad en otra (con o sin
                 encabezados).
               </p>
               <input
                 type="file"
-                accept=".xlsx,.xlsm,.csv"
+                accept=".xlsx,.xls,.xlsm,.csv"
                 disabled={fileLoading}
                 onChange={(e) => {
                   const file = e.target.files?.[0];

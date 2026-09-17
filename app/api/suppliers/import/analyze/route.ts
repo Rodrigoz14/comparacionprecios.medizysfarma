@@ -1,7 +1,7 @@
 import { analyzeSupplierFile } from "@/lib/excel/importer";
 import { getVerifiedSession } from "@/lib/auth/dal";
 
-const ALLOWED_EXTENSIONS = [".xlsx", ".xlsm", ".csv"];
+const ALLOWED_EXTENSIONS = [".xlsx", ".xls", ".xlsm", ".csv"];
 
 // Analizar un archivo de proveedor grande (miles de filas) puede tardar más
 // que el límite por defecto (10s) -- el límite de memoria se configura por
@@ -38,7 +38,7 @@ export async function POST(request: Request) {
   const lowerName = originalName.toLowerCase();
   if (!ALLOWED_EXTENSIONS.some((ext) => lowerName.endsWith(ext))) {
     return Response.json(
-      { error: "Formato no soportado. Solo se aceptan archivos .xlsx, .xlsm o .csv." },
+      { error: "Formato no soportado. Solo se aceptan archivos .xlsx, .xls, .xlsm o .csv." },
       { status: 400 },
     );
   }
