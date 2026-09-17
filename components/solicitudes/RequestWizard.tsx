@@ -205,7 +205,6 @@ export function RequestWizard() {
   const [pasteText, setPasteText] = useState("");
   const [fileLoading, setFileLoading] = useState(false);
   const [selectingItemId, setSelectingItemId] = useState<string | null>(null);
-  const [expandedCandidates, setExpandedCandidates] = useState<Record<string, boolean>>({});
   // Con una lista larga (Excel de muchas filas), dejar los campos de edición
   // renderizados a la vez que los resultados duplicaba el trabajo del
   // navegador (cientos de campos editables + cientos de tarjetas de
@@ -620,12 +619,19 @@ export function RequestWizard() {
               )}
 
               {r.match.candidates.length > 0 && (
+                // Sin onToggle: con muchos resultados a la vez, el handler
+                // (que guardaba el estado abierto/cerrado en expandedCandidates
+                // leyendo e.currentTarget.open) terminaba leyendo un evento
+                // "toggle" nativo ya invalidado por React, tirando "Cannot
+                // read properties of null (reading 'open')" y tumbando toda
+                // la página (bug real reportado por el cliente con un Excel
+                // de varias filas). Nada más en el componente necesita leer
+                // si está expandido, así que basta con el valor inicial: React
+                // no lo vuelve a tocar mientras "open" no cambie entre
+                // renders, dejando que el usuario lo abra/cierre libremente.
                 <details
                   className="mt-3 rounded border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/40"
-                  open={expandedCandidates[r.itemId] ?? !r.pricing.selected}
-                  onToggle={(e) =>
-                    setExpandedCandidates((prev) => ({ ...prev, [r.itemId]: e.currentTarget.open }))
-                  }
+                  open={!r.pricing.selected}
                 >
                   <summary className="cursor-pointer text-xs font-medium text-amber-800 dark:text-amber-300">
                     {r.pricing.selected
