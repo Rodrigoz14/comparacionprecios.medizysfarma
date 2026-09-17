@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db/client";
 import { checkAvailability } from "@/lib/pricing/availability";
 import { capAlternatives } from "@/lib/pricing/cap-alternatives";
+import { formatCOP, formatUnitCOP } from "@/lib/pricing/format";
 import { calculatePackagesNeededMeasured, calculateSavings, calculateTotal } from "@/lib/pricing/price-calculator";
 import { isSealedUnitForm } from "@/lib/pricing/measured-forms";
 import { DEFAULT_PRICING_RULES } from "@/lib/pricing/rules";
@@ -162,8 +163,8 @@ export async function selectBestOffer(
       savings,
       reason:
         ranked.length === 1
-          ? `Única oferta elegible: ${selected.supplierName}, ${selected.packagesNeeded} empaque(s) x${selected.packageSize} a $${selected.unitPrice} c/u = $${selected.totalCost}.`
-          : `Menor costo total entre ${ranked.length} ofertas elegibles: ${selected.supplierName}, ${selected.packagesNeeded} empaque(s) x${selected.packageSize} a $${selected.unitPrice} c/u = $${selected.totalCost}.`,
+          ? `Única oferta elegible: ${selected.supplierName}, ${selected.packagesNeeded} empaque(s) x${selected.packageSize} a ${formatUnitCOP(selected.unitPrice)} c/u = ${formatCOP(selected.totalCost)}.`
+          : `Menor costo total entre ${ranked.length} ofertas elegibles: ${selected.supplierName}, ${selected.packagesNeeded} empaque(s) x${selected.packageSize} a ${formatUnitCOP(selected.unitPrice)} c/u = ${formatCOP(selected.totalCost)}.`,
     };
   }
 
