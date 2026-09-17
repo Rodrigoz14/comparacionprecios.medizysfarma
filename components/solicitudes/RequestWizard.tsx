@@ -206,6 +206,14 @@ export function RequestWizard() {
   const [fileLoading, setFileLoading] = useState(false);
   const [selectingItemId, setSelectingItemId] = useState<string | null>(null);
   const [expandedCandidates, setExpandedCandidates] = useState<Record<string, boolean>>({});
+  // Con una lista larga (Excel de muchas filas), dejar los campos de edición
+  // renderizados a la vez que los resultados duplicaba el trabajo del
+  // navegador (cientos de campos editables + cientos de tarjetas de
+  // resultado al mismo tiempo) -- causa real de que la pestaña se cerrara
+  // ("This page couldn't load") al comparar precios de un archivo grande.
+  // Una vez hay resultados, se oculta el formulario; "Editar productos" lo
+  // vuelve a mostrar sin perder lo ya cotizado.
+  const [formCollapsed, setFormCollapsed] = useState(false);
 
   function updateLine(index: number, patch: Partial<ItemLine>) {
     setLines((prev) => prev.map((l, i) => (i === index ? { ...l, ...patch } : l)));
@@ -259,6 +267,7 @@ export function RequestWizard() {
       if (!res.ok) throw new Error(data.error ?? "Error al procesar la solicitud.");
       setResults(data.items as ItemResult[]);
       setCustomerRequestId(data.customerRequestId as string);
+      setFormCollapsed(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error inesperado.");
     } finally {
@@ -364,6 +373,20 @@ export function RequestWizard() {
         </p>
       </div>
 
+      {formCollapsed && results ? (
+        <section className="flex items-center justify-between rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+            <span className="font-medium text-zinc-900 dark:text-zinc-50">{customerName}</span> — {results.length}{" "}
+            {results.length === 1 ? "producto cotizado" : "productos cotizados"}
+          </p>
+          <button
+            onClick={() => setFormCollapsed(false)}
+            className="rounded border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+          >
+            Editar productos
+          </button>
+        </section>
+      ) : (
       <section className="space-y-4 rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
         <div>
           <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Cliente</label>
@@ -498,6 +521,7 @@ export function RequestWizard() {
 
         {error && <p className="text-sm text-red-600">{error}</p>}
       </section>
+      )}
 
       {results && (
         <section className="space-y-4">
