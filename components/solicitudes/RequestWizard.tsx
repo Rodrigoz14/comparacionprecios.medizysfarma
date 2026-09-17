@@ -516,18 +516,35 @@ export function RequestWizard() {
                   <p className="text-xs text-zinc-500">
                     Empaques solicitados: {r.requestedQuantity}
                   </p>
-                  {r.pricing.warehouseStock !== null && r.pricing.warehouseStock > 0 && (
-                    <p className="text-xs text-blue-700 dark:text-blue-400">
-                      En bodega: {r.pricing.warehouseStock} — {r.pricing.quantityToPurchase === 0
-                        ? "cubre todo el pedido"
-                        : `se cotizan ${r.pricing.quantityToPurchase}`}
-                    </p>
-                  )}
                 </div>
                 <span className={`whitespace-nowrap rounded px-2 py-1 text-xs font-medium ${STATUS_COLOR[r.pricing.status]}`}>
                   {STATUS_LABEL[r.pricing.status]}
                 </span>
               </div>
+
+              {r.pricing.warehouseStock !== null && (
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900">
+                  <span className="text-sm text-zinc-600 dark:text-zinc-400">
+                    En bodega: <span className="font-semibold text-zinc-900 dark:text-zinc-50">{r.pricing.warehouseStock}</span>
+                    {" "}vs. solicitado: <span className="font-semibold text-zinc-900 dark:text-zinc-50">{r.requestedQuantity}</span>
+                  </span>
+                  <span
+                    className={`whitespace-nowrap rounded px-2 py-0.5 text-xs font-medium ${
+                      r.pricing.quantityToPurchase === 0
+                        ? "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300"
+                        : r.pricing.warehouseStock > 0
+                          ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                          : "bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                    }`}
+                  >
+                    {r.pricing.quantityToPurchase === 0
+                      ? "Cubre todo el pedido"
+                      : r.pricing.warehouseStock > 0
+                        ? `Faltan ${r.pricing.quantityToPurchase} por comprar`
+                        : "Sin existencia en bodega"}
+                  </span>
+                </div>
+              )}
 
               {r.pricing.selected && (
                 <div className="mt-3 rounded bg-zinc-50 p-3 text-sm dark:bg-zinc-900">
