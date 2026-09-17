@@ -93,4 +93,28 @@ describe("importWarehouseStock (integracion contra base de datos real)", () => {
     const allStock = await prisma.warehouseStock.findMany();
     expect(allStock.length).toBe(1); // el inventario global quedo reemplazado, no acumulado
   });
+
+  // Bug real: un Kardex de bodega trae un título y una fecha antes del
+  // encabezado real -- el detector solo miraba la fila 0 y nunca encontraba
+  // el encabezado, así que el título y la fecha se importaban como si fueran
+  // filas de producto. Además, las existencias en 0 (muy comunes en un
+  // Kardex real) no se reconocían como cantidad válida.
+  it("ignora filas de titulo/fecha antes del encabezado real y reconoce existencias en cero", async () => {
+    const buffer = await buildXlsxBuffer([
+      ["Rotación Kardex"],
+      ["Fecha I", "1/01/2026"],
+      ["Código", "Nombre Articulo", "Saldo Fin"],
+      ["ME0001", "BODEGAIMPORT TAB 250MG X20", 0],
+      ["ME0002", "INGREDIENTEDESCONOCIDOXYZ TAB 999MG X1", 0],
+    ]);
+
+    const report = await importWarehouseStock(buffer, "kardex-test.xlsx");
+
+    expect(report.totalRows).toBe(2); // no cuenta el título ni la fecha como filas
+    expect(report.matchedRows).toBe(1);
+    expect(report.errors[0].text).toContain("INGREDIENTEDESCONOCIDOXYZ");
+
+    const stock = await prisma.warehouseStock.findUnique({ where: { genericKey: genericKeys[0] } });
+    expect(stock?.quantity).toBe(0);
+  });
 });

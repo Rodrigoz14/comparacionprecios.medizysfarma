@@ -36,7 +36,7 @@ export async function POST(request: Request) {
 
     const rows = workbook.getRows(workbook.sheets[0].name);
     const { headerRowIndex, productColumn, quantityColumn } = detectRequestColumns(rows);
-    const dataRows = headerRowIndex === null ? rows : rows.slice(1);
+    const dataRows = headerRowIndex === null ? rows : rows.slice(headerRowIndex + 1);
 
     const items = dataRows
       .map((row) => {

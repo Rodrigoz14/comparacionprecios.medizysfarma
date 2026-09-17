@@ -35,7 +35,7 @@ export async function importWarehouseStock(buffer: Buffer, originalName: string)
 
   const rows = workbook.getRows(workbook.sheets[0].name);
   const { headerRowIndex, productColumn, quantityColumn } = detectRequestColumns(rows);
-  const dataRows = headerRowIndex === null ? rows : rows.slice(1);
+  const dataRows = headerRowIndex === null ? rows : rows.slice(headerRowIndex + 1);
 
   const parsedRows = dataRows
     .map((row) => {
