@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { parsePastedList } from "@/lib/solicitudes/parse-pasted-list";
 
 interface ItemLine {
@@ -112,8 +112,20 @@ function ProductNameInput({
   const [suggestions, setSuggestions] = useState<ProductSuggestion[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const skipNextSearch = useRef(true);
 
   useEffect(() => {
+    // Al montar con un valor ya puesto (una fila que vino de "Subir Excel" o
+    // "Pegar lista", no escrita a mano) no se busca automáticamente -- con un
+    // archivo de muchas filas, cada campo disparaba su propia búsqueda al
+    // mismo tiempo, inundando el catálogo con cientos de peticiones
+    // simultáneas y tumbando la pestaña del navegador (bug real). Solo se
+    // busca cuando el valor cambia por algo que el usuario efectivamente
+    // escribió o eligió después de montado el campo.
+    if (skipNextSearch.current) {
+      skipNextSearch.current = false;
+      return;
+    }
     const query = value.trim();
     if (query.length < 2) {
       setSuggestions([]);
