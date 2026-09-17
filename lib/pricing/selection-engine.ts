@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db/client";
 import { checkAvailability } from "@/lib/pricing/availability";
+import { capAlternatives } from "@/lib/pricing/cap-alternatives";
 import { calculatePackagesNeededMeasured, calculateSavings, calculateTotal } from "@/lib/pricing/price-calculator";
 import { isSealedUnitForm } from "@/lib/pricing/measured-forms";
 import { DEFAULT_PRICING_RULES } from "@/lib/pricing/rules";
@@ -168,7 +169,7 @@ export async function selectBestOffer(
 
   await persistComparison(item.id, Number(item.matchConfidence ?? 0), options, result.selected);
 
-  return result;
+  return { ...result, alternatives: capAlternatives(result.alternatives, result.selected) };
 }
 
 async function persistComparison(

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { prisma } from "@/lib/db/client";
 import { getVerifiedSession } from "@/lib/auth/dal";
+import { capAlternatives } from "@/lib/pricing/cap-alternatives";
 import { isSealedUnitForm } from "@/lib/pricing/measured-forms";
 import { calculatePackagesNeededMeasured, calculateSavings, calculateTotal } from "@/lib/pricing/price-calculator";
 import type { OfferOption } from "@/lib/pricing/types";
@@ -90,7 +91,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ ite
     quantityToPurchase: item.quantityToPurchase,
     status: "SELECTED" as const,
     selected,
-    alternatives,
+    alternatives: capAlternatives(alternatives, selected),
     totalPrice: selected.totalCost,
     savings,
     reason: `Selección manual: ${selected.supplierName}, ${selected.packagesNeeded} empaque(s) x${selected.packageSize} ${selected.presentationUnit} a $${selected.unitPrice} c/u = $${selected.totalCost}.`,

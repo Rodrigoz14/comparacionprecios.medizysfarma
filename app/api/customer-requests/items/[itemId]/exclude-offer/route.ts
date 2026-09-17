@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db/client";
 import { getVerifiedSession } from "@/lib/auth/dal";
+import { capAlternatives } from "@/lib/pricing/cap-alternatives";
 import { isSealedUnitForm } from "@/lib/pricing/measured-forms";
 import { calculatePackagesNeededMeasured, calculateTotal } from "@/lib/pricing/price-calculator";
 import type { OfferOption } from "@/lib/pricing/types";
@@ -72,7 +73,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ it
     quantityToPurchase: item.quantityToPurchase,
     status: "EXCLUDED" as const,
     selected: null,
-    alternatives: comparisons.map(toOption),
+    alternatives: capAlternatives(comparisons.map(toOption), null),
     totalPrice: 0,
     savings: null,
     reason: "Excluido manualmente: no se incluirá en el pedido a proveedores.",
