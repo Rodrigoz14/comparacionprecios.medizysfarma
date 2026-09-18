@@ -304,7 +304,7 @@ export function ImportWizard() {
             type="file"
             accept=".xlsx,.xls,.xlsm,.csv"
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-            className="mt-1 w-full text-sm"
+            className="mt-1 w-full text-sm text-zinc-500 file:mr-3 file:cursor-pointer file:rounded file:border-0 file:bg-brand-blue file:px-4 file:py-2 file:text-sm file:font-medium file:text-white file:transition-colors hover:file:bg-brand-navy"
           />
         </div>
 
