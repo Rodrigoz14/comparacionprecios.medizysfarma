@@ -17,6 +17,11 @@ const bodySchema = z.object({
       z.object({
         text: z.string().min(1),
         quantity: z.number().int().positive(),
+        // Cliente puntual de esta fila, cuando el Excel subido traía varios
+        // clientes mezclados en un mismo archivo (columna de cliente
+        // detectada automáticamente). Null si esa fila es del "customerName"
+        // general elegido en el formulario.
+        clientName: z.string().min(1).nullish(),
       }),
     )
     .min(1),
@@ -44,13 +49,21 @@ export async function POST(request: Request) {
         customerRequestId: customerRequest.id,
         originalText: line.text,
         requestedQuantity: line.quantity,
+        clientName: line.clientName ?? null,
       },
     });
 
     const match = await resolveCustomerRequestItem(item.id);
     const pricing = await selectBestOffer(item.id);
 
-    return { itemId: item.id, originalText: line.text, requestedQuantity: line.quantity, match, pricing };
+    return {
+      itemId: item.id,
+      originalText: line.text,
+      requestedQuantity: line.quantity,
+      clientName: line.clientName ?? null,
+      match,
+      pricing,
+    };
   });
 
   await prisma.customerRequest.update({

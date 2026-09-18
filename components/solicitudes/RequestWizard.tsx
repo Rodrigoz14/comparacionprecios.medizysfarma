@@ -6,6 +6,11 @@ import { parsePastedList } from "@/lib/solicitudes/parse-pasted-list";
 interface ItemLine {
   text: string;
   quantity: number;
+  // Cliente puntual de esta fila, detectado automáticamente al subir un
+  // Excel que trae varios clientes mezclados en un mismo archivo (columna
+  // propia de cliente). Null cuando el archivo no traía esa columna -- en
+  // ese caso la fila es del cliente elegido arriba en "Cliente".
+  clientName?: string | null;
 }
 
 interface OfferOption {
@@ -38,6 +43,7 @@ interface ItemResult {
   itemId: string;
   originalText: string;
   requestedQuantity: number;
+  clientName: string | null;
   match: {
     decision: "MATCH" | "REVIEW" | "NO_MATCH";
     confidence: number;
@@ -476,29 +482,45 @@ export function RequestWizard() {
         </p>
 
         <div className="space-y-2">
-          {lines.map((line, i) => (
-            <div key={i} className="flex gap-2">
-              <ProductNameInput
-                value={line.text}
-                onChange={(text) => updateLine(i, { text })}
-                placeholder="Ej: Acetaminofén 500 mg x 100"
-              />
-              <input
-                type="number"
-                min={1}
-                value={line.quantity}
-                onChange={(e) => updateLine(i, { quantity: Number(e.target.value) })}
-                className="w-24 rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-              />
-              <button
-                onClick={() => removeLine(i)}
-                disabled={lines.length === 1}
-                className="rounded border border-zinc-300 px-3 text-sm text-zinc-500 disabled:opacity-30 dark:border-zinc-700"
-              >
-                ✕
-              </button>
-            </div>
-          ))}
+          {lines.map((line, i) => {
+            // El Excel puede traer varios clientes mezclados en un mismo
+            // archivo (columna de cliente detectada automáticamente) --
+            // se marca con un encabezado cada vez que cambia de cliente,
+            // para que la lista quede dividida en secciones visualmente.
+            const currentClient = line.clientName ?? null;
+            const previousClient = i > 0 ? lines[i - 1].clientName ?? null : undefined;
+            const showClientHeader = currentClient !== null && currentClient !== previousClient;
+            return (
+              <div key={i}>
+                {showClientHeader && (
+                  <p className="mb-1 mt-4 border-b border-zinc-200 pb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+                    Cliente: {currentClient}
+                  </p>
+                )}
+                <div className="flex gap-2">
+                  <ProductNameInput
+                    value={line.text}
+                    onChange={(text) => updateLine(i, { text })}
+                    placeholder="Ej: Acetaminofén 500 mg x 100"
+                  />
+                  <input
+                    type="number"
+                    min={1}
+                    value={line.quantity}
+                    onChange={(e) => updateLine(i, { quantity: Number(e.target.value) })}
+                    className="w-24 rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                  />
+                  <button
+                    onClick={() => removeLine(i)}
+                    disabled={lines.length === 1}
+                    className="rounded border border-zinc-300 px-3 text-sm text-zinc-500 disabled:opacity-30 dark:border-zinc-700"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
 
         <button
@@ -543,8 +565,18 @@ export function RequestWizard() {
             )}
           </div>
 
-          {results.map((r) => (
-            <div key={r.itemId} className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+          {results.map((r, i) => {
+            const currentClient = r.clientName ?? null;
+            const previousClient = i > 0 ? results[i - 1].clientName ?? null : undefined;
+            const showClientHeader = currentClient !== null && currentClient !== previousClient;
+            return (
+            <div key={r.itemId}>
+              {showClientHeader && (
+                <p className="mb-2 mt-6 border-b border-zinc-300 pb-1 text-sm font-semibold uppercase tracking-wide text-zinc-600 dark:border-zinc-700 dark:text-zinc-300">
+                  Cliente: {currentClient}
+                </p>
+              )}
+              <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="font-medium text-zinc-900 dark:text-zinc-50">{r.originalText}</p>
@@ -707,8 +739,10 @@ export function RequestWizard() {
                   </button>
                 </details>
               )}
+              </div>
             </div>
-          ))}
+            );
+          })}
         </section>
       )}
       </div>

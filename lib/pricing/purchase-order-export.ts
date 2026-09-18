@@ -6,6 +6,7 @@ import { calculatePackagesNeededMeasured, calculateTotal } from "@/lib/pricing/p
 const CURRENCY_FORMAT = '"$"#,##0';
 
 interface SupplierOrderLine {
+  clientName: string;
   supplierName: string;
   supplierProductCode: string | null;
   productName: string;
@@ -61,6 +62,11 @@ export async function buildPurchaseOrderWorkbook(
     const packagePrice = Number(comparison.price);
 
     const line: SupplierOrderLine = {
+      // El Excel que sube el cliente puede traer varios clientes mezclados
+      // en un mismo archivo (columna de cliente detectada automáticamente
+      // por fila) -- si esta fila no traía esa columna, se usa el cliente
+      // general de la solicitud.
+      clientName: item.clientName ?? customerRequest.customerName,
       supplierName: comparison.supplier.name,
       supplierProductCode: comparison.supplierOffer.supplierProductCode,
       productName: comparison.product.standardName,
@@ -103,6 +109,7 @@ export async function buildPurchaseOrderWorkbook(
     const sheetName = supplierName.replace(/[*?:/\\[\]]/g, "").slice(0, 31) || "Proveedor";
     const sheet = workbook.addWorksheet(sheetName);
     sheet.columns = [
+      { header: "Cliente", key: "client", width: 20 },
       { header: "Código proveedor", key: "code", width: 18 },
       { header: "Producto", key: "product", width: 45 },
       { header: "Laboratorio", key: "lab", width: 20 },
@@ -115,6 +122,7 @@ export async function buildPurchaseOrderWorkbook(
     sheet.getRow(1).font = { bold: true };
     for (const line of lines) {
       const row = sheet.addRow({
+        client: line.clientName,
         code: line.supplierProductCode ?? "",
         product: line.productName,
         lab: line.laboratoryName ?? "",

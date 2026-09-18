@@ -15,15 +15,81 @@ function textLength(value: string | number | null): number {
   return String(value).trim().length;
 }
 
+const CLIENT_HEADER_ALIASES = [
+  "cliente",
+  "clientes",
+  "eps",
+  "entidad",
+  "paciente",
+  "institucion",
+  "institución",
+  "afiliado",
+  "cuenta",
+];
+
 /**
- * Detecta cuál columna trae la cantidad y cuál el producto en un archivo de
- * solicitud de cliente, sin asumir un orden fijo ni encabezados en un idioma
- * particular: la columna donde la mayoría de las filas parecen un número
- * entero pequeño es "cantidad"; entre las demás, la de texto más largo en
- * promedio es "producto". También detecta si la primera fila es encabezado
- * (no se ve como un dato válido) o ya es la primera fila de datos.
+ * Algunos archivos reales de solicitud traen varios clientes mezclados en un
+ * mismo Excel (columna propia con el nombre/código del cliente en cada fila,
+ * p. ej. "SALUD V", "SANTOS" repetidos varias veces) -- se detecta esa
+ * columna para poder dividir la solicitud en secciones por cliente y, al
+ * exportar el pedido a proveedores, indicar de cuál cliente es cada fila.
+ *
+ * Primero se busca un encabezado conocido (cliente/EPS/entidad/paciente...);
+ * si no hay encabezado o no coincide con ninguno, se usa una heurística: una
+ * columna de texto corto (no es una descripción de producto) cuyos valores
+ * se repiten bastante entre filas (varias filas del mismo cliente), a
+ * diferencia de la columna de producto, que casi nunca repite texto exacto.
  */
+function detectClientColumn(
+  rows: RawRow[],
+  headerRowIndex: number | null,
+  sample: RawRow[],
+  productColumn: number,
+  quantityColumn: number | null,
+): number | null {
+  const candidateColumns = [...new Set(sample.flatMap((r) => Object.keys(r).map(Number)))].filter(
+    (c) => c !== productColumn && c !== quantityColumn,
+  );
+  if (candidateColumns.length === 0) return null;
+
+  if (headerRowIndex !== null) {
+    const headerRow = rows[headerRowIndex];
+    for (const col of candidateColumns) {
+      const header = headerRow[col];
+      if (header === null || header === undefined) continue;
+      const normalized = String(header).trim().toLowerCase();
+      if (CLIENT_HEADER_ALIASES.some((alias) => normalized.includes(alias))) return col;
+    }
+  }
+
+  let bestColumn: number | null = null;
+  let bestRepetitionRatio = 0;
+  for (const col of candidateColumns) {
+    const values = sample
+      .map((r) => r[col])
+      .filter((v): v is string | number => v !== null && v !== undefined && String(v).trim() !== "");
+    if (values.length < 2) continue;
+    const avgLength = values.reduce<number>((sum, v) => sum + String(v).trim().length, 0) / values.length;
+    if (avgLength > 40) continue; // un nombre de cliente es corto, no una descripción de producto
+    const distinctValues = new Set(values.map((v) => String(v).trim().toLowerCase())).size;
+    const repetitionRatio = 1 - distinctValues / values.length; // mas cerca de 1 = mas repetido
+    if (repetitionRatio > 0.3 && repetitionRatio > bestRepetitionRatio) {
+      bestRepetitionRatio = repetitionRatio;
+      bestColumn = col;
+    }
+  }
+  return bestColumn;
+}
+
 /**
+ * Detecta cuál columna trae la cantidad, cuál el producto y cuál (si la hay)
+ * el cliente en un archivo de solicitud, sin asumir un orden fijo ni
+ * encabezados en un idioma particular: la columna donde la mayoría de las
+ * filas parecen un número entero pequeño es "cantidad"; entre las demás, la
+ * de texto más largo en promedio es "producto". También detecta si la
+ * primera fila es encabezado (no se ve como un dato válido) o ya es la
+ * primera fila de datos.
+ *
  * Algunos archivos reales (p. ej. el Kardex de bodega) traen un título y una
  * fecha en las primeras filas antes del encabezado real -- se escanean hasta
  * `maxHeaderRowsToScan` filas y se toma la última que no parezca fila de
@@ -40,6 +106,7 @@ export function detectRequestColumns(
   headerRowIndex: number | null;
   productColumn: number;
   quantityColumn: number | null;
+  clientColumn: number | null;
 } {
   let headerRowIndex: number | null = null;
   for (let i = 0; i < Math.min(maxHeaderRowsToScan, rows.length); i++) {
@@ -77,5 +144,7 @@ export function detectRequestColumns(
     }
   }
 
-  return { headerRowIndex, productColumn, quantityColumn };
+  const clientColumn = detectClientColumn(rows, headerRowIndex, sample, productColumn, quantityColumn);
+
+  return { headerRowIndex, productColumn, quantityColumn, clientColumn };
 }

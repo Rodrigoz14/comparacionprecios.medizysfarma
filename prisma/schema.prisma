@@ -360,6 +360,12 @@ model CustomerRequestItem {
   matchedProductId  String?     @map("matched_product_id")
   requestedQuantity Int         @map("requested_quantity")
   notes             String?
+  /// Cliente final de esta fila puntual, cuando el Excel subido trae varios
+  /// clientes mezclados en un mismo archivo (columna propia de cliente,
+  /// detectada automáticamente) -- distinto de CustomerRequest.customerName,
+  /// que es quien radicó/subió la solicitud completa. Null cuando el archivo
+  /// no traía esa columna (todo el pedido es de un solo cliente).
+  clientName String? @map("client_name")
   matchStatus       MatchStatus @default(PENDING) @map("match_status")
   matchConfidence   Decimal?    @map("match_confidence") @db.Decimal(5, 4)
   /// Existencia en bodega del genérico homologado, al momento de calcular el

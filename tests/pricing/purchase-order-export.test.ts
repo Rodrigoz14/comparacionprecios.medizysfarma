@@ -109,7 +109,9 @@ describe("buildPurchaseOrderWorkbook (integracion contra base de datos real)", (
 
     const disfarmaSheet = workbook.getWorksheet("Disfarma Test Pedido")!;
     // Fila 1 = encabezados, fila 2 = el producto. Piden 3 cajas x10 directamente.
-    expect(disfarmaSheet.getRow(2).getCell(5).value).toBe(3); // empaques a pedir
-    expect(disfarmaSheet.getRow(2).getCell(1).value).toBe("DIS-001");
+    // Columna 1 = Cliente, 2 = código proveedor, ... 6 = empaques a pedir.
+    expect(disfarmaSheet.getRow(2).getCell(1).value).toBe("Cliente Pedido Real"); // sin columna propia de cliente en el ítem, usa el de la solicitud
+    expect(disfarmaSheet.getRow(2).getCell(6).value).toBe(3); // empaques a pedir
+    expect(disfarmaSheet.getRow(2).getCell(2).value).toBe("DIS-001");
   });
 });

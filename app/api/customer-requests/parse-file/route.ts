@@ -35,7 +35,7 @@ export async function POST(request: Request) {
     }
 
     const rows = workbook.getRows(workbook.sheets[0].name);
-    const { headerRowIndex, productColumn, quantityColumn } = detectRequestColumns(rows);
+    const { headerRowIndex, productColumn, quantityColumn, clientColumn } = detectRequestColumns(rows);
     const dataRows = headerRowIndex === null ? rows : rows.slice(headerRowIndex + 1);
 
     const items = dataRows
@@ -47,11 +47,16 @@ export async function POST(request: Request) {
           quantityRaw === null || quantityRaw === undefined
             ? 1
             : Math.max(1, Math.round(Number(quantityRaw)) || 1);
-        return { text, quantity };
+        const clientRaw = clientColumn !== null ? row[clientColumn] : null;
+        const clientName =
+          clientRaw === null || clientRaw === undefined || String(clientRaw).trim() === ""
+            ? null
+            : String(clientRaw).trim();
+        return { text, quantity, clientName };
       })
       .filter((item) => item.text !== "");
 
-    return Response.json({ items, quantityColumnDetected: quantityColumn !== null });
+    return Response.json({ items, quantityColumnDetected: quantityColumn !== null, clientColumnDetected: clientColumn !== null });
   } catch (error) {
     const message = error instanceof Error ? error.message : "No se pudo leer el archivo.";
     return Response.json({ error: message }, { status: 400 });
