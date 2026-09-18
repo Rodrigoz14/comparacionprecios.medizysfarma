@@ -77,14 +77,18 @@ const STATUS_COLOR: Record<ItemResult["pricing"]["status"], string> = {
 };
 
 const formatCOP = (value: number) =>
-  new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(value);
+  new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0, useGrouping: false }).format(
+    value,
+  );
 
 // El precio unitario es solo de referencia (no es lo que se paga, ni se
 // compra por unidad) y suele quedar en centavos de peso -- con 0 decimales
 // redondeaba a "$0" y parecía un error. Se usa solo donde se muestra ese
 // precio de referencia, nunca para el total que sí se paga.
 const formatUnitCOP = (value: number) =>
-  new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 2 }).format(value);
+  new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 2, useGrouping: false }).format(
+    value,
+  );
 
 type InputMode = "manual" | "paste" | "file";
 
