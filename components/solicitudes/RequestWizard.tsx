@@ -96,6 +96,13 @@ type InputMode = "manual" | "paste" | "file";
 
 const CUSTOMERS = ["Salud Vital", "Clinica Chinita", "Hospital Las Nieves/Los Santos", "Salud Darien"];
 
+// En "Subir Excel" el cliente se detecta por fila (columna propia del
+// archivo), así que elegir uno arriba no tiene sentido -- se deshabilita el
+// selector y se usa esta etiqueta como cliente de respaldo (para filas sin
+// columna de cliente detectada, y para que el botón de comparar no se
+// bloquee por "Cliente" vacío).
+const FILE_MODE_CLIENT_LABEL = "Varios clientes (Excel)";
+
 interface ProductSuggestion {
   id: string;
   standardName: string;
@@ -225,7 +232,22 @@ export function RequestWizard() {
   }
 
   function addLine() {
-    setLines((prev) => [...prev, { text: "", quantity: 1 }]);
+    // Sigue con el mismo cliente de la última fila (para no romper la
+    // sección visual en la que está trabajando el usuario), no
+    // necesariamente el que esté elegido ahora arriba en "Cliente".
+    setLines((prev) => {
+      const lastClientName = prev.length > 0 ? prev[prev.length - 1].clientName ?? null : customerName || null;
+      return [...prev, { text: "", quantity: 1, clientName: lastClientName }];
+    });
+  }
+
+  // Agrega un cliente nuevo (modos "Uno por uno"/"Pegar lista"): arranca una
+  // sección aparte con el cliente elegido arriba en "Cliente" -- a
+  // diferencia de "+ Agregar producto", que sigue con el cliente de la
+  // última fila, esta siempre usa el valor actual del selector.
+  function addClientLine() {
+    if (!customerName.trim()) return;
+    setLines((prev) => [...prev, { text: "", quantity: 1, clientName: customerName }]);
   }
 
   function removeLine(index: number) {
@@ -234,7 +256,13 @@ export function RequestWizard() {
 
   function handleParsePaste() {
     const parsed = parsePastedList(pasteText);
-    if (parsed.length > 0) setLines(parsed);
+    if (parsed.length === 0) return;
+    // Se etiqueta con el cliente elegido arriba y se agrega a lo que ya
+    // hubiera (no se reemplaza): así se puede pegar una lista por cliente,
+    // una detrás de otra, cambiando el selector entre cada una.
+    const tagged = parsed.map((line) => ({ ...line, clientName: customerName || null }));
+    setLines((prev) => [...prev, ...tagged]);
+    setPasteText("");
   }
 
   async function handleFileUpload(file: File) {
@@ -398,7 +426,8 @@ export function RequestWizard() {
           <select
             value={customerName}
             onChange={(e) => setCustomerName(e.target.value)}
-            className="mt-1 w-full rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            disabled={inputMode === "file"}
+            className="mt-1 w-full rounded border border-zinc-300 px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900"
           >
             <option value="">Selecciona un cliente</option>
             {CUSTOMERS.map((c) => (
@@ -406,7 +435,13 @@ export function RequestWizard() {
                 {c}
               </option>
             ))}
+            {inputMode === "file" && <option value={FILE_MODE_CLIENT_LABEL}>{FILE_MODE_CLIENT_LABEL}</option>}
           </select>
+          {inputMode === "file" && (
+            <p className="mt-1 text-xs text-zinc-500">
+              El cliente se detecta automáticamente de cada fila del Excel.
+            </p>
+          )}
         </div>
 
         <div>
@@ -420,7 +455,14 @@ export function RequestWizard() {
             ).map(([mode, label]) => (
               <button
                 key={mode}
-                onClick={() => setInputMode(mode)}
+                onClick={() => {
+                  setInputMode(mode);
+                  if (mode === "file") {
+                    if (!customerName.trim()) setCustomerName(FILE_MODE_CLIENT_LABEL);
+                  } else if (customerName === FILE_MODE_CLIENT_LABEL) {
+                    setCustomerName("");
+                  }
+                }}
                 className={`rounded-t px-3 py-1.5 font-medium ${
                   inputMode === mode
                     ? "border border-b-0 border-zinc-300 bg-white text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
@@ -523,12 +565,24 @@ export function RequestWizard() {
           })}
         </div>
 
-        <button
-          onClick={addLine}
-          className="text-sm font-medium text-zinc-600 hover:text-brand-blue dark:text-zinc-400 dark:hover:text-brand-blue"
-        >
-          + Agregar producto
-        </button>
+        <div className="flex flex-wrap gap-4">
+          <button
+            onClick={addLine}
+            className="text-sm font-medium text-zinc-600 hover:text-brand-blue dark:text-zinc-400 dark:hover:text-brand-blue"
+          >
+            + Agregar producto
+          </button>
+          {inputMode !== "file" && (
+            <button
+              onClick={addClientLine}
+              disabled={!customerName.trim()}
+              title={!customerName.trim() ? "Primero elige un cliente arriba" : `Nueva sección para ${customerName}`}
+              className="text-sm font-medium text-zinc-600 hover:text-brand-blue disabled:cursor-not-allowed disabled:opacity-40 dark:text-zinc-400 dark:hover:text-brand-blue"
+            >
+              + Agregar cliente
+            </button>
+          )}
+        </div>
 
         <div>
           <button
