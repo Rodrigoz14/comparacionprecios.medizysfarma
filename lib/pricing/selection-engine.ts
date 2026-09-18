@@ -108,13 +108,21 @@ export async function selectBestOffer(
       ? quantityToPurchase
       : calculatePackagesNeededMeasured(quantityToPurchase, item.requestedPresentationQuantity, packageSize);
     const check = checkAvailability(offer.availability, offer.stockQuantity, packagesNeeded);
-    // El precio que reporta el proveedor es por UNIDAD (tableta, cápsula,
-    // ml/g...), nunca por el empaque completo -- confirmado con el cliente:
-    // el precio de un empaque es unidades-por-empaque x precio unitario. Para
-    // ampollas/viales el "empaque" ya es una sola unidad sellada, así que no
-    // hay nada que multiplicar.
-    const unitPrice = Number(offer.price);
-    const packagePrice = isSealedUnit ? unitPrice : Math.round(unitPrice * packageSize * 100) / 100;
+    // El precio que reporta el proveedor es por el EMPAQUE/presentación
+    // completa, no por unidad suelta -- así está diseñado el importador
+    // (lib/excel/detector.ts prioriza una columna "precio x presentación"
+    // sobre "precio x unidad" al mapear el precio), y coincide con la
+    // inmensa mayoría del catálogo real: cajas grandes (C*300 a C*1000)
+    // traen precios de miles/cientos de miles de pesos que solo tienen
+    // sentido como precio de la caja completa, nunca multiplicados de nuevo
+    // por las unidades que trae -- se probó tratarlo como precio unitario y
+    // multiplicarlo (bug real: una caja de 1000 Valsartán a $253.000 se
+    // mostraba en $253.000.000). El precio unitario de referencia se deriva
+    // al revés solo para mostrarlo, nunca al revés. Para ampollas/viales el
+    // "empaque" ya es una sola unidad sellada, así que coincide con el
+    // precio unitario sin necesidad de dividir.
+    const packagePrice = Number(offer.price);
+    const unitPrice = isSealedUnit ? packagePrice : Math.round((packagePrice / packageSize) * 10000) / 10000;
     return {
       supplierOfferId: offer.id,
       supplierId: offer.supplierId,

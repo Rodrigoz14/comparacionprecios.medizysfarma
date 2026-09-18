@@ -81,15 +81,17 @@ async function main() {
   const genfarProduct = await upsertProduct("ACETAMINOFEN TAB 500MG X100", "Genfar");
   const pfizerProduct = await upsertProduct("ACETAMINOFEN TAB 500MG X100", "Pfizer");
 
-  // El precio es por UNIDAD (tableta), no por caja completa: $50/tableta en
-  // una caja x100 = $5000/caja.
+  // El precio es por el EMPAQUE/presentación completa (una caja x100 =
+  // $5000), no por unidad suelta -- confirmado revisando el catálogo real:
+  // tratarlo como precio unitario multiplicaba cajas grandes a millones de
+  // pesos (bug real reportado por el cliente).
   await prisma.supplierOffer.upsert({
     where: { supplierId_productId: { supplierId: supplier.id, productId: genfarProduct.id } },
-    update: { price: 50 },
+    update: { price: 5000 },
     create: {
       supplierId: supplier.id,
       productId: genfarProduct.id,
-      price: 50,
+      price: 5000,
       availability: "AVAILABLE",
       stockQuantity: 200,
     },
@@ -97,11 +99,11 @@ async function main() {
 
   await prisma.supplierOffer.upsert({
     where: { supplierId_productId: { supplierId: supplier.id, productId: pfizerProduct.id } },
-    update: { price: 200 },
+    update: { price: 20000 },
     create: {
       supplierId: supplier.id,
       productId: pfizerProduct.id,
-      price: 200,
+      price: 20000,
       availability: "AVAILABLE",
       stockQuantity: 50,
     },
@@ -110,11 +112,11 @@ async function main() {
   // Disfarma ofrece el mismo genérico de Genfar a otro precio.
   await prisma.supplierOffer.upsert({
     where: { supplierId_productId: { supplierId: disfarma.id, productId: genfarProduct.id } },
-    update: { price: 53 },
+    update: { price: 5300 },
     create: {
       supplierId: disfarma.id,
       productId: genfarProduct.id,
-      price: 53,
+      price: 5300,
       availability: "AVAILABLE",
       stockQuantity: 80,
     },

@@ -58,18 +58,18 @@ describe("selectBestOffer (integracion contra base de datos real)", () => {
     const supplierY = await prisma.supplier.create({ data: { name: "Proveedor Precio Test Y" } });
     supplierIds.push(supplierX.id, supplierY.id);
 
-    // El precio del proveedor es por UNIDAD (tableta), no por caja completa --
-    // caja x10, así que $500/tableta = $5000/caja. X ofrece ambos
-    // laboratorios: el generico (Genfar) mas barato que el de marca (Pfizer).
+    // El precio del proveedor es por el EMPAQUE completo (caja x10 = $5000),
+    // no por unidad suelta. X ofrece ambos laboratorios: el generico
+    // (Genfar) mas barato que el de marca (Pfizer).
     await prisma.supplierOffer.create({
-      data: { supplierId: supplierX.id, productId: genfarVariant.id, price: 500, availability: "AVAILABLE", stockQuantity: 200 },
+      data: { supplierId: supplierX.id, productId: genfarVariant.id, price: 5000, availability: "AVAILABLE", stockQuantity: 200 },
     });
     await prisma.supplierOffer.create({
-      data: { supplierId: supplierX.id, productId: pfizerVariant.id, price: 2000, availability: "AVAILABLE", stockQuantity: 50 },
+      data: { supplierId: supplierX.id, productId: pfizerVariant.id, price: 20000, availability: "AVAILABLE", stockQuantity: 50 },
     });
     // Y tambien ofrece el generico, un poco mas caro que X.
     await prisma.supplierOffer.create({
-      data: { supplierId: supplierY.id, productId: genfarVariant.id, price: 530, availability: "AVAILABLE", stockQuantity: 80 },
+      data: { supplierId: supplierY.id, productId: genfarVariant.id, price: 5300, availability: "AVAILABLE", stockQuantity: 80 },
     });
   });
 
@@ -148,14 +148,13 @@ describe("selectBestOffer (comparacion entre presentaciones distintas del mismo 
     const disfarma = await prisma.supplier.create({ data: { name: "Disfarma Test Zoltraxina" } });
     supplierIds.push(ramedicas.id, disfarma.id);
 
-    // El precio es por UNIDAD, no por caja: Ramedicas $300/unidad -> caja x30
-    // = $9000. Disfarma $250/unidad, mas barato por unidad, pero caja x100 =
-    // $25000.
+    // El precio es por caja completa: Ramedicas caja x30 a $9000 -> $300/unidad.
+    // Disfarma caja x100 a $25000 -> $250/unidad, mas barato por unidad.
     await prisma.supplierOffer.create({
-      data: { supplierId: ramedicas.id, productId: caja30.id, price: 300, availability: "AVAILABLE", stockQuantity: 300 },
+      data: { supplierId: ramedicas.id, productId: caja30.id, price: 9000, availability: "AVAILABLE", stockQuantity: 300 },
     });
     await prisma.supplierOffer.create({
-      data: { supplierId: disfarma.id, productId: caja100.id, price: 250, availability: "AVAILABLE", stockQuantity: 500 },
+      data: { supplierId: disfarma.id, productId: caja100.id, price: 25000, availability: "AVAILABLE", stockQuantity: 500 },
     });
   });
 
@@ -363,14 +362,13 @@ describe("selectBestOffer (formas medidas: frascos de distinto tamaño)", () => 
     const supplierB = await prisma.supplier.create({ data: { name: "Proveedor Jarabe B" } });
     supplierIds.push(supplierA.id, supplierB.id);
 
-    // El precio es por ML, no por frasco completo: A $200/ml -> frasco de
-    // 30ml = $6000. B $100/ml, mas barato -> frasco de 15ml = $1500, pero se
-    // necesitan el doble de frascos para el mismo volumen.
+    // A vende el frasco de 30ml a $5000. B vende el de 15ml, mas barato por
+    // frasco ($2000), pero se necesitan el doble de frascos para el mismo volumen.
     await prisma.supplierOffer.create({
-      data: { supplierId: supplierA.id, productId: frasco30.id, price: 200, availability: "AVAILABLE", stockQuantity: 100 },
+      data: { supplierId: supplierA.id, productId: frasco30.id, price: 5000, availability: "AVAILABLE", stockQuantity: 100 },
     });
     await prisma.supplierOffer.create({
-      data: { supplierId: supplierB.id, productId: frasco15.id, price: 100, availability: "AVAILABLE", stockQuantity: 100 },
+      data: { supplierId: supplierB.id, productId: frasco15.id, price: 2000, availability: "AVAILABLE", stockQuantity: 100 },
     });
   });
 
@@ -394,13 +392,13 @@ describe("selectBestOffer (formas medidas: frascos de distinto tamaño)", () => 
     const optionA = result.alternatives.find((a) => a.supplierName === "Proveedor Jarabe A")!;
     const optionB = result.alternatives.find((a) => a.supplierName === "Proveedor Jarabe B")!;
     expect(optionA.packagesNeeded).toBe(2); // 2 frascos de 30ml = 60ml
-    expect(optionA.totalCost).toBe(12000); // 2 x (30ml x $200)
+    expect(optionA.totalCost).toBe(10000);
     expect(optionB.packagesNeeded).toBe(4); // 4 frascos de 15ml = 60ml (no 2)
-    expect(optionB.totalCost).toBe(6000); // 4 x (15ml x $100)
+    expect(optionB.totalCost).toBe(8000);
 
-    // B gana por costo TOTAL real (6000 < 12000), no por precio de frasco a ciegas.
+    // B gana por costo TOTAL real (8000 < 10000), no por precio de frasco a ciegas.
     expect(result.selected?.supplierName).toBe("Proveedor Jarabe B");
-    expect(result.totalPrice).toBe(6000);
+    expect(result.totalPrice).toBe(8000);
   });
 
   it("sin tamaño de frasco especificado, se piden esa cantidad de frascos tal cual venga cada oferta", async () => {
@@ -413,6 +411,6 @@ describe("selectBestOffer (formas medidas: frascos de distinto tamaño)", () => 
     expect(optionA.packagesNeeded).toBe(2); // 2 frascos de A, sea cual sea su tamaño
     expect(optionB.packagesNeeded).toBe(2); // 2 frascos de B, sea cual sea su tamaño
     expect(result.selected?.supplierName).toBe("Proveedor Jarabe B"); // mas barato por frasco
-    expect(result.totalPrice).toBe(3000); // 2 x (15ml x $100)
+    expect(result.totalPrice).toBe(4000);
   });
 });
