@@ -3,9 +3,7 @@ import { prisma } from "@/lib/db/client";
 import { isSealedUnitForm } from "@/lib/pricing/measured-forms";
 import { calculatePackagesNeededMeasured, calculateTotal } from "@/lib/pricing/price-calculator";
 
-// Sin "," (separador de miles) en el código de formato: pedido explícito del
-// cliente, sin puntos de miles ni en la pantalla ni en el Excel.
-const CURRENCY_FORMAT = '"$"0';
+const CURRENCY_FORMAT = '"$"#,##0';
 
 interface SupplierOrderLine {
   supplierName: string;
@@ -134,7 +132,7 @@ export async function buildPurchaseOrderWorkbook(
     }
     sheet.getColumn("packagePrice").numFmt = CURRENCY_FORMAT;
     sheet.getColumn("total").numFmt = CURRENCY_FORMAT;
-    sheet.getColumn("unitPrice").numFmt = '"$"0.00';
+    sheet.getColumn("unitPrice").numFmt = '"$"#,##0.00';
   }
 
   const arrayBuffer = await workbook.xlsx.writeBuffer();
