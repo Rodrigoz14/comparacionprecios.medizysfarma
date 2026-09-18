@@ -86,7 +86,7 @@ export function WarehouseStockManager() {
               if (file) void handleFileUpload(file);
               e.target.value = "";
             }}
-            className="text-sm text-zinc-500 file:mr-3 file:cursor-pointer file:rounded file:border-0 file:bg-brand-blue file:px-4 file:py-2 file:text-sm file:font-medium file:text-white file:transition-colors hover:file:bg-brand-navy disabled:file:cursor-not-allowed disabled:file:opacity-40"
+            className="text-sm text-zinc-500 file:mr-3 file:cursor-pointer file:rounded file:border-0 file:bg-brand-green file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white file:transition-colors hover:file:opacity-90 disabled:file:cursor-not-allowed disabled:file:opacity-40"
           />
           {uploading && <p className="text-xs text-zinc-500">Importando y homologando productos...</p>}
           {error && <p className="text-sm text-red-600">{error}</p>}
