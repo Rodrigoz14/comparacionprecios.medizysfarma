@@ -4,8 +4,8 @@ import { verifySession } from "@/lib/auth/dal";
 const MODULES = [
   {
     label: "Proveedores",
-    description: "Importar lista de precios",
-    href: "/proveedores/importar",
+    description: "Ver catálogo e importar listas",
+    href: "/proveedores",
     icon: (
       <path
         strokeLinecap="round"

@@ -1,6 +1,7 @@
 "use client";
 
 import { upload } from "@vercel/blob/client";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { AnalyzeResult, ColumnMapping, ColumnTarget, ImportReport, PriceFormat } from "@/lib/excel/types";
 
@@ -207,7 +208,10 @@ export function ImportWizard() {
     <div className="flex-1 bg-zinc-50 px-6 py-12 dark:bg-black">
       <div className="mx-auto max-w-3xl space-y-8">
       <div>
-        <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">Importar lista de proveedor</h1>
+        <Link href="/proveedores" className="text-sm text-zinc-500 hover:text-brand-blue">
+          ← Proveedores
+        </Link>
+        <h1 className="mt-1 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">Importar lista de proveedor</h1>
         <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
           Sube un archivo .xlsx, .xls o .csv con los precios del proveedor.
         </p>

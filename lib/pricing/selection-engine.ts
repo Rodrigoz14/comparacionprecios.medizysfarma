@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db/client";
 import { checkAvailability } from "@/lib/pricing/availability";
 import { capAlternatives } from "@/lib/pricing/cap-alternatives";
+import { filterCurrentOffers } from "@/lib/pricing/current-offers";
 import { formatCOP, formatUnitCOP } from "@/lib/pricing/format";
 import { calculatePackagesNeededMeasured, calculateSavings, calculateTotal } from "@/lib/pricing/price-calculator";
 import { isSealedUnitForm } from "@/lib/pricing/measured-forms";
@@ -78,10 +79,15 @@ export async function selectBestOffer(
   });
   const productIds = genericFamily.map((p) => p.id);
 
-  const offers = await prisma.supplierOffer.findMany({
+  const allOffers = await prisma.supplierOffer.findMany({
     where: { productId: { in: productIds }, status: "ACTIVE" },
     include: { supplier: true, product: { include: { laboratory: true } } },
   });
+  // Solo se cotiza contra el último archivo que subió cada proveedor -- una
+  // oferta de un archivo viejo, reemplazada por uno más nuevo que ya no trae
+  // ese producto, no debe recomendarse para comprar (Sección: vigencia por
+  // último archivo, ver lib/pricing/current-offers.ts).
+  const offers = await filterCurrentOffers(allOffers);
 
   if (offers.length === 0) {
     return {
