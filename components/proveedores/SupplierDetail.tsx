@@ -11,7 +11,7 @@ interface OfferRow {
   concentrationUnit: string;
   presentationQuantity: number;
   presentationUnit: string;
-  isSealedUnit: boolean;
+  isMeasureUnit: boolean;
   purchaseQuantity: number;
   purchaseUnit: string;
   laboratoryName: string | null;
@@ -164,10 +164,11 @@ export function SupplierDetail({ supplierId }: { supplierId: string }) {
                     <p className="text-xs text-zinc-500">
                       {o.dosageForm} — {o.concentration}
                       {o.concentrationUnit}
-                      {/* La ampolla/vial se compra como 1 unidad (columna "No. unidades"),
-                          pero el volumen real que trae sigue siendo dato útil para no
-                          confundir un vial de 2ml con uno de 100ml -- se muestra aquí. */}
-                      {o.isSealedUnit && o.presentationQuantity > 1
+                      {/* La columna "No. unidades" nunca muestra una medida (ml/g), solo
+                          unidades comprables -- el volumen/peso real sigue siendo dato
+                          útil para no confundir, p. ej., un frasco de 30ml con uno de
+                          120ml, así que se muestra aquí junto al nombre. */}
+                      {o.isMeasureUnit && o.presentationQuantity > 1
                         ? ` — ${o.presentationQuantity} ${o.presentationUnit}`
                         : ""}
                     </p>

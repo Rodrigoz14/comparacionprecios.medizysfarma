@@ -9,6 +9,13 @@ const MAX_LIMIT = 200;
 type SortKey = "product" | "laboratory" | "unitPrice" | "availability";
 const SORT_KEYS: SortKey[] = ["product", "laboratory", "unitPrice", "availability"];
 
+// Unidades de MEDIDA (volumen/peso), nunca de conteo -- confirmado con el
+// cliente (2026-09-21): "No. unidades" no debe mostrar ninguna medida (ni
+// "30 ml" ni "120 g"), solo cuántas unidades comprables trae el empaque.
+// Coincide con las unidades que PRESENTATION_UNIT_BY_FORM (extract-attributes.ts)
+// asigna a formas líquidas/semisólidas (jarabe, solución, crema, loción...).
+const MEASURE_UNITS = new Set(["ml", "g"]);
+
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   if (!(await getVerifiedSession())) {
     return Response.json({ error: "No autenticado." }, { status: 401 });
@@ -91,26 +98,30 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const packagePrice = Number(o.price);
     const packageSize = o.product.presentationQuantity;
     const isSealedUnit = isSealedUnitForm(o.product.dosageForm);
+    // El cálculo del precio unitario SÍ necesita distinguir solo ampollas/
+    // viales (regla de negocio ya validada, ver measured-forms.ts) -- no se
+    // toca. La visualización de "cuántas unidades trae" es otra cosa: el
+    // cliente no quiere ver NINGUNA medida (ml, g) ahí, solo unidades
+    // comprables, para cualquier forma farmacéutica (jarabes, cremas,
+    // lociones... no solo ampollas).
     const unitPrice = isSealedUnit ? packagePrice : packagePrice / packageSize;
+    const isMeasureUnit = MEASURE_UNITS.has(o.product.presentationUnit);
     return {
       id: o.id,
       productName: o.product.standardName,
       dosageForm: o.product.dosageForm,
       concentration: o.product.concentration,
       concentrationUnit: o.product.concentrationUnit,
-      // Una ampolla/vial se compra siempre como 1 unidad sellada, sin
-      // importar el volumen que traiga -- ese volumen ("VIAL X 100ML") es
-      // una medida de lo que contiene, no una cantidad de unidades a
-      // comprar (mismo criterio de isSealedUnitForm que usa el motor de
-      // precios). presentationQuantity/Unit se conservan sin tocar (así
-      // siguen distinguiendo, por ejemplo, un vial de 2ml de uno de 100ml
-      // como productos distintos); purchaseQuantity/Unit son lo que debe
-      // mostrarse como "cuántas unidades trae el empaque".
+      // presentationQuantity/Unit se conservan sin tocar (así siguen
+      // distinguiendo, por ejemplo, un frasco de 30ml de uno de 120ml como
+      // productos distintos); purchaseQuantity/Unit son lo que debe
+      // mostrarse como "cuántas unidades trae el empaque" -- nunca una
+      // medida (ml/g), siempre una cantidad de unidades comprables.
       presentationQuantity: o.product.presentationQuantity,
       presentationUnit: o.product.presentationUnit,
-      isSealedUnit,
-      purchaseQuantity: isSealedUnit ? 1 : o.product.presentationQuantity,
-      purchaseUnit: isSealedUnit ? "unidad" : o.product.presentationUnit,
+      isMeasureUnit,
+      purchaseQuantity: isMeasureUnit ? 1 : o.product.presentationQuantity,
+      purchaseUnit: isMeasureUnit ? "unidad" : o.product.presentationUnit,
       laboratoryName: o.product.laboratory?.name ?? null,
       supplierProductCode: o.supplierProductCode,
       price: packagePrice,
