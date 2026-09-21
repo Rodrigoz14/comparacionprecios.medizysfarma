@@ -141,6 +141,8 @@ const PRESENTATION_TYPE_MAP: Record<string, string> = {
   CAJAS: "Caja",
   FRASCO: "Frasco",
   FRASCOS: "Frasco",
+  FCO: "Frasco",
+  FCOS: "Frasco",
   BLISTER: "Blíster",
   BLISTERES: "Blíster",
   SOBRE: "Sobre",

@@ -90,15 +90,27 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const offers = matches.map((o) => {
     const packagePrice = Number(o.price);
     const packageSize = o.product.presentationQuantity;
-    const unitPrice = isSealedUnitForm(o.product.dosageForm) ? packagePrice : packagePrice / packageSize;
+    const isSealedUnit = isSealedUnitForm(o.product.dosageForm);
+    const unitPrice = isSealedUnit ? packagePrice : packagePrice / packageSize;
     return {
       id: o.id,
       productName: o.product.standardName,
       dosageForm: o.product.dosageForm,
       concentration: o.product.concentration,
       concentrationUnit: o.product.concentrationUnit,
+      // Una ampolla/vial se compra siempre como 1 unidad sellada, sin
+      // importar el volumen que traiga -- ese volumen ("VIAL X 100ML") es
+      // una medida de lo que contiene, no una cantidad de unidades a
+      // comprar (mismo criterio de isSealedUnitForm que usa el motor de
+      // precios). presentationQuantity/Unit se conservan sin tocar (así
+      // siguen distinguiendo, por ejemplo, un vial de 2ml de uno de 100ml
+      // como productos distintos); purchaseQuantity/Unit son lo que debe
+      // mostrarse como "cuántas unidades trae el empaque".
       presentationQuantity: o.product.presentationQuantity,
       presentationUnit: o.product.presentationUnit,
+      isSealedUnit,
+      purchaseQuantity: isSealedUnit ? 1 : o.product.presentationQuantity,
+      purchaseUnit: isSealedUnit ? "unidad" : o.product.presentationUnit,
       laboratoryName: o.product.laboratory?.name ?? null,
       supplierProductCode: o.supplierProductCode,
       price: packagePrice,
