@@ -94,7 +94,7 @@ export function SupplierDetail({ supplierId }: { supplierId: string }) {
 
   return (
     <div className="flex-1 bg-zinc-50 px-6 py-12 dark:bg-black">
-      <div className="mx-auto max-w-4xl space-y-6">
+      <div className="mx-auto max-w-6xl space-y-6">
         <div>
           <Link href="/proveedores" className="text-sm text-zinc-500 hover:text-brand-blue">
             ← Proveedores
@@ -133,7 +133,8 @@ export function SupplierDetail({ supplierId }: { supplierId: string }) {
         {error && <p className="text-sm text-red-600">{error}</p>}
 
         <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-          <table className="w-full text-left text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[960px] text-left text-sm">
             <thead className="border-b border-zinc-200 bg-zinc-50 text-xs uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900">
               <tr>
                 {COLUMNS.map((col) => (
@@ -147,9 +148,9 @@ export function SupplierDetail({ supplierId }: { supplierId: string }) {
                     </button>
                   </th>
                 ))}
-                <th className="px-4 py-2 font-medium">Código</th>
-                <th className="px-4 py-2 font-medium">No. unidades</th>
-                <th className="px-4 py-2 font-medium">Precio empaque</th>
+                <th className="whitespace-nowrap px-4 py-2 font-medium">Código</th>
+                <th className="whitespace-nowrap px-4 py-2 font-medium">No. unidades</th>
+                <th className="whitespace-nowrap px-4 py-2 font-medium">Precio empaque</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
@@ -163,22 +164,23 @@ export function SupplierDetail({ supplierId }: { supplierId: string }) {
                     </p>
                   </td>
                   <td className="px-4 py-2 text-zinc-600 dark:text-zinc-400">{o.laboratoryName ?? "—"}</td>
-                  <td className="px-4 py-2 font-medium text-zinc-900 dark:text-zinc-50">
+                  <td className="whitespace-nowrap px-4 py-2 font-medium text-zinc-900 dark:text-zinc-50">
                     {unitPriceFormat.format(o.unitPrice)}
                   </td>
-                  <td className="px-4 py-2 text-zinc-600 dark:text-zinc-400">
+                  <td className="whitespace-nowrap px-4 py-2 text-zinc-600 dark:text-zinc-400">
                     {AVAILABILITY_LABEL[o.availability] ?? o.availability}
                     {o.stockQuantity !== null ? ` (${o.stockQuantity})` : ""}
                   </td>
-                  <td className="px-4 py-2 text-zinc-600 dark:text-zinc-400">{o.supplierProductCode ?? "—"}</td>
-                  <td className="px-4 py-2 text-zinc-600 dark:text-zinc-400">
+                  <td className="whitespace-nowrap px-4 py-2 text-zinc-600 dark:text-zinc-400">{o.supplierProductCode ?? "—"}</td>
+                  <td className="whitespace-nowrap px-4 py-2 text-zinc-600 dark:text-zinc-400">
                     {o.presentationQuantity} {o.presentationUnit}
                   </td>
-                  <td className="px-4 py-2 text-zinc-600 dark:text-zinc-400">{priceFormat.format(o.price)}</td>
+                  <td className="whitespace-nowrap px-4 py-2 text-zinc-600 dark:text-zinc-400">{priceFormat.format(o.price)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+          </div>
           {loading && <p className="px-4 py-3 text-xs text-zinc-500">Cargando...</p>}
           {!loading && data && data.offers.length === 0 && (
             <p className="px-4 py-3 text-sm text-zinc-500">
