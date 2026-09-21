@@ -14,6 +14,7 @@ interface OfferRow {
   laboratoryName: string | null;
   supplierProductCode: string | null;
   price: number;
+  unitPrice: number;
   availability: string;
   stockQuantity: number | null;
 }
@@ -27,8 +28,15 @@ interface OffersResponse {
   offers: OfferRow[];
 }
 
+type SortKey = "product" | "laboratory" | "unitPrice" | "availability";
+type SortDir = "asc" | "desc";
+
 const dateFormat = new Intl.DateTimeFormat("es-CO", { dateStyle: "medium", timeStyle: "short" });
 const priceFormat = new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 });
+// El precio unitario suele quedar en centavos de peso (precio de empaque
+// dividido entre las unidades que trae) -- con 0 decimales redondeaba a "$0"
+// y parecía un error, igual que en Solicitudes (lib/pricing/format.ts).
+const unitPriceFormat = new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 2 });
 
 const AVAILABILITY_LABEL: Record<string, string> = {
   AVAILABLE: "Disponible",
@@ -36,18 +44,27 @@ const AVAILABILITY_LABEL: Record<string, string> = {
   UNKNOWN: "Sin confirmar",
 };
 
+const COLUMNS: { key: SortKey; label: string }[] = [
+  { key: "product", label: "Producto" },
+  { key: "laboratory", label: "Laboratorio" },
+  { key: "unitPrice", label: "Precio unitario" },
+  { key: "availability", label: "Disponibilidad" },
+];
+
 export function SupplierDetail({ supplierId }: { supplierId: string }) {
   const [data, setData] = useState<OffersResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
+  const [sort, setSort] = useState<SortKey>("product");
+  const [dir, setDir] = useState<SortDir>("asc");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const controller = new AbortController();
     const timer = setTimeout(() => {
       setLoading(true);
-      const params = new URLSearchParams({ page: String(page) });
+      const params = new URLSearchParams({ page: String(page), sort, dir });
       if (query.trim()) params.set("q", query.trim());
       fetch(`/api/suppliers/${supplierId}/offers?${params}`, { signal: controller.signal })
         .then((res) => res.json())
@@ -61,7 +78,17 @@ export function SupplierDetail({ supplierId }: { supplierId: string }) {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [supplierId, query, page]);
+  }, [supplierId, query, page, sort, dir]);
+
+  function toggleSort(key: SortKey) {
+    setPage(1);
+    if (key === sort) {
+      setDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSort(key);
+      setDir("asc");
+    }
+  }
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.limit)) : 1;
 
@@ -109,11 +136,20 @@ export function SupplierDetail({ supplierId }: { supplierId: string }) {
           <table className="w-full text-left text-sm">
             <thead className="border-b border-zinc-200 bg-zinc-50 text-xs uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900">
               <tr>
-                <th className="px-4 py-2 font-medium">Producto</th>
-                <th className="px-4 py-2 font-medium">Laboratorio</th>
+                {COLUMNS.map((col) => (
+                  <th key={col.key} className="px-4 py-2 font-medium">
+                    <button
+                      onClick={() => toggleSort(col.key)}
+                      className="flex items-center gap-1 hover:text-zinc-900 dark:hover:text-zinc-50"
+                    >
+                      {col.label}
+                      {sort === col.key && <span>{dir === "asc" ? "↑" : "↓"}</span>}
+                    </button>
+                  </th>
+                ))}
                 <th className="px-4 py-2 font-medium">Código</th>
-                <th className="px-4 py-2 font-medium">Precio</th>
-                <th className="px-4 py-2 font-medium">Disponibilidad</th>
+                <th className="px-4 py-2 font-medium">No. unidades</th>
+                <th className="px-4 py-2 font-medium">Precio empaque</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
@@ -123,16 +159,22 @@ export function SupplierDetail({ supplierId }: { supplierId: string }) {
                     <p className="font-medium text-zinc-900 dark:text-zinc-50">{o.productName}</p>
                     <p className="text-xs text-zinc-500">
                       {o.dosageForm} — {o.concentration}
-                      {o.concentrationUnit} — x{o.presentationQuantity} {o.presentationUnit}
+                      {o.concentrationUnit}
                     </p>
                   </td>
                   <td className="px-4 py-2 text-zinc-600 dark:text-zinc-400">{o.laboratoryName ?? "—"}</td>
-                  <td className="px-4 py-2 text-zinc-600 dark:text-zinc-400">{o.supplierProductCode ?? "—"}</td>
-                  <td className="px-4 py-2 font-medium text-zinc-900 dark:text-zinc-50">{priceFormat.format(o.price)}</td>
+                  <td className="px-4 py-2 font-medium text-zinc-900 dark:text-zinc-50">
+                    {unitPriceFormat.format(o.unitPrice)}
+                  </td>
                   <td className="px-4 py-2 text-zinc-600 dark:text-zinc-400">
                     {AVAILABILITY_LABEL[o.availability] ?? o.availability}
                     {o.stockQuantity !== null ? ` (${o.stockQuantity})` : ""}
                   </td>
+                  <td className="px-4 py-2 text-zinc-600 dark:text-zinc-400">{o.supplierProductCode ?? "—"}</td>
+                  <td className="px-4 py-2 text-zinc-600 dark:text-zinc-400">
+                    {o.presentationQuantity} {o.presentationUnit}
+                  </td>
+                  <td className="px-4 py-2 text-zinc-600 dark:text-zinc-400">{priceFormat.format(o.price)}</td>
                 </tr>
               ))}
             </tbody>

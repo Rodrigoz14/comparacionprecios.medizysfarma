@@ -1,9 +1,13 @@
 import { prisma } from "@/lib/db/client";
 import { getVerifiedSession } from "@/lib/auth/dal";
 import { getLatestFilesBySupplier } from "@/lib/pricing/current-offers";
+import { isSealedUnitForm } from "@/lib/pricing/measured-forms";
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
+
+type SortKey = "product" | "laboratory" | "unitPrice" | "availability";
+const SORT_KEYS: SortKey[] = ["product", "laboratory", "unitPrice", "availability"];
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   if (!(await getVerifiedSession())) {
@@ -23,6 +27,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const q = (searchParams.get("q") ?? "").trim();
   const page = Math.max(1, Number(searchParams.get("page") ?? "1") || 1);
   const limit = Math.min(MAX_LIMIT, Math.max(1, Number(searchParams.get("limit") ?? String(DEFAULT_LIMIT)) || DEFAULT_LIMIT));
+  const sortParam = searchParams.get("sort") ?? "product";
+  const sort: SortKey = SORT_KEYS.includes(sortParam as SortKey) ? (sortParam as SortKey) : "product";
+  const dir: "asc" | "desc" = searchParams.get("dir") === "desc" ? "desc" : "asc";
 
   const latestFilesBySupplier = await getLatestFilesBySupplier([supplierId]);
   const lastFile = latestFilesBySupplier.get(supplierId) ?? null;
@@ -51,42 +58,40 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     AND: [currentFileFilter, searchFilter],
   };
 
-  const [total, offers] = await Promise.all([
-    prisma.supplierOffer.count({ where }),
-    prisma.supplierOffer.findMany({
-      where,
-      orderBy: { product: { standardName: "asc" } },
-      skip: (page - 1) * limit,
-      take: limit,
-      select: {
-        id: true,
-        price: true,
-        availability: true,
-        stockQuantity: true,
-        supplierProductCode: true,
-        updatedAt: true,
-        product: {
-          select: {
-            standardName: true,
-            dosageForm: true,
-            concentration: true,
-            concentrationUnit: true,
-            presentationQuantity: true,
-            presentationUnit: true,
-            laboratory: { select: { name: true } },
-          },
+  // El precio unitario se calcula igual que en el motor de precios (mismo
+  // criterio de ampollas/viales, ver lib/pricing/measured-forms.ts) y no es
+  // una columna real de la base de datos, así que no se puede ordenar por
+  // ella con un ORDER BY -- se trae todo lo que ya filtró la búsqueda,
+  // se ordena en memoria y ahí sí se pagina. Los catálogos por proveedor son
+  // manejables (cientos a pocos miles de filas), así que no es un problema.
+  const matches = await prisma.supplierOffer.findMany({
+    where,
+    select: {
+      id: true,
+      price: true,
+      availability: true,
+      stockQuantity: true,
+      supplierProductCode: true,
+      updatedAt: true,
+      product: {
+        select: {
+          standardName: true,
+          dosageForm: true,
+          concentration: true,
+          concentrationUnit: true,
+          presentationQuantity: true,
+          presentationUnit: true,
+          laboratory: { select: { name: true } },
         },
       },
-    }),
-  ]);
+    },
+  });
 
-  return Response.json({
-    supplier,
-    lastFile,
-    total,
-    page,
-    limit,
-    offers: offers.map((o) => ({
+  const offers = matches.map((o) => {
+    const packagePrice = Number(o.price);
+    const packageSize = o.product.presentationQuantity;
+    const unitPrice = isSealedUnitForm(o.product.dosageForm) ? packagePrice : packagePrice / packageSize;
+    return {
       id: o.id,
       productName: o.product.standardName,
       dosageForm: o.product.dosageForm,
@@ -96,10 +101,41 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       presentationUnit: o.product.presentationUnit,
       laboratoryName: o.product.laboratory?.name ?? null,
       supplierProductCode: o.supplierProductCode,
-      price: Number(o.price),
+      price: packagePrice,
+      unitPrice,
       availability: o.availability,
       stockQuantity: o.stockQuantity,
       updatedAt: o.updatedAt,
-    })),
+    };
+  });
+
+  const collator = new Intl.Collator("es", { sensitivity: "base" });
+  const sign = dir === "asc" ? 1 : -1;
+  offers.sort((a, b) => {
+    switch (sort) {
+      case "unitPrice":
+        return (a.unitPrice - b.unitPrice) * sign;
+      case "laboratory":
+        return collator.compare(a.laboratoryName ?? "", b.laboratoryName ?? "") * sign;
+      case "availability":
+        return collator.compare(a.availability, b.availability) * sign;
+      case "product":
+      default:
+        return collator.compare(a.productName, b.productName) * sign;
+    }
+  });
+
+  const total = offers.length;
+  const paged = offers.slice((page - 1) * limit, (page - 1) * limit + limit);
+
+  return Response.json({
+    supplier,
+    lastFile,
+    total,
+    page,
+    limit,
+    sort,
+    dir,
+    offers: paged,
   });
 }
