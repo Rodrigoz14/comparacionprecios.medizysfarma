@@ -49,6 +49,16 @@ export interface AnalyzeResult {
     processedAt: Date | null;
     receivedAt: Date;
   } | null;
+  /// Presente cuando el proveedor tiene un formato de columnas fijo y
+  /// conocido (lib/excel/supplier-profiles.ts): las columnas ya vinieron
+  /// pre-mapeadas por su nombre exacto en vez de por alias genéricos.
+  fixedProfile: {
+    key: string;
+    /// Encabezados que el perfil esperaba y no se encontraron en este archivo.
+    missingColumns: string[];
+    /// Etiqueta amigable a mostrar para cada campo mapeado (p. ej. "Precio Und").
+    previewLabels: Partial<Record<ColumnTarget, string>>;
+  } | null;
 }
 
 /// Una fila cruda de la hoja, tal como viene, indexada por número de columna.
@@ -82,6 +92,9 @@ export interface ImportReport {
   updatedOffers: number;
   errorRows: number;
   warningRows: number;
+  /// Filas excluidas a propósito por no tener existencia (stock/cantidad <= 0)
+  /// -- no son un error, ver SupplierColumnProfile.excludeZeroStock.
+  excludedRows: number;
   errors: RowIssue[];
   warnings: RowIssue[];
 }

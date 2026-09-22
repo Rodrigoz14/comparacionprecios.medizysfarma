@@ -347,6 +347,21 @@ export function ImportWizard() {
             </p>
           </div>
 
+          {analysis.fixedProfile && (
+            <div className="rounded border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-200">
+              <p>
+                Este proveedor tiene un formato de columnas fijo: se ubicaron por su nombre exacto, sin necesidad de
+                elegirlas a mano. Las demás columnas del archivo no se importan.
+              </p>
+              {analysis.fixedProfile.missingColumns.length > 0 && (
+                <p className="mt-1 font-medium text-amber-700 dark:text-amber-400">
+                  No se encontraron estas columnas esperadas en el archivo:{" "}
+                  {analysis.fixedProfile.missingColumns.join(", ")}. Revisa el mapeo manualmente abajo.
+                </p>
+              )}
+            </div>
+          )}
+
           <div>
             <h3 className="mb-2 text-sm font-semibold text-zinc-700 dark:text-zinc-300">Mapeo de columnas</h3>
             <table className="w-full text-sm">
@@ -361,9 +376,16 @@ export function ImportWizard() {
                   const currentTarget =
                     (Object.entries(mapping).find(([, idx]) => idx === col.index)?.[0] as ColumnTarget | undefined) ??
                     "none";
+                  const friendlyLabel =
+                    currentTarget !== "none" ? analysis.fixedProfile?.previewLabels[currentTarget] : undefined;
                   return (
                     <tr key={col.index} className="border-t border-zinc-100 dark:border-zinc-800">
-                      <td className="py-1 pr-4">{col.header || `(columna ${col.index + 1})`}</td>
+                      <td className="py-1 pr-4">
+                        {col.header || `(columna ${col.index + 1})`}
+                        {friendlyLabel && (
+                          <span className="ml-2 text-xs text-zinc-500">→ se verá como &quot;{friendlyLabel}&quot;</span>
+                        )}
+                      </td>
                       <td className="py-1">
                         <select
                           value={currentTarget}
@@ -441,6 +463,7 @@ export function ImportWizard() {
             <Stat label="Filas importadas" value={report.importedRows} />
             <Stat label="Productos nuevos" value={report.newProducts} />
             <Stat label="Ofertas actualizadas" value={report.updatedOffers} />
+            <Stat label="Sin existencia (excluidas)" value={report.excludedRows} />
             <Stat label="Errores" value={report.errorRows} />
             <Stat label="Advertencias" value={report.warningRows} />
           </dl>

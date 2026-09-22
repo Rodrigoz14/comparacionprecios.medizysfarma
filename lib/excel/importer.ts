@@ -4,10 +4,12 @@ import { detectPriceFormat, normalizeAvailability, parsePrice } from "@/lib/exce
 import { parseWorkbook } from "@/lib/excel/parser";
 import { buildGenericKey, buildNormalizedName, canonicalizeIngredient, normalizeText } from "@/lib/matching/normalize";
 import { extractProductAttributes, normalizeDosageForm } from "@/lib/matching/extract-attributes";
+import { isSealedUnitForm } from "@/lib/pricing/measured-forms";
 import { hashBuffer } from "@/lib/excel/storage";
 import type {
   AnalyzeResult,
   ColumnMapping,
+  ColumnTarget,
   ImportReport,
   ParsedOfferRow,
   PriceFormat,
@@ -16,6 +18,7 @@ import type {
 } from "@/lib/excel/types";
 import { detectDuplicates } from "@/lib/excel/duplicate-detector";
 import { validateParsedRow } from "@/lib/excel/validator";
+import { findSupplierProfile, isZeroStockValue, resolveFixedMapping } from "@/lib/excel/supplier-profiles";
 
 const PREVIEW_ROW_COUNT = 10;
 const BATCH_SIZE = 100;
@@ -26,6 +29,12 @@ export async function analyzeSupplierFile(
   originalName: string,
   supplierId: string,
 ): Promise<AnalyzeResult> {
+  const supplier = await prisma.supplier.findUniqueOrThrow({
+    where: { id: supplierId },
+    select: { name: true },
+  });
+  const profile = findSupplierProfile(supplier.name);
+
   const workbook = await parseWorkbook(buffer, originalName);
   if (workbook.sheets.length === 0) {
     throw new Error("El archivo no contiene hojas legibles.");
@@ -36,9 +45,28 @@ export async function analyzeSupplierFile(
   const headerRowIndex = detectHeaderRowIndex(rows);
   const headerRow = rows[headerRowIndex] ?? {};
   const columns = detectColumns(headerRow);
+  const dataRows = rows.slice(headerRowIndex + 1);
+
+  let fixedProfileResult: AnalyzeResult["fixedProfile"] = null;
+
+  if (profile) {
+    // Proveedor con formato de columnas conocido: se ignora la detección
+    // genérica por alias y se buscan las columnas por su nombre exacto
+    // (Sección: lib/excel/supplier-profiles.ts). Las columnas que no forman
+    // parte del perfil quedan sin mapear a propósito ("las demás columnas
+    // no se van a tomar").
+    const { mapping: fixedMapping, missingColumns } = resolveFixedMapping(profile, headerRow);
+    for (const col of columns) {
+      const target = (Object.entries(fixedMapping) as [ColumnTarget, number][]).find(
+        ([, index]) => index === col.index,
+      )?.[0];
+      col.proposedTarget = target ?? null;
+      col.confidence = target ? 1 : 0;
+    }
+    fixedProfileResult = { key: profile.key, missingColumns, previewLabels: profile.previewLabels };
+  }
 
   const priceColumn = columns.find((c) => c.proposedTarget === "price");
-  const dataRows = rows.slice(headerRowIndex + 1);
   const priceSamples = priceColumn
     ? dataRows.slice(0, 30).map((r) => r[priceColumn.index])
     : [];
@@ -50,8 +78,11 @@ export async function analyzeSupplierFile(
   // "Ger_EPS" (el precio real, sin ningún alias reconocible en su nombre) — miles
   // de filas terminaron sin importarse (precio 0 rechazado) o con precio
   // equivocado. Si la mayoría de la muestra es cero, no se propone la columna:
-  // mejor obligar a elegir a mano que corromper el catálogo en silencio.
-  if (priceColumn) {
+  // mejor obligar a elegir a mano que corromper el catálogo en silencio. No
+  // aplica cuando el proveedor tiene un perfil fijo: ahí la columna se
+  // localizó por su nombre exacto, no por adivinar, así que no hay nada que
+  // desconfiar.
+  if (priceColumn && !profile) {
     const parsedSamples = priceSamples
       .map((v) => parsePrice(v, proposedPriceFormat))
       .filter((v): v is number => v !== null);
@@ -67,7 +98,16 @@ export async function analyzeSupplierFile(
     if (col.proposedTarget) mapping[col.proposedTarget] = col.index;
   }
 
-  const previewRows = dataRows.slice(0, PREVIEW_ROW_COUNT);
+  // Las filas sin existencia (stock/cantidad <= 0) no deben ni verse en la
+  // previsualización cuando el perfil del proveedor así lo pide (confirmado
+  // con el cliente) -- mismo criterio que se aplica luego al importar de verdad.
+  const stockColumnIndex = mapping.stock;
+  const visibleDataRows =
+    profile?.excludeZeroStock && stockColumnIndex !== undefined
+      ? dataRows.filter((r) => !isZeroStockValue(r[stockColumnIndex]))
+      : dataRows;
+
+  const previewRows = visibleDataRows.slice(0, PREVIEW_ROW_COUNT);
 
   const fileHash = hashBuffer(buffer);
   const existingFile = await prisma.supplierFile.findUnique({
@@ -81,6 +121,7 @@ export async function analyzeSupplierFile(
     columns,
     proposedPriceFormat,
     previewRows,
+    fixedProfile: fixedProfileResult,
     alreadyImported: existingFile
       ? {
           supplierFileId: existingFile.id,
@@ -96,6 +137,7 @@ function readMappedRow(
   mapping: ColumnMapping,
   priceFormat: PriceFormat,
   rowNumber: number,
+  priceIsPerUnit: boolean,
 ): { row: ParsedOfferRow | null; error: string | null; warnings: string[] } {
   const productNameRaw = mapping.productName !== undefined ? row[mapping.productName] : null;
   const originalProductName = productNameRaw === null || productNameRaw === undefined ? "" : String(productNameRaw).trim();
@@ -139,10 +181,21 @@ function readMappedRow(
   }
 
   const priceRaw = mapping.price !== undefined ? row[mapping.price] : null;
-  const price = parsePrice(priceRaw, priceFormat);
-  if (price === null) {
+  const unitOrPackagePrice = parsePrice(priceRaw, priceFormat);
+  if (unitOrPackagePrice === null) {
     return { row: null, error: `Precio inválido para "${originalProductName}": "${priceRaw}".`, warnings: [] };
   }
+
+  // Algunos proveedores solo reportan el precio de UNA unidad suelta, no del
+  // empaque completo (confirmado con el cliente, 2026-09-22) -- se
+  // multiplica por las unidades del empaque para seguir guardando precio de
+  // empaque completo, como el resto del motor de precios espera. No aplica
+  // a ampollas/viales: esos siempre se compran como 1 unidad sellada, sin
+  // importar su volumen (mismo criterio que selection-engine.ts).
+  const price =
+    priceIsPerUnit && !isSealedUnitForm(extraction.attributes.dosageForm)
+      ? Math.round(unitOrPackagePrice * extraction.attributes.presentationQuantity * 100) / 100
+      : unitOrPackagePrice;
 
   const validation = validateParsedRow({ originalProductName, price, tax: null });
   if (!validation.valid) {
@@ -214,17 +267,38 @@ export async function confirmSupplierImport(input: ConfirmImportInput): Promise<
     );
   }
 
+  const supplier = await prisma.supplier.findUniqueOrThrow({
+    where: { id: input.supplierId },
+    select: { name: true },
+  });
+  const profile = findSupplierProfile(supplier.name);
+  const stockColumnIndex = input.mapping.stock;
+
   const workbook = await parseWorkbook(buffer, originalName);
+  // Ni ExcelJS ni SheetJS distinguen filas ocultas por un filtro de las
+  // demás (el `eachRow`/`sheet_to_json` de ambos recorre toda la hoja tal
+  // como está guardada) -- un filtro activo en el archivo no oculta ninguna
+  // fila de la importación, ya se analiza el documento completo.
   const allRows = workbook.getRows(input.sheetName);
   const dataRows = allRows.slice(input.headerRowIndex + 1);
 
   const errors: RowIssue[] = [];
   const warnings: RowIssue[] = [];
   const parsedRows: ParsedOfferRow[] = [];
+  let excludedRows = 0;
 
   dataRows.forEach((row, i) => {
     const rowNumber = input.headerRowIndex + 2 + i; // +1 header, +1 for 1-based display
-    const result = readMappedRow(row, input.mapping, input.priceFormat, rowNumber);
+
+    // Filas sin existencia (stock/cantidad <= 0): se excluyen del todo, no
+    // se guardan ni cuentan como error (confirmado con el cliente,
+    // 2026-09-22, mismo criterio que Bodega para existencias en 0).
+    if (profile?.excludeZeroStock && stockColumnIndex !== undefined && isZeroStockValue(row[stockColumnIndex])) {
+      excludedRows += 1;
+      return;
+    }
+
+    const result = readMappedRow(row, input.mapping, input.priceFormat, rowNumber, profile?.priceIsPerUnit ?? false);
     if (result.error) {
       errors.push({ rowNumber, message: result.error });
       return;
@@ -383,6 +457,7 @@ export async function confirmSupplierImport(input: ConfirmImportInput): Promise<
     updatedOffers,
     errorRows: errors.length,
     warningRows: warnings.length,
+    excludedRows,
     errors,
     warnings,
   };

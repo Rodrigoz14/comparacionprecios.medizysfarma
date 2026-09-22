@@ -162,3 +162,152 @@ describe("importador de Excel (integracion contra base de datos real)", () => {
     expect(result.columns.some((c) => c.proposedTarget === "price")).toBe(false);
   });
 });
+
+describe("perfiles fijos de proveedor conocido (integracion contra base de datos real)", () => {
+  async function withSupplier(namePrefix: string, run: (supplierId: string) => Promise<void>) {
+    const supplier = await prisma.supplier.create({ data: { name: `${namePrefix} ${Date.now()}` } });
+    try {
+      await run(supplier.id);
+    } finally {
+      const offers = await prisma.supplierOffer.findMany({
+        where: { supplierId: supplier.id },
+        select: { id: true, productId: true },
+      });
+      const offerIds = offers.map((o) => o.id);
+      const productIds = offers.map((o) => o.productId);
+      await prisma.priceHistory.deleteMany({ where: { supplierOfferId: { in: offerIds } } });
+      await prisma.supplierOffer.deleteMany({ where: { supplierId: supplier.id } });
+      await prisma.supplierFile.deleteMany({ where: { supplierId: supplier.id } });
+      await prisma.product.deleteMany({ where: { id: { in: productIds } } });
+      await prisma.supplier.delete({ where: { id: supplier.id } });
+    }
+  }
+
+  it("Disfarma: ubica las columnas por su nombre exacto y multiplica el precio por unidad por las unidades del empaque", async () => {
+    await withSupplier("Disfarma", async (supplierId) => {
+      const rows = [
+        ["CODIGO", "DESCRIPCION", "Ger_UPS_UND", "FORMA_FARMACEUTICA", "PRESENTACION", "LABORATORIO"],
+        ["D100", "AMOXICILINA 500MG", 100, "TABLETA", "X20", "MK"],
+        // Inyectable: el precio por "unidad" NO se multiplica por el volumen del vial
+        // (siempre se compra como 1 vial sellado, sin importar cuántos ml traiga).
+        ["D200", "ACETAMINOFEN 500MG INYECTABLE", 500, "INYECTABLE", "X100ML", "MK"],
+      ];
+      const buffer = await buildXlsxBuffer(rows);
+
+      const analysis = await analyzeSupplierFile(buffer, "disfarma.xlsx", supplierId);
+      expect(analysis.fixedProfile?.key).toBe("disfarma");
+      const byTarget = Object.fromEntries(analysis.columns.map((c) => [c.proposedTarget, c.index]));
+      expect(byTarget.supplierProductCode).toBe(0);
+      expect(byTarget.productName).toBe(1);
+      expect(byTarget.price).toBe(2);
+      expect(byTarget.dosageForm).toBe(3);
+      expect(byTarget.presentation).toBe(4);
+      expect(byTarget.laboratory).toBe(5);
+
+      const mapping: ColumnMapping = {};
+      for (const col of analysis.columns) if (col.proposedTarget) mapping[col.proposedTarget] = col.index;
+
+      const report = await confirmSupplierImport({
+        buffer,
+        originalName: "disfarma.xlsx",
+        storagePath: null,
+        supplierId,
+        sheetName: analysis.selectedSheet,
+        headerRowIndex: analysis.headerRowIndex,
+        mapping,
+        priceFormat: { thousands: ".", decimal: "," },
+      });
+      expect(report.errorRows).toBe(0);
+      expect(report.importedRows).toBe(2);
+
+      const amoxicilina = await prisma.supplierOffer.findFirst({
+        where: { supplierId, product: { normalizedName: { contains: "amoxicilina" } } },
+      });
+      expect(Number(amoxicilina!.price)).toBe(2000); // 100 x 20 tabletas
+
+      const acetaminofen = await prisma.supplierOffer.findFirst({
+        where: { supplierId, product: { normalizedName: { contains: "acetaminofen" } } },
+      });
+      expect(Number(acetaminofen!.price)).toBe(500); // inyectable: sin multiplicar
+    });
+  });
+
+  it("Ramédicas: excluye del todo las filas con STOCK ACTUAL = 0 (no se importan, no cuentan como error)", async () => {
+    await withSupplier("Ramedicas", async (supplierId) => {
+      const rows = [
+        ["CODIGO INTERNO MEDICAMENTO", "DESCRIPCION COMPLETA DE PRODUCTO", "PRESENTACION", "PRECIO X UD", "LABORATORIO", "STOCK ACTUAL"],
+        ["R001", "IBUPROFENO 400MG", "X30 TAB", 50, "MK", 20],
+        ["R002", "LORATADINA 10MG", "X10 TAB", 30, "MK", 0],
+      ];
+      const buffer = await buildXlsxBuffer(rows);
+
+      const analysis = await analyzeSupplierFile(buffer, "ramedicas.xlsx", supplierId);
+      expect(analysis.fixedProfile?.key).toBe("ramedicas");
+      // La fila sin existencia no debe aparecer ni en la previsualización.
+      expect(analysis.previewRows.some((r) => String(r[0]) === "R002")).toBe(false);
+
+      const mapping: ColumnMapping = {};
+      for (const col of analysis.columns) if (col.proposedTarget) mapping[col.proposedTarget] = col.index;
+
+      const report = await confirmSupplierImport({
+        buffer,
+        originalName: "ramedicas.xlsx",
+        storagePath: null,
+        supplierId,
+        sheetName: analysis.selectedSheet,
+        headerRowIndex: analysis.headerRowIndex,
+        mapping,
+        priceFormat: { thousands: ".", decimal: "," },
+      });
+
+      expect(report.excludedRows).toBe(1);
+      expect(report.importedRows).toBe(1);
+
+      const loratadina = await prisma.supplierOffer.findFirst({
+        where: { supplierId, product: { normalizedName: { contains: "loratadina" } } },
+      });
+      expect(loratadina).toBeNull();
+
+      const ibuprofeno = await prisma.supplierOffer.findFirst({
+        where: { supplierId, product: { normalizedName: { contains: "ibuprofeno" } } },
+      });
+      expect(Number(ibuprofeno!.price)).toBe(1500); // 50 x 30 tabletas
+    });
+  });
+
+  it("Offimédicas: excluye filas con CANTIDAD = 0, usando ID_PRODUCTO/PRODUCTO/PRECIO UND", async () => {
+    await withSupplier("Offimedicas", async (supplierId) => {
+      const rows = [
+        ["ID_PRODUCTO", "PRODUCTO", "LABORATORIO", "CANTIDAD", "PRECIO UND"],
+        ["O001", "METFORMINA 850MG X30", "MK", 15, 40],
+        ["O002", "OMEPRAZOL 20MG X30", "MK", 0, 60],
+      ];
+      const buffer = await buildXlsxBuffer(rows);
+
+      const analysis = await analyzeSupplierFile(buffer, "offimedicas.xlsx", supplierId);
+      expect(analysis.fixedProfile?.key).toBe("offimedicas");
+
+      const mapping: ColumnMapping = {};
+      for (const col of analysis.columns) if (col.proposedTarget) mapping[col.proposedTarget] = col.index;
+
+      const report = await confirmSupplierImport({
+        buffer,
+        originalName: "offimedicas.xlsx",
+        storagePath: null,
+        supplierId,
+        sheetName: analysis.selectedSheet,
+        headerRowIndex: analysis.headerRowIndex,
+        mapping,
+        priceFormat: { thousands: ".", decimal: "," },
+      });
+
+      expect(report.excludedRows).toBe(1);
+      expect(report.importedRows).toBe(1);
+
+      const metformina = await prisma.supplierOffer.findFirst({
+        where: { supplierId, product: { normalizedName: { contains: "metformina" } } },
+      });
+      expect(Number(metformina!.price)).toBe(1200); // 40 x 30 tabletas
+    });
+  });
+});
