@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db/client";
 import { detectColumns, detectHeaderRowIndex } from "@/lib/excel/detector";
-import { detectPriceFormat, normalizeAvailability, parsePrice } from "@/lib/excel/normalizer";
+import { detectPriceFormat, normalizeAvailability, parseExpirationDate, parsePrice } from "@/lib/excel/normalizer";
 import { parseWorkbook } from "@/lib/excel/parser";
 import { buildGenericKey, buildNormalizedName, canonicalizeIngredient, normalizeText } from "@/lib/matching/normalize";
 import { extractProductAttributes, normalizeDosageForm } from "@/lib/matching/extract-attributes";
@@ -188,10 +188,14 @@ function readMappedRow(
 
   // Algunos proveedores solo reportan el precio de UNA unidad suelta, no del
   // empaque completo (confirmado con el cliente, 2026-09-22) -- se
-  // multiplica por las unidades del empaque para seguir guardando precio de
+  // multiplica por las unidades del empaque para calcular el precio de
   // empaque completo, como el resto del motor de precios espera. No aplica
   // a ampollas/viales: esos siempre se compran como 1 unidad sellada, sin
-  // importar su volumen (mismo criterio que selection-engine.ts).
+  // importar su volumen (mismo criterio que selection-engine.ts). El precio
+  // por unidad tal como vino en el archivo se conserva sin tocar (nunca se
+  // vuelve a derivar por división al mostrarlo) -- confirmado con el
+  // cliente: "el precio unitario no se debe calcular, ya viene en el excel".
+  const unitPriceAsImported = priceIsPerUnit ? unitOrPackagePrice : null;
   const price =
     priceIsPerUnit && !isSealedUnitForm(extraction.attributes.dosageForm)
       ? Math.round(unitOrPackagePrice * extraction.attributes.presentationQuantity * 100) / 100
@@ -218,6 +222,9 @@ function readMappedRow(
   const laboratoryName = laboratoryNameRaw || null;
   const laboratoryNormalizedName = laboratoryName ? normalizeText(laboratoryName) : null;
 
+  const expirationDateRaw = mapping.expirationDate !== undefined ? row[mapping.expirationDate] : null;
+  const expirationDate = parseExpirationDate(expirationDateRaw);
+
   return {
     row: {
       rowNumber,
@@ -229,9 +236,11 @@ function readMappedRow(
       attributeWarnings: extraction.warnings,
       laboratoryName,
       price,
+      unitPriceAsImported,
       tax,
       availability,
       stock,
+      expirationDate,
     },
     error: null,
     warnings: extraction.warnings,
@@ -406,9 +415,11 @@ export async function confirmSupplierImport(input: ConfirmImportInput): Promise<
               productId: product.id,
               supplierProductCode: row.supplierProductCode,
               price: row.price,
+              unitPriceAsImported: row.unitPriceAsImported,
               tax: row.tax,
               availability: row.availability,
               stockQuantity: row.stock,
+              expirationDate: row.expirationDate,
               sourceFileId: supplierFile.id,
             },
           });
@@ -423,9 +434,11 @@ export async function confirmSupplierImport(input: ConfirmImportInput): Promise<
             data: {
               supplierProductCode: row.supplierProductCode,
               price: row.price,
+              unitPriceAsImported: row.unitPriceAsImported,
               tax: row.tax,
               availability: row.availability,
               stockQuantity: row.stock,
+              expirationDate: row.expirationDate,
               sourceFileId: supplierFile.id,
             },
           });

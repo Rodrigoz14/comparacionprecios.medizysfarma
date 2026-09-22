@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectPriceFormat, normalizeAvailability, parsePrice } from "@/lib/excel/normalizer";
+import { detectPriceFormat, normalizeAvailability, parseExpirationDate, parsePrice } from "@/lib/excel/normalizer";
 
 describe("parsePrice", () => {
   it("parsea formato colombiano con miles en punto y decimales en coma", () => {
@@ -70,5 +70,30 @@ describe("normalizeAvailability", () => {
   it("devuelve desconocido para texto no interpretable", () => {
     expect(normalizeAvailability("???").availability).toBe("UNKNOWN");
     expect(normalizeAvailability(undefined).availability).toBe("UNKNOWN");
+  });
+});
+
+describe("parseExpirationDate", () => {
+  it("parsea una fecha ISO (como la que entrega ExcelJS para una celda de fecha real)", () => {
+    const date = parseExpirationDate("2027-05-15T00:00:00.000Z");
+    expect(date?.toISOString().slice(0, 10)).toBe("2027-05-15");
+  });
+
+  it("parsea formato colombiano DD/MM/YYYY", () => {
+    const date = parseExpirationDate("15/05/2027");
+    expect(date?.toISOString().slice(0, 10)).toBe("2027-05-15");
+  });
+
+  it("parsea un serial de Excel (dias desde el 30/12/1899)", () => {
+    // 46522 = 15 de mayo de 2027
+    const date = parseExpirationDate(46522);
+    expect(date?.toISOString().slice(0, 10)).toBe("2027-05-15");
+  });
+
+  it("devuelve null para valores vacios o no interpretables", () => {
+    expect(parseExpirationDate(null)).toBeNull();
+    expect(parseExpirationDate(undefined)).toBeNull();
+    expect(parseExpirationDate("")).toBeNull();
+    expect(parseExpirationDate("no aplica")).toBeNull();
   });
 });

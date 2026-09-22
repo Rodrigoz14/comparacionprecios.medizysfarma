@@ -74,6 +74,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ ite
       totalCost: calculateTotal(packagePrice, packagesNeeded),
       availability: c.availability,
       stockQuantity: null,
+      // PriceComparison no guarda la fecha de vencimiento (solo se usa al
+      // comparar por primera vez, en selectBestOffer) -- reconstruir esta
+      // lista para mostrarla de nuevo no necesita volver a evaluarla.
+      expirationDate: null,
       eligible: c.discardReason === null,
       discardReason: c.discardReason,
     };

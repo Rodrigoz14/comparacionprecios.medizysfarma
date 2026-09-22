@@ -13,6 +13,7 @@ const ALIASES: Record<ColumnTarget, string[]> = {
   tax: ["iva", "impuesto"],
   availability: ["disponible", "disponibilidad", "existencia", "stock", "cantidad disponible"],
   stock: ["stock", "existencia", "cantidad"],
+  expirationDate: ["fecha vencimiento", "fec_venc", "vencimiento", "fecha vence", "caducidad"],
 };
 
 /**

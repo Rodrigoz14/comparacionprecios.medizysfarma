@@ -4,10 +4,30 @@ import { capAlternatives } from "@/lib/pricing/cap-alternatives";
 import { filterCurrentOffers } from "@/lib/pricing/current-offers";
 import { formatCOP, formatUnitCOP } from "@/lib/pricing/format";
 import { calculatePackagesNeededMeasured, calculateSavings, calculateTotal } from "@/lib/pricing/price-calculator";
+import { isExpiringSoon } from "@/lib/pricing/expiration";
 import { isSealedUnitForm } from "@/lib/pricing/measured-forms";
 import { DEFAULT_PRICING_RULES } from "@/lib/pricing/rules";
 import { rankOffers } from "@/lib/pricing/supplier-ranking";
+import { findSupplierProfile } from "@/lib/excel/supplier-profiles";
 import type { OfferOption, PricingRules, SelectionResult } from "@/lib/pricing/types";
+
+// Confirmado con el cliente (2026-09-22): un producto de Disfarma que vence
+// en 12 meses o menos no se prefiere para comprar -- se pasa a la siguiente
+// mejor alternativa (otro lote de Disfarma con más vigencia, u otro
+// proveedor). Si no hay ninguna otra oferta elegible, se usa igual la de
+// Disfarma que vence pronto, en vez de dejar el producto sin comprar. Sin
+// fecha de vencimiento confirmada, se trata igual que si venciera pronto
+// (más seguro que asumir que está bien).
+function hasSafeExpiration(option: OfferOption): boolean {
+  const isDisfarma = findSupplierProfile(option.supplierName)?.key === "disfarma";
+  if (!isDisfarma) return true;
+  // Sin fecha confirmada se trata como riesgo (igual que si venciera
+  // pronto) -- más seguro que asumir que está bien. isExpiringSoon() por sí
+  // sola no basta aquí: para la vista genérica (Proveedores) "sin fecha" no
+  // debe resaltarse como riesgo, pero para decidir qué comprar sí.
+  if (!option.expirationDate) return false;
+  return !isExpiringSoon(option.expirationDate);
+}
 
 /**
  * Selecciona la mejor oferta para un ítem de solicitud ya homologado (Sección 5).
@@ -128,7 +148,16 @@ export async function selectBestOffer(
     // "empaque" ya es una sola unidad sellada, así que coincide con el
     // precio unitario sin necesidad de dividir.
     const packagePrice = Number(offer.price);
-    const unitPrice = isSealedUnit ? packagePrice : Math.round((packagePrice / packageSize) * 10000) / 10000;
+    // El precio unitario NUNCA se calcula cuando el proveedor ya lo reportó
+    // tal cual en su archivo (confirmado con el cliente, 2026-09-22) -- se
+    // usa ese valor exacto. Solo se deriva por división como respaldo, para
+    // proveedores sin ese dato propio.
+    const unitPrice =
+      offer.unitPriceAsImported !== null
+        ? Number(offer.unitPriceAsImported)
+        : isSealedUnit
+          ? packagePrice
+          : Math.round((packagePrice / packageSize) * 10000) / 10000;
     return {
       supplierOfferId: offer.id,
       supplierId: offer.supplierId,
@@ -143,6 +172,7 @@ export async function selectBestOffer(
       totalCost: calculateTotal(packagePrice, packagesNeeded),
       availability: offer.availability,
       stockQuantity: offer.stockQuantity,
+      expirationDate: offer.expirationDate,
       eligible: check.eligible,
       discardReason: check.reason,
     };
@@ -160,9 +190,14 @@ export async function selectBestOffer(
       alternatives: options,
     };
   } else {
-    const ranked = rankOffers(eligible, rules);
+    // Un Disfarma que vence pronto (o sin fecha confirmada) se deja de lado
+    // mientras haya una alternativa más segura; si no la hay, se usa igual.
+    const safePool = eligible.filter(hasSafeExpiration);
+    const rankingPool = safePool.length > 0 ? safePool : eligible;
+
+    const ranked = rankOffers(rankingPool, rules);
     const selected = ranked[0];
-    const mostExpensive = Math.max(...eligible.map((o) => o.totalCost));
+    const mostExpensive = Math.max(...rankingPool.map((o) => o.totalCost));
     const savings = calculateSavings(selected.totalCost, mostExpensive);
 
     result = {

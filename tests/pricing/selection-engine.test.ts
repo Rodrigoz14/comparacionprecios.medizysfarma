@@ -154,7 +154,18 @@ describe("selectBestOffer (comparacion entre presentaciones distintas del mismo 
       data: { supplierId: ramedicas.id, productId: caja30.id, price: 9000, availability: "AVAILABLE", stockQuantity: 300 },
     });
     await prisma.supplierOffer.create({
-      data: { supplierId: disfarma.id, productId: caja100.id, price: 25000, availability: "AVAILABLE", stockQuantity: 500 },
+      data: {
+        supplierId: disfarma.id,
+        productId: caja100.id,
+        price: 25000,
+        availability: "AVAILABLE",
+        stockQuantity: 500,
+        // Estos casos comparan tamaño de empaque, no vencimiento -- se le da
+        // una fecha lejana para que no la deje fuera la regla de los 12
+        // meses (tests/pricing/selection-engine.test.ts, describe "Disfarma
+        // con vencimiento próximo").
+        expirationDate: new Date("2099-01-01"),
+      },
     });
   });
 
@@ -412,5 +423,85 @@ describe("selectBestOffer (formas medidas: frascos de distinto tamaño)", () => 
     expect(optionB.packagesNeeded).toBe(2); // 2 frascos de B, sea cual sea su tamaño
     expect(result.selected?.supplierName).toBe("Proveedor Jarabe B"); // mas barato por frasco
     expect(result.totalPrice).toBe(4000);
+  });
+});
+
+describe("selectBestOffer (Disfarma con vencimiento próximo se deja de lado si hay alternativa)", () => {
+  const productIds: string[] = [];
+  const laboratoryIds: string[] = [];
+  const supplierIds: string[] = [];
+
+  function monthsFromNow(months: number): Date {
+    const date = new Date();
+    date.setUTCMonth(date.getUTCMonth() + months);
+    return date;
+  }
+
+  beforeAll(async () => {
+    const product = await createProduct("VENCETEST TAB 50MG X10", "TestLab Vence");
+    productIds.push(product.id);
+    laboratoryIds.push(product.laboratoryId!);
+
+    // El nombre debe contener "disfarma" para que se reconozca como tal
+    // (lib/excel/supplier-profiles.ts), igual que un proveedor real.
+    const disfarma = await prisma.supplier.create({ data: { name: `Disfarma Vence Test ${Date.now()}` } });
+    const otro = await prisma.supplier.create({ data: { name: `Otro Proveedor Vence Test ${Date.now()}` } });
+    supplierIds.push(disfarma.id, otro.id);
+
+    await prisma.supplierOffer.create({
+      data: { supplierId: otro.id, productId: product.id, price: 6000, availability: "AVAILABLE", stockQuantity: 100 },
+    });
+    // Disfarma es la más barata (ganaría por precio), pero vence en 3 meses.
+    await prisma.supplierOffer.create({
+      data: {
+        supplierId: disfarma.id,
+        productId: product.id,
+        price: 5000,
+        availability: "AVAILABLE",
+        stockQuantity: 100,
+        expirationDate: monthsFromNow(3),
+      },
+    });
+  });
+
+  afterAll(async () => {
+    await prisma.priceComparison.deleteMany({ where: { productId: { in: productIds } } });
+    await prisma.supplierOffer.deleteMany({ where: { productId: { in: productIds } } });
+    await prisma.supplier.deleteMany({ where: { id: { in: supplierIds } } });
+    await prisma.product.deleteMany({ where: { id: { in: productIds } } });
+    await prisma.laboratory.deleteMany({ where: { id: { in: laboratoryIds } } });
+  });
+
+  it("prefiere la alternativa más cara antes que un Disfarma más barato que vence en menos de 12 meses", async () => {
+    const { itemId } = await createRequestItem("VENCETEST TAB 50MG X10", 10);
+    await resolveCustomerRequestItem(itemId);
+
+    const result = await selectBestOffer(itemId);
+
+    expect(result.status).toBe("SELECTED");
+    expect(result.selected?.supplierName).not.toMatch(/disfarma/i);
+    expect(result.selected?.packagePrice).toBe(6000);
+  });
+
+  it("usa igual el Disfarma que vence pronto si es la única oferta elegible", async () => {
+    // Se deja sin existencia la alternativa, para que quede como única opción.
+    await prisma.supplierOffer.updateMany({
+      where: { productId: productIds[0], supplierId: { not: supplierIds[0] } },
+      data: { availability: "OUT_OF_STOCK", stockQuantity: 0 },
+    });
+    try {
+      const { itemId } = await createRequestItem("VENCETEST TAB 50MG X10", 10);
+      await resolveCustomerRequestItem(itemId);
+
+      const result = await selectBestOffer(itemId);
+
+      expect(result.status).toBe("SELECTED");
+      expect(result.selected?.supplierName).toMatch(/disfarma/i);
+    } finally {
+      await prisma.supplierOffer.updateMany({
+        where: { productId: productIds[0], supplierId: { not: supplierIds[0] } },
+        data: { availability: "AVAILABLE", stockQuantity: 100 },
+      });
+    }
   });
 });

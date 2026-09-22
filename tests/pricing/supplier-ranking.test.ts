@@ -17,6 +17,7 @@ function offer(overrides: Partial<OfferOption>): OfferOption {
     totalCost: 100,
     availability: "AVAILABLE",
     stockQuantity: null,
+    expirationDate: null,
     eligible: true,
     discardReason: null,
     ...overrides,

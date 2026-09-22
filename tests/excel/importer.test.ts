@@ -183,14 +183,14 @@ describe("perfiles fijos de proveedor conocido (integracion contra base de datos
     }
   }
 
-  it("Disfarma: ubica las columnas por su nombre exacto y multiplica el precio por unidad por las unidades del empaque", async () => {
+  it("Disfarma: ubica las columnas por su nombre exacto, multiplica el precio por unidad por las unidades del empaque, y guarda el precio unitario y la fecha de vencimiento tal como vinieron", async () => {
     await withSupplier("Disfarma", async (supplierId) => {
       const rows = [
-        ["CODIGO", "DESCRIPCION", "Ger_UPS_UND", "FORMA_FARMACEUTICA", "PRESENTACION", "LABORATORIO"],
-        ["D100", "AMOXICILINA 500MG", 100, "TABLETA", "X20", "MK"],
+        ["CODIGO", "DESCRIPCION", "Ger_UPS_UND", "FORMA_FARMACEUTICA", "PRESENTACION", "LABORATORIO", "FEC_VENC"],
+        ["D100", "AMOXICILINA 500MG", 100, "TABLETA", "X20", "MK", "15/05/2027"],
         // Inyectable: el precio por "unidad" NO se multiplica por el volumen del vial
         // (siempre se compra como 1 vial sellado, sin importar cuántos ml traiga).
-        ["D200", "ACETAMINOFEN 500MG INYECTABLE", 500, "INYECTABLE", "X100ML", "MK"],
+        ["D200", "ACETAMINOFEN 500MG INYECTABLE", 500, "INYECTABLE", "X100ML", "MK", ""],
       ];
       const buffer = await buildXlsxBuffer(rows);
 
@@ -203,6 +203,7 @@ describe("perfiles fijos de proveedor conocido (integracion contra base de datos
       expect(byTarget.dosageForm).toBe(3);
       expect(byTarget.presentation).toBe(4);
       expect(byTarget.laboratory).toBe(5);
+      expect(byTarget.expirationDate).toBe(6);
 
       const mapping: ColumnMapping = {};
       for (const col of analysis.columns) if (col.proposedTarget) mapping[col.proposedTarget] = col.index;
@@ -224,11 +225,15 @@ describe("perfiles fijos de proveedor conocido (integracion contra base de datos
         where: { supplierId, product: { normalizedName: { contains: "amoxicilina" } } },
       });
       expect(Number(amoxicilina!.price)).toBe(2000); // 100 x 20 tabletas
+      expect(Number(amoxicilina!.unitPriceAsImported)).toBe(100); // tal como vino, sin calcular
+      expect(amoxicilina!.expirationDate?.toISOString().slice(0, 10)).toBe("2027-05-15");
 
       const acetaminofen = await prisma.supplierOffer.findFirst({
         where: { supplierId, product: { normalizedName: { contains: "acetaminofen" } } },
       });
       expect(Number(acetaminofen!.price)).toBe(500); // inyectable: sin multiplicar
+      expect(Number(acetaminofen!.unitPriceAsImported)).toBe(500);
+      expect(acetaminofen!.expirationDate).toBeNull();
     });
   });
 

@@ -105,6 +105,16 @@ describe("extractProductAttributes", () => {
       expect(result).not.toBeNull();
       expect(result?.attributes.presentationQuantity).toBe(1);
     });
+
+    it("prefiere la cantidad mas grande cuando ninguna coincidencia trae unidad (conteo de envases vs. contenido real)", () => {
+      // Bug real (2026-09-22): "C*1" (1 frasco) se quedaba con la cantidad
+      // por aparecer primero en el texto, dejando "X 60" (las 60 tabletas
+      // reales) sin usar -- el precio de empaque se calculaba como si el
+      // frasco trajera 1 sola tableta en vez de 60.
+      const result = extractProductAttributes("ABACAVIR 300MG C*1 FCO X 60 TAB");
+      expect(result).not.toBeNull();
+      expect(result?.attributes.presentationQuantity).toBe(60);
+    });
   });
 
   it("no confunde equipo medico sin concentracion farmacologica (correctamente null)", () => {

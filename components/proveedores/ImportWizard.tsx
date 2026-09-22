@@ -21,6 +21,7 @@ const TARGET_LABELS: Record<ColumnTarget | "none", string> = {
   tax: "IVA",
   availability: "Disponibilidad",
   stock: "Stock",
+  expirationDate: "Fecha de vencimiento",
 };
 
 const TARGET_OPTIONS: (ColumnTarget | "none")[] = [
@@ -33,6 +34,7 @@ const TARGET_OPTIONS: (ColumnTarget | "none")[] = [
   "laboratory",
   "availability",
   "stock",
+  "expirationDate",
   "tax",
 ];
 

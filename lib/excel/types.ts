@@ -11,7 +11,8 @@ export type ColumnTarget =
   | "price"
   | "tax"
   | "availability"
-  | "stock";
+  | "stock"
+  | "expirationDate";
 
 export const REQUIRED_COLUMN_TARGETS: ColumnTarget[] = ["productName", "price"];
 
@@ -74,9 +75,17 @@ export interface ParsedOfferRow {
   attributeWarnings: string[];
   laboratoryName: string | null;
   price: number;
+  /// Precio de UNA unidad suelta tal como vino en el archivo, sin ningún
+  /// cálculo -- solo presente cuando el proveedor reporta precio por unidad
+  /// (ver SupplierColumnProfile.priceIsPerUnit). `price` sigue siendo el
+  /// precio del empaque completo.
+  unitPriceAsImported: number | null;
   tax: number | null;
   availability: Availability;
   stock: number | null;
+  /// Fecha de vencimiento del producto (no de la oferta comercial) -- por
+  /// ahora solo Disfarma la reporta (columna FEC_VENC).
+  expirationDate: Date | null;
 }
 
 export interface RowIssue {

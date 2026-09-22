@@ -60,6 +60,18 @@ export async function buildPurchaseOrderWorkbook(
       ? item.quantityToPurchase
       : calculatePackagesNeededMeasured(item.quantityToPurchase, item.requestedPresentationQuantity, packageSize);
     const packagePrice = Number(comparison.price);
+    // El precio unitario NUNCA se calcula cuando el proveedor ya lo reportó
+    // tal cual en su archivo (confirmado con el cliente, 2026-09-22) -- se
+    // usa ese valor exacto. Solo se deriva por división como respaldo (y,
+    // para ampollas/viales, nunca se divide: el precio ya es por unidad
+    // sellada, mismo criterio que selection-engine.ts).
+    const unitPriceAsImported = comparison.supplierOffer.unitPriceAsImported;
+    const unitPrice =
+      unitPriceAsImported !== null
+        ? Number(unitPriceAsImported)
+        : isSealedUnit
+          ? packagePrice
+          : packagePrice / packageSize;
 
     const line: SupplierOrderLine = {
       // El Excel que sube el cliente puede traer varios clientes mezclados
@@ -76,7 +88,7 @@ export async function buildPurchaseOrderWorkbook(
       packagesNeeded,
       packagePrice,
       totalCost: calculateTotal(packagePrice, packagesNeeded),
-      unitPrice: packagePrice / packageSize,
+      unitPrice,
     };
 
     const list = linesBySupplier.get(comparison.supplier.name) ?? [];

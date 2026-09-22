@@ -17,6 +17,7 @@ function makeOffer(id: string, totalCost: number): OfferOption {
     totalCost,
     availability: "AVAILABLE",
     stockQuantity: 10,
+    expirationDate: null,
     eligible: true,
     discardReason: null,
   };

@@ -57,6 +57,7 @@ const DISFARMA: SupplierColumnProfile = {
     dosageForm: "FORMA_FARMACEUTICA",
     presentation: "PRESENTACION",
     laboratory: "LABORATORIO",
+    expirationDate: "FEC_VENC",
   },
   excludeZeroStock: false,
   priceIsPerUnit: true,
@@ -64,6 +65,7 @@ const DISFARMA: SupplierColumnProfile = {
     supplierProductCode: "Código",
     productName: "Nombre",
     price: "Precio Und",
+    expirationDate: "Vence",
   },
 };
 

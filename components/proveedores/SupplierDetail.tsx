@@ -20,6 +20,8 @@ interface OfferRow {
   unitPrice: number;
   availability: string;
   stockQuantity: number | null;
+  expirationDate: string | null;
+  expiresSoon: boolean;
 }
 
 interface OffersResponse {
@@ -35,6 +37,7 @@ type SortKey = "product" | "laboratory" | "unitPrice" | "availability";
 type SortDir = "asc" | "desc";
 
 const dateFormat = new Intl.DateTimeFormat("es-CO", { dateStyle: "medium", timeStyle: "short" });
+const expirationDateFormat = new Intl.DateTimeFormat("es-CO", { dateStyle: "medium" });
 const priceFormat = new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 });
 // El precio unitario suele quedar en centavos de peso (precio de empaque
 // dividido entre las unidades que trae) -- con 0 decimales redondeaba a "$0"
@@ -154,6 +157,7 @@ export function SupplierDetail({ supplierId }: { supplierId: string }) {
                 <th className="whitespace-nowrap px-4 py-2 font-medium">Código</th>
                 <th className="whitespace-nowrap px-4 py-2 font-medium">No. unidades</th>
                 <th className="whitespace-nowrap px-4 py-2 font-medium">Precio empaque</th>
+                <th className="whitespace-nowrap px-4 py-2 font-medium">Vence</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
@@ -186,6 +190,21 @@ export function SupplierDetail({ supplierId }: { supplierId: string }) {
                     {o.purchaseQuantity} {o.purchaseUnit}
                   </td>
                   <td className="whitespace-nowrap px-4 py-2 text-zinc-600 dark:text-zinc-400">{priceFormat.format(o.price)}</td>
+                  <td className="whitespace-nowrap px-4 py-2">
+                    {o.expirationDate ? (
+                      <span
+                        className={
+                          o.expiresSoon
+                            ? "font-medium text-amber-700 dark:text-amber-400"
+                            : "text-zinc-600 dark:text-zinc-400"
+                        }
+                      >
+                        {expirationDateFormat.format(new Date(o.expirationDate))}
+                      </span>
+                    ) : (
+                      <span className="text-zinc-400 dark:text-zinc-600">—</span>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

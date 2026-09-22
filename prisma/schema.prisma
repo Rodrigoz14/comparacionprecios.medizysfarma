@@ -239,11 +239,23 @@ model SupplierOffer {
   productId           String       @map("product_id")
   supplierProductCode String?      @map("supplier_product_code")
   price               Decimal      @db.Decimal(14, 2)
+  /// Precio de UNA unidad suelta, tal como lo reportó el proveedor (sin
+  /// ningún cálculo) -- solo se guarda cuando el proveedor reporta precio
+  /// por unidad (lib/excel/supplier-profiles.ts, priceIsPerUnit: Disfarma,
+  /// Ramédicas, Offimédicas). `price` sigue siendo siempre el precio del
+  /// EMPAQUE COMPLETO (este valor x unidades del empaque, calculado una
+  /// sola vez al importar); null para proveedores sin ese dato, donde el
+  /// precio unitario de referencia se deriva por división al mostrarlo.
+  unitPriceAsImported Decimal?     @map("unit_price_as_imported") @db.Decimal(14, 4)
   currency            String       @default("COP")
   tax                 Decimal?     @db.Decimal(14, 2)
   finalPrice          Decimal?     @map("final_price") @db.Decimal(14, 2)
   availability        Availability @default(UNKNOWN)
   stockQuantity       Int?         @map("stock_quantity")
+  /// Fecha de vencimiento del producto (vida útil), no de la oferta
+  /// comercial -- confirmado con el cliente (2026-09-22). Por ahora solo
+  /// Disfarma la reporta (columna FEC_VENC); null para los demás.
+  expirationDate      DateTime?    @map("expiration_date")
   status              RecordStatus @default(ACTIVE)
   sourceFileId        String?      @map("source_file_id")
   updatedAt           DateTime     @updatedAt @map("updated_at")

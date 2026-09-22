@@ -327,8 +327,21 @@ export function extractProductAttributes(
   });
   // Cuando hay varias coincidencias (p. ej. "C*1 FCO X 240ML"), se prefiere
   // la que trae volumen/peso explícito sobre un conteo de envases genérico.
+  // Si ninguna trae unidad (p. ej. "C*1 FCO X 60 TAB"), se prefiere la
+  // cantidad MÁS GRANDE: el conteo de envases ("C*1") casi siempre es un
+  // número pequeño y poco interesante, mientras que el contenido real del
+  // envase (60 tabletas) es el dato que importa para el precio por unidad
+  // -- bug real (2026-09-22): se quedaba con "C*1" por aparecer primero en
+  // el texto, y el precio de empaque terminaba calculado como si el frasco
+  // trajera 1 sola tableta en vez de 60.
   const presentationMatch =
-    presentationCandidates.find((m) => m[2]) ?? presentationCandidates[0] ?? null;
+    presentationCandidates.find((m) => m[2]) ??
+    presentationCandidates.reduce<RegExpMatchArray | null>((best, candidate) => {
+      if (!best) return candidate;
+      const bestQty = Number.parseFloat(best[1].replace(",", "."));
+      const candidateQty = Number.parseFloat(candidate[1].replace(",", "."));
+      return candidateQty > bestQty ? candidate : best;
+    }, null);
   const singleUnitMatch = presentationMatch ? null : SINGLE_UNIT_CONTAINER_RE.exec(upper);
 
   if (!concentrationMatch) {

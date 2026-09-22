@@ -46,6 +46,7 @@ describe("resolveFixedMapping (Disfarma)", () => {
       "forma_farmaceutica",
       "presentacion",
       "laboratorio",
+      "fec_venc",
       "columna sobrante",
     );
     const { mapping, missingColumns } = resolveFixedMapping(profile, row);
@@ -56,9 +57,10 @@ describe("resolveFixedMapping (Disfarma)", () => {
     expect(mapping.dosageForm).toBe(3);
     expect(mapping.presentation).toBe(4);
     expect(mapping.laboratory).toBe(5);
+    expect(mapping.expirationDate).toBe(6);
     expect(missingColumns).toEqual([]);
     // La columna sobrante no se mapea a nada -- "las demás columnas no se van a tomar".
-    expect(Object.values(mapping)).not.toContain(6);
+    expect(Object.values(mapping)).not.toContain(7);
   });
 
   it("reporta las columnas esperadas que no vienen en el archivo", () => {

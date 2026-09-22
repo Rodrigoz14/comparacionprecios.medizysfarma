@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db/client";
 import { getVerifiedSession } from "@/lib/auth/dal";
 import { getLatestFilesBySupplier } from "@/lib/pricing/current-offers";
+import { isExpiringSoon } from "@/lib/pricing/expiration";
 import { isSealedUnitForm } from "@/lib/pricing/measured-forms";
 
 const DEFAULT_LIMIT = 50;
@@ -76,9 +77,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     select: {
       id: true,
       price: true,
+      unitPriceAsImported: true,
       availability: true,
       stockQuantity: true,
       supplierProductCode: true,
+      expirationDate: true,
       updatedAt: true,
       product: {
         select: {
@@ -98,13 +101,17 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const packagePrice = Number(o.price);
     const packageSize = o.product.presentationQuantity;
     const isSealedUnit = isSealedUnitForm(o.product.dosageForm);
-    // El cálculo del precio unitario SÍ necesita distinguir solo ampollas/
-    // viales (regla de negocio ya validada, ver measured-forms.ts) -- no se
-    // toca. La visualización de "cuántas unidades trae" es otra cosa: el
-    // cliente no quiere ver NINGUNA medida (ml, g) ahí, solo unidades
-    // comprables, para cualquier forma farmacéutica (jarabes, cremas,
-    // lociones... no solo ampollas).
-    const unitPrice = isSealedUnit ? packagePrice : packagePrice / packageSize;
+    // El precio unitario NUNCA se calcula cuando el proveedor ya lo reportó
+    // tal cual en su archivo (confirmado con el cliente, 2026-09-22) -- se
+    // usa ese valor exacto, sin ninguna división. Solo se deriva por
+    // división para proveedores sin ese dato propio (detección genérica),
+    // como respaldo.
+    const unitPrice =
+      o.unitPriceAsImported !== null
+        ? Number(o.unitPriceAsImported)
+        : isSealedUnit
+          ? packagePrice
+          : packagePrice / packageSize;
     const isMeasureUnit = MEASURE_UNITS.has(o.product.presentationUnit);
     return {
       id: o.id,
@@ -128,6 +135,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       unitPrice,
       availability: o.availability,
       stockQuantity: o.stockQuantity,
+      expirationDate: o.expirationDate,
+      expiresSoon: isExpiringSoon(o.expirationDate),
       updatedAt: o.updatedAt,
     };
   });
