@@ -90,7 +90,13 @@ const RAMEDICAS: SupplierColumnProfile = {
 
 const OFFIMEDICAS: SupplierColumnProfile = {
   key: "offimedicas",
-  matchesSupplierName: (name) => normalizeHeaderName(name).includes("offimedicas"),
+  // El proveedor real está guardado en el sistema como "Ofimedicas" (una
+  // sola "f"), no "Offimédicas" como se escribió originalmente -- bug real:
+  // al no coincidir el nombre, se usaba en silencio la detección genérica
+  // en vez de este perfil, y esa detección confundía "ID_PRODUCTO" con el
+  // nombre del producto (por contener la palabra "producto"). Se tolera
+  // cualquier cantidad de "f" para no depender de cómo esté escrito.
+  matchesSupplierName: (name) => /of+imedicas/.test(normalizeHeaderName(name)),
   columns: {
     supplierProductCode: "ID_PRODUCTO",
     productName: "PRODUCTO",

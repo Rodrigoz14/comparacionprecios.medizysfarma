@@ -20,6 +20,16 @@ describe("findSupplierProfile", () => {
     expect(findSupplierProfile("OFFIMEDICAS")?.key).toBe("offimedicas");
   });
 
+  it("reconoce Offimédicas aunque esté escrito con una sola 'f' (nombre real en el sistema del cliente)", () => {
+    // Bug real (2026-09-22): el proveedor real se llama "Ofimedicas" en el
+    // sistema, no "Offimédicas" -- al no coincidir el nombre, se usaba en
+    // silencio la detección genérica en vez de este perfil, y esa
+    // detección confundía "ID_PRODUCTO" con el nombre del producto por
+    // contener la palabra "producto".
+    expect(findSupplierProfile("Ofimedicas")?.key).toBe("offimedicas");
+    expect(findSupplierProfile("OFIMEDICAS S.A.S")?.key).toBe("offimedicas");
+  });
+
   it("no reconoce un proveedor sin perfil fijo", () => {
     expect(findSupplierProfile("Distribuidora Genérica")).toBeNull();
   });
