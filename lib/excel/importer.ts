@@ -403,8 +403,18 @@ export async function confirmSupplierImport(input: ConfirmImportInput): Promise<
           },
         });
 
-        const existingOffer = await tx.supplierOffer.findUnique({
-          where: { supplierId_productId: { supplierId: input.supplierId, productId: product.id } },
+        // La identidad real de una oferta es (proveedor, producto, código) --
+        // un mismo proveedor puede reportar más de una oferta para el mismo
+        // producto homologado con un código propio distinto (confirmado con
+        // el cliente, 2026-09-23: esas filas no son duplicadas a descartar).
+        // Sin código (columna ausente para ese proveedor), se sigue
+        // agrupando solo por producto, igual que antes.
+        const existingOffer = await tx.supplierOffer.findFirst({
+          where: {
+            supplierId: input.supplierId,
+            productId: product.id,
+            supplierProductCode: row.supplierProductCode,
+          },
         });
 
         if (!existingOffer) {

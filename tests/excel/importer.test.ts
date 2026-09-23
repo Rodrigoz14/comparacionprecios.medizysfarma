@@ -161,6 +161,68 @@ describe("importador de Excel (integracion contra base de datos real)", () => {
     expect(priceColumn?.proposedTarget).toBeNull();
     expect(result.columns.some((c) => c.proposedTarget === "price")).toBe(false);
   });
+
+  it("dos filas con el mismo nombre pero distinto código se guardan como ofertas separadas, no se descartan como duplicadas", async () => {
+    // Confirmado con el cliente (2026-09-23): el nombre puede repetirse por
+    // una variación real (código distinto) que el texto no refleja -- ambas
+    // filas deben importarse, no solo la última.
+    const rows = [
+      HEADER,
+      ["V001", "VARITEST TAB 250MG X30", "MK", "4.000", "20"],
+      ["V002", "VARITEST TAB 250MG X30", "MK", "4.500", "15"],
+    ];
+    const buffer = await buildXlsxBuffer(rows);
+    const analysis = await analyzeSupplierFile(buffer, "variacion-codigo.xlsx", supplierId);
+    const mapping: ColumnMapping = {};
+    for (const col of analysis.columns) if (col.proposedTarget) mapping[col.proposedTarget] = col.index;
+
+    const report = await confirmSupplierImport({
+      buffer,
+      originalName: "variacion-codigo.xlsx",
+      storagePath: null,
+      supplierId,
+      sheetName: analysis.selectedSheet,
+      headerRowIndex: analysis.headerRowIndex,
+      mapping,
+      priceFormat: { thousands: ".", decimal: "," },
+    });
+
+    expect(report.importedRows).toBe(2);
+    expect(report.newProducts).toBe(2);
+
+    const offers = await prisma.supplierOffer.findMany({
+      where: { supplierId, product: { normalizedName: { contains: "varitest" } } },
+      orderBy: { supplierProductCode: "asc" },
+    });
+    expect(offers).toHaveLength(2);
+    expect(offers[0].supplierProductCode).toBe("V001");
+    expect(Number(offers[0].price)).toBe(4000);
+    expect(offers[1].supplierProductCode).toBe("V002");
+    expect(Number(offers[1].price)).toBe(4500);
+
+    // Reimportar con el MISMO código actualiza esa oferta puntual, sin crear una tercera.
+    const updatedBuffer = await buildXlsxBuffer([
+      HEADER,
+      ["V001", "VARITEST TAB 250MG X30", "MK", "4.100", "20"],
+      ["V002", "VARITEST TAB 250MG X30", "MK", "4.500", "15"],
+    ]);
+    await confirmSupplierImport({
+      buffer: updatedBuffer,
+      originalName: "variacion-codigo-v2.xlsx",
+      storagePath: null,
+      supplierId,
+      sheetName: analysis.selectedSheet,
+      headerRowIndex: analysis.headerRowIndex,
+      mapping,
+      priceFormat: { thousands: ".", decimal: "," },
+    });
+
+    const offersAfter = await prisma.supplierOffer.findMany({
+      where: { supplierId, product: { normalizedName: { contains: "varitest" } } },
+    });
+    expect(offersAfter).toHaveLength(2);
+    expect(offersAfter.find((o) => o.supplierProductCode === "V001") && Number(offersAfter.find((o) => o.supplierProductCode === "V001")!.price)).toBe(4100);
+  });
 });
 
 describe("perfiles fijos de proveedor conocido (integracion contra base de datos real)", () => {

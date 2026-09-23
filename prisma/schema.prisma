@@ -269,7 +269,17 @@ model SupplierOffer {
   priceHistory     PriceHistory[]
   priceComparisons PriceComparison[]
 
-  @@unique([supplierId, productId])
+  // Antes era @@unique([supplierId, productId]) -- un mismo proveedor puede
+  // reportar más de una oferta para el mismo producto homologado con un
+  // código propio distinto (variaciones reales: lote, registro, etc.) que el
+  // texto del nombre no alcanza a distinguir. Confirmado con el cliente
+  // (2026-09-23): esas filas no se deben descartar como "duplicadas", se
+  // deben guardar todas. La identidad real de una oferta ahora es
+  // (supplierId, productId, supplierProductCode) -- se resuelve en
+  // aplicación (lib/excel/importer.ts), no con un índice único, porque
+  // Postgres trata cada NULL de supplierProductCode como distinto entre sí
+  // y rompería el upsert idempotente de proveedores sin código.
+  @@index([supplierId, productId])
   @@index([productId])
   @@index([availability])
   @@map("supplier_offers")
