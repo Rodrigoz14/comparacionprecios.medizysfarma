@@ -418,6 +418,41 @@ describe("perfiles fijos de proveedor conocido (integracion contra base de datos
     });
   });
 
+  it("Offimédicas: dos filas con el mismo nombre pero distinto ID_PRODUCTO también se guardan las dos", async () => {
+    // La preservación de "duplicados" con código distinto no es exclusiva
+    // de Disfarma -- es la misma lógica compartida (lib/excel/importer.ts)
+    // para cualquier proveedor con columna de código, incluido Offimédicas.
+    await withSupplier("Offimedicas", async (supplierId) => {
+      const rows = [
+        ["ID_PRODUCTO", "PRODUCTO", "LABORATORIO", "CANTIDAD", "PRECIO UND"],
+        ["O010", "VARITEST2 500MG X20", "MK", 10, 50],
+        ["O020", "VARITEST2 500MG X20", "MK", 5, 55],
+      ];
+      const buffer = await buildXlsxBuffer(rows);
+      const analysis = await analyzeSupplierFile(buffer, "offimedicas-variacion.xlsx", supplierId);
+      const mapping: ColumnMapping = {};
+      for (const col of analysis.columns) if (col.proposedTarget) mapping[col.proposedTarget] = col.index;
+
+      const report = await confirmSupplierImport({
+        buffer,
+        originalName: "offimedicas-variacion.xlsx",
+        storagePath: null,
+        supplierId,
+        sheetName: analysis.selectedSheet,
+        headerRowIndex: analysis.headerRowIndex,
+        mapping,
+        priceFormat: { thousands: ".", decimal: "," },
+      });
+
+      expect(report.importedRows).toBe(2);
+      const offers = await prisma.supplierOffer.findMany({
+        where: { supplierId, product: { normalizedName: { contains: "varitest2" } } },
+      });
+      expect(offers).toHaveLength(2);
+      expect(offers.map((o) => o.supplierProductCode).sort()).toEqual(["O010", "O020"]);
+    });
+  });
+
   it("una fila con precio calculado absurdo se rechaza como error, sin tumbar el resto del archivo", async () => {
     // Bug real (2026-09-23): una fila de Offimédicas con la cantidad del
     // empaque mal extraída producía un precio que no cabía en la base de
