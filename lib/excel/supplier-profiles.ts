@@ -53,7 +53,7 @@ const DISFARMA: SupplierColumnProfile = {
   columns: {
     supplierProductCode: "CODIGO",
     productName: "DESCRIPCION",
-    price: "Ger_UPS_UND",
+    price: "Ger_EPS_UND",
     dosageForm: "FORMA_FARMACEUTICA",
     presentation: "PRESENTACION",
     laboratory: "LABORATORIO",

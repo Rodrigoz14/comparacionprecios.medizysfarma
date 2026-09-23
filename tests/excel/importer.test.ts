@@ -186,7 +186,7 @@ describe("perfiles fijos de proveedor conocido (integracion contra base de datos
   it("Disfarma: ubica las columnas por su nombre exacto, multiplica el precio por unidad por las unidades del empaque, y guarda el precio unitario y la fecha de vencimiento tal como vinieron", async () => {
     await withSupplier("Disfarma", async (supplierId) => {
       const rows = [
-        ["CODIGO", "DESCRIPCION", "Ger_UPS_UND", "FORMA_FARMACEUTICA", "PRESENTACION", "LABORATORIO", "FEC_VENC"],
+        ["CODIGO", "DESCRIPCION", "Ger_EPS_UND", "FORMA_FARMACEUTICA", "PRESENTACION", "LABORATORIO", "FEC_VENC"],
         ["D100", "AMOXICILINA 500MG", 100, "TABLETA", "X20", "MK", "15/05/2027"],
         // Inyectable: el precio por "unidad" NO se multiplica por el volumen del vial
         // (siempre se compra como 1 vial sellado, sin importar cuántos ml traiga).

@@ -42,7 +42,7 @@ describe("resolveFixedMapping (Disfarma)", () => {
     const row = headerRow(
       "codigo",
       "descripcion",
-      "ger_ups_und",
+      "ger_eps_und",
       "forma_farmaceutica",
       "presentacion",
       "laboratorio",
@@ -70,7 +70,7 @@ describe("resolveFixedMapping (Disfarma)", () => {
     expect(mapping.supplierProductCode).toBe(0);
     expect(mapping.productName).toBe(1);
     expect(mapping.price).toBeUndefined();
-    expect(missingColumns).toContain("Ger_UPS_UND");
+    expect(missingColumns).toContain("Ger_EPS_UND");
     expect(missingColumns).toContain("FORMA_FARMACEUTICA");
   });
 });
