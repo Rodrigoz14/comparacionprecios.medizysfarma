@@ -83,9 +83,10 @@ export interface ParsedOfferRow {
   tax: number | null;
   availability: Availability;
   stock: number | null;
-  /// Fecha de vencimiento del producto (no de la oferta comercial) -- por
-  /// ahora solo Disfarma la reporta (columna FEC_VENC).
-  expirationDate: Date | null;
+  /// Categoría de vigencia tal como la reporta Disfarma en FEC_VENC -- texto
+  /// ("SUPERIOR A 12 MESES", "FECHA CORTA MAYO"...), no una fecha real. Por
+  /// ahora solo Disfarma la reporta.
+  expirationLabel: string | null;
 }
 
 export interface RowIssue {

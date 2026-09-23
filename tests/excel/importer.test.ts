@@ -245,11 +245,13 @@ describe("perfiles fijos de proveedor conocido (integracion contra base de datos
     }
   }
 
-  it("Disfarma: ubica las columnas por su nombre exacto, multiplica el precio por unidad por las unidades del empaque, y guarda el precio unitario y la fecha de vencimiento tal como vinieron", async () => {
+  it("Disfarma: ubica las columnas por su nombre exacto, multiplica el precio por unidad por las unidades del empaque, y guarda el precio unitario y la categoría de vencimiento tal como vinieron", async () => {
     await withSupplier("Disfarma", async (supplierId) => {
       const rows = [
         ["CODIGO", "DESCRIPCION", "Ger_EPS_UND", "FORMA_FARMACEUTICA", "PRESENTACION", "LABORATORIO", "FEC_VENC"],
-        ["D100", "AMOXICILINA 500MG", 100, "TABLETA", "X20", "MK", "15/05/2027"],
+        // FEC_VENC no es una fecha -- es una categoría de texto que ya trae
+        // el proveedor ("SUPERIOR A 12 MESES", "FECHA CORTA <mes>").
+        ["D100", "AMOXICILINA 500MG", 100, "TABLETA", "X20", "MK", "SUPERIOR A 12 MESES"],
         // Inyectable: el precio por "unidad" NO se multiplica por el volumen del vial
         // (siempre se compra como 1 vial sellado, sin importar cuántos ml traiga).
         ["D200", "ACETAMINOFEN 500MG INYECTABLE", 500, "INYECTABLE", "X100ML", "MK", ""],
@@ -288,14 +290,52 @@ describe("perfiles fijos de proveedor conocido (integracion contra base de datos
       });
       expect(Number(amoxicilina!.price)).toBe(2000); // 100 x 20 tabletas
       expect(Number(amoxicilina!.unitPriceAsImported)).toBe(100); // tal como vino, sin calcular
-      expect(amoxicilina!.expirationDate?.toISOString().slice(0, 10)).toBe("2027-05-15");
+      expect(amoxicilina!.expirationLabel).toBe("SUPERIOR A 12 MESES");
 
       const acetaminofen = await prisma.supplierOffer.findFirst({
         where: { supplierId, product: { normalizedName: { contains: "acetaminofen" } } },
       });
       expect(Number(acetaminofen!.price)).toBe(500); // inyectable: sin multiplicar
       expect(Number(acetaminofen!.unitPriceAsImported)).toBe(500);
-      expect(acetaminofen!.expirationDate).toBeNull();
+      expect(acetaminofen!.expirationLabel).toBeNull();
+    });
+  });
+
+  it("Disfarma: dos filas con el mismo código pero distinta vigencia son LOTES distintos, se guardan las dos", async () => {
+    // Caso real reportado por el cliente (2026-09-23): mismo código
+    // (133336), mismo nombre, mismo precio -- solo cambia FEC_VENC entre
+    // "FECHA CORTA MARZO" y "SUPERIOR A 12 MESES". Son dos lotes reales
+    // distintos, no una fila duplicada a descartar.
+    await withSupplier("Disfarma", async (supplierId) => {
+      const rows = [
+        ["CODIGO", "DESCRIPCION", "Ger_EPS_UND", "FORMA_FARMACEUTICA", "PRESENTACION", "LABORATORIO", "FEC_VENC"],
+        ["133336", "EPS-ABACAVIR+DOLUTEGRAVIR+LAMIVUDINA 600MG+50MG+300MG TAB FCOX30", 13100, "TABLETA", "X30", "GLAXOSMITHKLINE", "FECHA CORTA MARZO"],
+        ["133336", "EPS-ABACAVIR+DOLUTEGRAVIR+LAMIVUDINA 600MG+50MG+300MG TAB FCOX30", 13100, "TABLETA", "X30", "GLAXOSMITHKLINE", "SUPERIOR A 12 MESES"],
+      ];
+      const buffer = await buildXlsxBuffer(rows);
+      const analysis = await analyzeSupplierFile(buffer, "disfarma-lotes.xlsx", supplierId);
+      const mapping: ColumnMapping = {};
+      for (const col of analysis.columns) if (col.proposedTarget) mapping[col.proposedTarget] = col.index;
+
+      const report = await confirmSupplierImport({
+        buffer,
+        originalName: "disfarma-lotes.xlsx",
+        storagePath: null,
+        supplierId,
+        sheetName: analysis.selectedSheet,
+        headerRowIndex: analysis.headerRowIndex,
+        mapping,
+        priceFormat: { thousands: ".", decimal: "," },
+      });
+
+      expect(report.importedRows).toBe(2);
+      expect(report.warnings.some((w) => w.message.includes("duplicado"))).toBe(false);
+
+      const offers = await prisma.supplierOffer.findMany({
+        where: { supplierId, product: { normalizedName: { contains: "abacavir" } } },
+      });
+      expect(offers).toHaveLength(2);
+      expect(offers.map((o) => o.expirationLabel).sort()).toEqual(["FECHA CORTA MARZO", "SUPERIOR A 12 MESES"]);
     });
   });
 

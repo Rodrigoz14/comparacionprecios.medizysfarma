@@ -252,10 +252,13 @@ model SupplierOffer {
   finalPrice          Decimal?     @map("final_price") @db.Decimal(14, 2)
   availability        Availability @default(UNKNOWN)
   stockQuantity       Int?         @map("stock_quantity")
-  /// Fecha de vencimiento del producto (vida útil), no de la oferta
-  /// comercial -- confirmado con el cliente (2026-09-22). Por ahora solo
-  /// Disfarma la reporta (columna FEC_VENC); null para los demás.
-  expirationDate      DateTime?    @map("expiration_date")
+  /// Categoría de vigencia del producto tal como la reporta Disfarma en
+  /// FEC_VENC -- NO es una fecha real, es texto ya clasificado por el
+  /// proveedor ("SUPERIOR A 12 MESES" o "FECHA CORTA <mes>", sin año ni
+  /// día) -- confirmado con el cliente (2026-09-23), corrige un intento
+  /// anterior que la trataba como DateTime y nunca encontraba nada que
+  /// parsear. Por ahora solo Disfarma la reporta; null para los demás.
+  expirationLabel     String?      @map("expiration_label")
   status              RecordStatus @default(ACTIVE)
   sourceFileId        String?      @map("source_file_id")
   updatedAt           DateTime     @updatedAt @map("updated_at")

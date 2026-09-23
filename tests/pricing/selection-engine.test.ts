@@ -161,10 +161,10 @@ describe("selectBestOffer (comparacion entre presentaciones distintas del mismo 
         availability: "AVAILABLE",
         stockQuantity: 500,
         // Estos casos comparan tamaño de empaque, no vencimiento -- se le da
-        // una fecha lejana para que no la deje fuera la regla de los 12
+        // una categoría segura para que no la deje fuera la regla de los 12
         // meses (tests/pricing/selection-engine.test.ts, describe "Disfarma
         // con vencimiento próximo").
-        expirationDate: new Date("2099-01-01"),
+        expirationLabel: "SUPERIOR A 12 MESES",
       },
     });
   });
@@ -431,12 +431,6 @@ describe("selectBestOffer (Disfarma con vencimiento próximo se deja de lado si 
   const laboratoryIds: string[] = [];
   const supplierIds: string[] = [];
 
-  function monthsFromNow(months: number): Date {
-    const date = new Date();
-    date.setUTCMonth(date.getUTCMonth() + months);
-    return date;
-  }
-
   beforeAll(async () => {
     const product = await createProduct("VENCETEST TAB 50MG X10", "TestLab Vence");
     productIds.push(product.id);
@@ -451,7 +445,8 @@ describe("selectBestOffer (Disfarma con vencimiento próximo se deja de lado si 
     await prisma.supplierOffer.create({
       data: { supplierId: otro.id, productId: product.id, price: 6000, availability: "AVAILABLE", stockQuantity: 100 },
     });
-    // Disfarma es la más barata (ganaría por precio), pero vence en 3 meses.
+    // Disfarma es la más barata (ganaría por precio), pero FEC_VENC dice
+    // "fecha corta" -- no es "SUPERIOR A 12 MESES".
     await prisma.supplierOffer.create({
       data: {
         supplierId: disfarma.id,
@@ -459,7 +454,7 @@ describe("selectBestOffer (Disfarma con vencimiento próximo se deja de lado si 
         price: 5000,
         availability: "AVAILABLE",
         stockQuantity: 100,
-        expirationDate: monthsFromNow(3),
+        expirationLabel: "FECHA CORTA MARZO",
       },
     });
   });

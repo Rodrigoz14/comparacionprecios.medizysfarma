@@ -4,29 +4,23 @@ import { capAlternatives } from "@/lib/pricing/cap-alternatives";
 import { filterCurrentOffers } from "@/lib/pricing/current-offers";
 import { formatCOP, formatUnitCOP } from "@/lib/pricing/format";
 import { calculatePackagesNeededMeasured, calculateSavings, calculateTotal } from "@/lib/pricing/price-calculator";
-import { isExpiringSoon } from "@/lib/pricing/expiration";
+import { isSafeExpirationLabel } from "@/lib/pricing/expiration";
 import { isSealedUnitForm } from "@/lib/pricing/measured-forms";
 import { DEFAULT_PRICING_RULES } from "@/lib/pricing/rules";
 import { rankOffers } from "@/lib/pricing/supplier-ranking";
 import { findSupplierProfile } from "@/lib/excel/supplier-profiles";
 import type { OfferOption, PricingRules, SelectionResult } from "@/lib/pricing/types";
 
-// Confirmado con el cliente (2026-09-22): un producto de Disfarma que vence
-// en 12 meses o menos no se prefiere para comprar -- se pasa a la siguiente
-// mejor alternativa (otro lote de Disfarma con más vigencia, u otro
-// proveedor). Si no hay ninguna otra oferta elegible, se usa igual la de
-// Disfarma que vence pronto, en vez de dejar el producto sin comprar. Sin
-// fecha de vencimiento confirmada, se trata igual que si venciera pronto
-// (más seguro que asumir que está bien).
+// Confirmado con el cliente (2026-09-22/23): un producto de Disfarma que no
+// está marcado "SUPERIOR A 12 MESES" en FEC_VENC no se prefiere para
+// comprar -- se pasa a la siguiente mejor alternativa (otro lote de
+// Disfarma con vigencia segura, u otro proveedor). Si no hay ninguna otra
+// oferta elegible, se usa igual la de Disfarma que vence pronto, en vez de
+// dejar el producto sin comprar.
 function hasSafeExpiration(option: OfferOption): boolean {
   const isDisfarma = findSupplierProfile(option.supplierName)?.key === "disfarma";
   if (!isDisfarma) return true;
-  // Sin fecha confirmada se trata como riesgo (igual que si venciera
-  // pronto) -- más seguro que asumir que está bien. isExpiringSoon() por sí
-  // sola no basta aquí: para la vista genérica (Proveedores) "sin fecha" no
-  // debe resaltarse como riesgo, pero para decidir qué comprar sí.
-  if (!option.expirationDate) return false;
-  return !isExpiringSoon(option.expirationDate);
+  return isSafeExpirationLabel(option.expirationLabel);
 }
 
 /**
@@ -172,7 +166,7 @@ export async function selectBestOffer(
       totalCost: calculateTotal(packagePrice, packagesNeeded),
       availability: offer.availability,
       stockQuantity: offer.stockQuantity,
-      expirationDate: offer.expirationDate,
+      expirationLabel: offer.expirationLabel,
       eligible: check.eligible,
       discardReason: check.reason,
     };

@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/db/client";
 import { getVerifiedSession } from "@/lib/auth/dal";
 import { getLatestFilesBySupplier } from "@/lib/pricing/current-offers";
-import { isExpiringSoon } from "@/lib/pricing/expiration";
+import { isSafeExpirationLabel } from "@/lib/pricing/expiration";
 import { isSealedUnitForm } from "@/lib/pricing/measured-forms";
 
 const DEFAULT_LIMIT = 50;
@@ -81,7 +81,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       availability: true,
       stockQuantity: true,
       supplierProductCode: true,
-      expirationDate: true,
+      expirationLabel: true,
       updatedAt: true,
       product: {
         select: {
@@ -135,8 +135,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       unitPrice,
       availability: o.availability,
       stockQuantity: o.stockQuantity,
-      expirationDate: o.expirationDate,
-      expiresSoon: isExpiringSoon(o.expirationDate),
+      expirationLabel: o.expirationLabel,
+      expiresSoon: o.expirationLabel !== null && !isSafeExpirationLabel(o.expirationLabel),
       updatedAt: o.updatedAt,
     };
   });

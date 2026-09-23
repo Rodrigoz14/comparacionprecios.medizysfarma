@@ -28,8 +28,10 @@ export interface OfferOption {
   totalCost: number;
   availability: Availability;
   stockQuantity: number | null;
-  /** Solo Disfarma la reporta hoy (columna FEC_VENC); null para los demás. */
-  expirationDate: Date | null;
+  /** Categoría de vigencia ("SUPERIOR A 12 MESES", "FECHA CORTA MAYO"...), no
+   * una fecha real -- solo Disfarma la reporta hoy (columna FEC_VENC); null
+   * para los demás. */
+  expirationLabel: string | null;
   eligible: boolean;
   discardReason: string | null;
 }

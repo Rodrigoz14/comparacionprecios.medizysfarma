@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db/client";
 import { detectColumns, detectHeaderRowIndex } from "@/lib/excel/detector";
-import { detectPriceFormat, normalizeAvailability, parseExpirationDate, parsePrice } from "@/lib/excel/normalizer";
+import { detectPriceFormat, normalizeAvailability, normalizeExpirationLabel, parsePrice } from "@/lib/excel/normalizer";
 import { parseWorkbook } from "@/lib/excel/parser";
 import { buildGenericKey, buildNormalizedName, canonicalizeIngredient, normalizeText } from "@/lib/matching/normalize";
 import { extractProductAttributes, normalizeDosageForm } from "@/lib/matching/extract-attributes";
@@ -222,8 +222,8 @@ function readMappedRow(
   const laboratoryName = laboratoryNameRaw || null;
   const laboratoryNormalizedName = laboratoryName ? normalizeText(laboratoryName) : null;
 
-  const expirationDateRaw = mapping.expirationDate !== undefined ? row[mapping.expirationDate] : null;
-  const expirationDate = parseExpirationDate(expirationDateRaw);
+  const expirationLabelRaw = mapping.expirationDate !== undefined ? row[mapping.expirationDate] : null;
+  const expirationLabel = normalizeExpirationLabel(expirationLabelRaw);
 
   return {
     row: {
@@ -240,7 +240,7 @@ function readMappedRow(
       tax,
       availability,
       stock,
-      expirationDate,
+      expirationLabel,
     },
     error: null,
     warnings: extraction.warnings,
@@ -403,17 +403,20 @@ export async function confirmSupplierImport(input: ConfirmImportInput): Promise<
           },
         });
 
-        // La identidad real de una oferta es (proveedor, producto, código) --
-        // un mismo proveedor puede reportar más de una oferta para el mismo
-        // producto homologado con un código propio distinto (confirmado con
-        // el cliente, 2026-09-23: esas filas no son duplicadas a descartar).
-        // Sin código (columna ausente para ese proveedor), se sigue
+        // La identidad real de una oferta es (proveedor, producto, código,
+        // vigencia) -- un mismo proveedor puede reportar más de una oferta
+        // para el mismo producto homologado, con un código propio distinto
+        // O el mismo código pero distinto lote/vigencia (confirmado con el
+        // cliente, 2026-09-23: dos filas con el mismo código y "SUPERIOR A
+        // 12 MESES" vs "FECHA CORTA MARZO" son lotes reales distintos, no
+        // duplicadas a descartar). Sin ninguno de los dos datos, se sigue
         // agrupando solo por producto, igual que antes.
         const existingOffer = await tx.supplierOffer.findFirst({
           where: {
             supplierId: input.supplierId,
             productId: product.id,
             supplierProductCode: row.supplierProductCode,
+            expirationLabel: row.expirationLabel,
           },
         });
 
@@ -429,7 +432,7 @@ export async function confirmSupplierImport(input: ConfirmImportInput): Promise<
               tax: row.tax,
               availability: row.availability,
               stockQuantity: row.stock,
-              expirationDate: row.expirationDate,
+              expirationLabel: row.expirationLabel,
               sourceFileId: supplierFile.id,
             },
           });
@@ -448,7 +451,7 @@ export async function confirmSupplierImport(input: ConfirmImportInput): Promise<
               tax: row.tax,
               availability: row.availability,
               stockQuantity: row.stock,
-              expirationDate: row.expirationDate,
+              expirationLabel: row.expirationLabel,
               sourceFileId: supplierFile.id,
             },
           });

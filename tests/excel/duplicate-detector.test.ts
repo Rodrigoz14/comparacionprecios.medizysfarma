@@ -25,7 +25,7 @@ function row(overrides: Partial<ParsedOfferRow>): ParsedOfferRow {
     tax: null,
     availability: "AVAILABLE",
     stock: null,
-    expirationDate: null,
+    expirationLabel: null,
     ...overrides,
   };
 }

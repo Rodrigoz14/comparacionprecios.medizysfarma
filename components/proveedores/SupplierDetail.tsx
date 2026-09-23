@@ -20,7 +20,7 @@ interface OfferRow {
   unitPrice: number;
   availability: string;
   stockQuantity: number | null;
-  expirationDate: string | null;
+  expirationLabel: string | null;
   expiresSoon: boolean;
 }
 
@@ -37,7 +37,6 @@ type SortKey = "product" | "laboratory" | "unitPrice" | "availability";
 type SortDir = "asc" | "desc";
 
 const dateFormat = new Intl.DateTimeFormat("es-CO", { dateStyle: "medium", timeStyle: "short" });
-const expirationDateFormat = new Intl.DateTimeFormat("es-CO", { dateStyle: "medium" });
 const priceFormat = new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 });
 // El precio unitario suele quedar en centavos de peso (precio de empaque
 // dividido entre las unidades que trae) -- con 0 decimales redondeaba a "$0"
@@ -191,7 +190,7 @@ export function SupplierDetail({ supplierId }: { supplierId: string }) {
                   </td>
                   <td className="whitespace-nowrap px-4 py-2 text-zinc-600 dark:text-zinc-400">{priceFormat.format(o.price)}</td>
                   <td className="whitespace-nowrap px-4 py-2">
-                    {o.expirationDate ? (
+                    {o.expirationLabel ? (
                       <span
                         className={
                           o.expiresSoon
@@ -199,7 +198,7 @@ export function SupplierDetail({ supplierId }: { supplierId: string }) {
                             : "text-zinc-600 dark:text-zinc-400"
                         }
                       >
-                        {expirationDateFormat.format(new Date(o.expirationDate))}
+                        {o.expirationLabel}
                       </span>
                     ) : (
                       <span className="text-zinc-400 dark:text-zinc-600">—</span>
