@@ -417,4 +417,45 @@ describe("perfiles fijos de proveedor conocido (integracion contra base de datos
       expect(Number(metformina!.price)).toBe(1200); // 40 x 30 tabletas
     });
   });
+
+  it("una fila con precio calculado absurdo se rechaza como error, sin tumbar el resto del archivo", async () => {
+    // Bug real (2026-09-23): una fila de Offimédicas con la cantidad del
+    // empaque mal extraída producía un precio que no cabía en la base de
+    // datos ("numeric field overflow"), y como varias filas se procesan
+    // dentro de la MISMA transacción por lote, esa sola fila tumbaba la
+    // importación completa de miles de filas válidas.
+    await withSupplier("Offimedicas", async (supplierId) => {
+      const rows = [
+        ["ID_PRODUCTO", "PRODUCTO", "LABORATORIO", "CANTIDAD", "PRECIO UND"],
+        ["O001", "METFORMINA 850MG X30", "MK", 15, 40],
+        // Cantidad del empaque absurdamente grande -> precio calculado
+        // (100 x 99.999.999) muy por encima de lo real.
+        ["O003", "OVERFLOWTEST 100MG TAB X 99999999", "MK", 10, 100],
+      ];
+      const buffer = await buildXlsxBuffer(rows);
+      const analysis = await analyzeSupplierFile(buffer, "offimedicas-overflow.xlsx", supplierId);
+      const mapping: ColumnMapping = {};
+      for (const col of analysis.columns) if (col.proposedTarget) mapping[col.proposedTarget] = col.index;
+
+      const report = await confirmSupplierImport({
+        buffer,
+        originalName: "offimedicas-overflow.xlsx",
+        storagePath: null,
+        supplierId,
+        sheetName: analysis.selectedSheet,
+        headerRowIndex: analysis.headerRowIndex,
+        mapping,
+        priceFormat: { thousands: ".", decimal: "," },
+      });
+
+      expect(report.errorRows).toBe(1);
+      expect(report.errors[0]?.message).toContain("absurdamente alto");
+      // La otra fila válida del mismo archivo/lote SÍ debe importarse.
+      expect(report.importedRows).toBe(1);
+      const metformina = await prisma.supplierOffer.findFirst({
+        where: { supplierId, product: { normalizedName: { contains: "metformina" } } },
+      });
+      expect(metformina).not.toBeNull();
+    });
+  });
 });
