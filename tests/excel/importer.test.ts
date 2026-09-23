@@ -382,6 +382,40 @@ describe("perfiles fijos de proveedor conocido (integracion contra base de datos
     });
   });
 
+  it("Ramédicas: dos filas con el mismo nombre pero distinto CODIGO INTERNO MEDICAMENTO también se guardan las dos", async () => {
+    // Misma lógica compartida (lib/excel/importer.ts) que Disfarma y
+    // Offimédicas -- no es algo especial de un solo proveedor.
+    await withSupplier("Ramedicas", async (supplierId) => {
+      const rows = [
+        ["CODIGO INTERNO MEDICAMENTO", "DESCRIPCION COMPLETA DE PRODUCTO", "PRESENTACION", "PRECIO X UD", "LABORATORIO", "STOCK ACTUAL"],
+        ["R010", "VARITEST3 400MG X20", "X20 TAB", 50, "MK", 20],
+        ["R020", "VARITEST3 400MG X20", "X20 TAB", 55, "MK", 10],
+      ];
+      const buffer = await buildXlsxBuffer(rows);
+      const analysis = await analyzeSupplierFile(buffer, "ramedicas-variacion.xlsx", supplierId);
+      const mapping: ColumnMapping = {};
+      for (const col of analysis.columns) if (col.proposedTarget) mapping[col.proposedTarget] = col.index;
+
+      const report = await confirmSupplierImport({
+        buffer,
+        originalName: "ramedicas-variacion.xlsx",
+        storagePath: null,
+        supplierId,
+        sheetName: analysis.selectedSheet,
+        headerRowIndex: analysis.headerRowIndex,
+        mapping,
+        priceFormat: { thousands: ".", decimal: "," },
+      });
+
+      expect(report.importedRows).toBe(2);
+      const offers = await prisma.supplierOffer.findMany({
+        where: { supplierId, product: { normalizedName: { contains: "varitest3" } } },
+      });
+      expect(offers).toHaveLength(2);
+      expect(offers.map((o) => o.supplierProductCode).sort()).toEqual(["R010", "R020"]);
+    });
+  });
+
   it("Offimédicas: excluye filas con CANTIDAD = 0, usando ID_PRODUCTO/PRODUCTO/PRECIO UND", async () => {
     await withSupplier("Offimedicas", async (supplierId) => {
       const rows = [
