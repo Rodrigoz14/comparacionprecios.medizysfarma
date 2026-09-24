@@ -383,8 +383,35 @@ export async function confirmSupplierImport(input: ConfirmImportInput): Promise<
   let newProducts = 0;
   let updatedOffers = 0;
 
+  // Buscar producto y oferta existentes fila por fila (2 consultas propias,
+  // además del create/update) significaba hasta 4 viajes de ida y vuelta a la
+  // base de datos POR FILA -- con archivos reales de miles de filas (Ramédicas:
+  // ~7.700), eso superaba el límite de tiempo de la función serverless
+  // (maxDuration=300s en /api/suppliers/import/confirm) y la importación
+  // quedaba atascada en estado "PROCESSING" para siempre, o terminaba
+  // guardando solo una fracción de las filas antes de que Vercel la matara
+  // (bug real, 2026-09-24: un archivo de Ramédicas tardó ~20 horas en
+  // "completarse" y solo guardó 1.982 de 7.711 filas). Se precargan los
+  // productos y ofertas que YA existen para todo el lote de una sola consulta
+  // cada uno, reduciendo esos viajes a ~2 por fila.
   for (let i = 0; i < unique.length; i += BATCH_SIZE) {
     const batch = unique.slice(i, i + BATCH_SIZE);
+    const normalizedNames = [...new Set(batch.map((row) => row.normalizedName))];
+
+    const existingProducts = await prisma.product.findMany({ where: { normalizedName: { in: normalizedNames } } });
+    const productByNormalizedName = new Map(existingProducts.map((p) => [p.normalizedName, p]));
+
+    const existingProductIds = existingProducts.map((p) => p.id);
+    const existingOffers =
+      existingProductIds.length > 0
+        ? await prisma.supplierOffer.findMany({
+            where: { supplierId: input.supplierId, productId: { in: existingProductIds } },
+          })
+        : [];
+    const offerKey = (productId: string, code: string | null, expirationLabel: string | null) =>
+      `${productId}\u0000${code ?? ""}\u0000${expirationLabel ?? ""}`;
+    const offerByKey = new Map(existingOffers.map((o) => [offerKey(o.productId, o.supplierProductCode, o.expirationLabel), o]));
+
     await prisma.$transaction(async (tx) => {
       for (const row of batch) {
         const laboratoryId = row.laboratoryName
@@ -409,15 +436,17 @@ export async function confirmSupplierImport(input: ConfirmImportInput): Promise<
           laboratoryId,
         };
 
-        const product = await tx.product.upsert({
-          where: { normalizedName: row.normalizedName },
-          update: productAttributes,
-          create: {
-            normalizedName: row.normalizedName,
-            genericKey: row.genericKey,
-            ...productAttributes,
-          },
-        });
+        const existingProduct = productByNormalizedName.get(row.normalizedName);
+        const product = existingProduct
+          ? await tx.product.update({ where: { id: existingProduct.id }, data: productAttributes })
+          : await tx.product.create({
+              data: { normalizedName: row.normalizedName, genericKey: row.genericKey, ...productAttributes },
+            });
+        // Dos filas del mismo lote pueden compartir normalizedName (mismo
+        // producto, distinto código de oferta) -- se registra de inmediato
+        // para que la siguiente fila del lote lo encuentre y actualice en vez
+        // de intentar crearlo de nuevo (violaría la restricción de unicidad).
+        productByNormalizedName.set(row.normalizedName, product);
 
         // La identidad real de una oferta es (proveedor, producto, código,
         // vigencia) -- un mismo proveedor puede reportar más de una oferta
@@ -427,14 +456,8 @@ export async function confirmSupplierImport(input: ConfirmImportInput): Promise<
         // 12 MESES" vs "FECHA CORTA MARZO" son lotes reales distintos, no
         // duplicadas a descartar). Sin ninguno de los dos datos, se sigue
         // agrupando solo por producto, igual que antes.
-        const existingOffer = await tx.supplierOffer.findFirst({
-          where: {
-            supplierId: input.supplierId,
-            productId: product.id,
-            supplierProductCode: row.supplierProductCode,
-            expirationLabel: row.expirationLabel,
-          },
-        });
+        const key = offerKey(product.id, row.supplierProductCode, row.expirationLabel);
+        const existingOffer = offerByKey.get(key);
 
         if (!existingOffer) {
           newProducts += 1;
@@ -452,13 +475,14 @@ export async function confirmSupplierImport(input: ConfirmImportInput): Promise<
               sourceFileId: supplierFile.id,
             },
           });
+          offerByKey.set(key, offer);
           await tx.priceHistory.create({
             data: { supplierOfferId: offer.id, price: row.price, sourceFileId: supplierFile.id },
           });
         } else {
           updatedOffers += 1;
           const priceChanged = Number(existingOffer.price) !== row.price;
-          await tx.supplierOffer.update({
+          const offer = await tx.supplierOffer.update({
             where: { id: existingOffer.id },
             data: {
               supplierProductCode: row.supplierProductCode,
@@ -471,6 +495,7 @@ export async function confirmSupplierImport(input: ConfirmImportInput): Promise<
               sourceFileId: supplierFile.id,
             },
           });
+          offerByKey.set(key, offer);
           if (priceChanged) {
             await tx.priceHistory.create({
               data: { supplierOfferId: existingOffer.id, price: row.price, sourceFileId: supplierFile.id },

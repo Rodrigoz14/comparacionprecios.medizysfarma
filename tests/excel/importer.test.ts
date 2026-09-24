@@ -600,4 +600,95 @@ describe("perfiles fijos de proveedor conocido (integracion contra base de datos
       expect(metformina).not.toBeNull();
     });
   });
+
+  it("un archivo con mas de un lote (BATCH_SIZE=100) importa y reimporta todas las filas correctamente, incluidas dos que comparten producto dentro del mismo lote", async () => {
+    // 117 filas x 2 importaciones completas son mas trabajo que el timeout
+    // por defecto de vitest (5s), aunque cada fila individual sea rapida.
+    // Bug real (2026-09-24): buscar el producto y la oferta existentes fila
+    // por fila (en vez de precargarlos por lote) hacía que archivos reales de
+    // miles de filas (p. ej. Ramédicas, ~7.700) superaran el límite de tiempo
+    // de la función serverless y quedaran a medio importar. Este archivo
+    // sintético de 117 filas cruza la frontera de un lote (100) para probar
+    // que ninguna fila se pierde ni se procesa dos veces en el lote/consulta
+    // equivocados.
+    await withSupplier("Ofimedicas", async (supplierId) => {
+      const rows: (string | number)[][] = [["ID_PRODUCTO", "PRODUCTO", "LABORATORIO", "CANTIDAD", "PRECIO UND"]];
+      for (let i = 1; i <= 115; i++) {
+        rows.push([`LOTE${i}`, `PRODUCTOLOTE${i} 100MG TAB X10`, "MK", 10, 50]);
+      }
+      // Dos filas que comparten el MISMO producto (mismo nombre -> mismo
+      // normalizedName) pero código distinto, colocadas juntas dentro del
+      // primer lote (filas 30-31 de 117): la segunda debe encontrar el
+      // producto que la primera acaba de crear en ESE MISMO lote, no crearlo
+      // de nuevo (violaría la unicidad de normalizedName).
+      rows.splice(30, 0, ["COMPARTIDO-A", "PRODUCTOCOMPARTIDO 100MG TAB X10", "MK", 10, 60]);
+      rows.splice(31, 0, ["COMPARTIDO-B", "PRODUCTOCOMPARTIDO 100MG TAB X10", "MK", 5, 65]);
+
+      const buffer = await buildXlsxBuffer(rows);
+      const analysis = await analyzeSupplierFile(buffer, "ofimedicas-multilote.xlsx", supplierId);
+      const mapping: ColumnMapping = {};
+      for (const col of analysis.columns) if (col.proposedTarget) mapping[col.proposedTarget] = col.index;
+
+      const report = await confirmSupplierImport({
+        buffer,
+        originalName: "ofimedicas-multilote.xlsx",
+        storagePath: null,
+        supplierId,
+        sheetName: analysis.selectedSheet,
+        headerRowIndex: analysis.headerRowIndex,
+        mapping,
+        priceFormat: { thousands: ".", decimal: "," },
+      });
+
+      expect(report.errorRows).toBe(0);
+      expect(report.importedRows).toBe(117); // 115 individuales + 2 del producto compartido
+      expect(report.newProducts).toBe(117); // 117 ofertas nuevas
+
+      const compartido = await prisma.supplierOffer.findMany({
+        where: { supplierId, product: { normalizedName: { contains: "productocompartido" } } },
+      });
+      expect(compartido).toHaveLength(2); // mismo producto, 2 ofertas (códigos distintos)
+      expect(compartido.every((o) => o.productId === compartido[0]!.productId)).toBe(true);
+
+      // Filas a ambos lados de la frontera del lote (99, 100, 101 del array
+      // "unique" -- con las 2 filas insertadas de más, corresponden a
+      // LOTE97/98/99 aprox.) deben haberse guardado igual que las demás.
+      const primero = await prisma.supplierOffer.findFirst({
+        where: { supplierId, product: { normalizedName: { contains: "productolote1 " } } },
+      });
+      const ultimo = await prisma.supplierOffer.findFirst({
+        where: { supplierId, product: { normalizedName: { contains: "productolote115" } } },
+      });
+      expect(primero).not.toBeNull();
+      expect(ultimo).not.toBeNull();
+
+      // Reimportar el mismo archivo con precios distintos debe ACTUALIZAR
+      // las 117 ofertas (no crear duplicadas), también cruzando la frontera
+      // del lote.
+      const updatedRows = rows.map((r, i) => (i === 0 ? r : [r[0], r[1], r[2], r[3], Number(r[4]) + 1]));
+      const updatedBuffer = await buildXlsxBuffer(updatedRows);
+      const reimportReport = await confirmSupplierImport({
+        buffer: updatedBuffer,
+        originalName: "ofimedicas-multilote.xlsx",
+        storagePath: null,
+        supplierId,
+        sheetName: analysis.selectedSheet,
+        headerRowIndex: analysis.headerRowIndex,
+        mapping,
+        priceFormat: { thousands: ".", decimal: "," },
+        force: true,
+      });
+      expect(reimportReport.importedRows).toBe(117);
+      expect(reimportReport.newProducts).toBe(0);
+      expect(reimportReport.updatedOffers).toBe(117);
+
+      const totalOfertas = await prisma.supplierOffer.count({ where: { supplierId } });
+      expect(totalOfertas).toBe(117); // no se duplicaron ofertas al reimportar
+
+      const primeroActualizado = await prisma.supplierOffer.findFirst({
+        where: { supplierId, product: { normalizedName: { contains: "productolote1 " } } },
+      });
+      expect(Number(primeroActualizado!.price)).toBe(510); // 51 x 10 unidades
+    });
+  }, 30000);
 });
