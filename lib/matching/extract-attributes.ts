@@ -19,6 +19,34 @@ const PRESENTATION_QTY_RE = /[X*]\s*(\d+(?:[.,]\d+)?)\s*(ML|L|G)?\b/gi;
 // Envases de una sola unidad donde el proveedor no escribe "X1" (p. ej.
 // biológicos/oncológicos vendidos como "CAJA X VIAL"): se asume cantidad 1.
 const SINGLE_UNIT_CONTAINER_RE = /[X*]\s*(VIAL|AMPOLLA|AMPOLLAS|JERINGA|FRASCO|TUBO|SOBRE)\b/i;
+// Una dosis adicional de un combinado, pegada con "+" justo después de la
+// anterior ("...5MG+60MG..."): cada principio activo trae su propia unidad
+// repetida, a diferencia del formato de razón fija ("500/125 MG") que
+// CONCENTRATION_RE ya captura como un solo valor.
+const EXTRA_DOSE_RE = /^\s*\+\s*(\d+(?:[.,]\d+)?)\s*(MG|MCG|UI|G|ML|%)\b/i;
+
+interface DosePart {
+  value: string;
+  unit: string;
+}
+
+/**
+ * A partir de la primera coincidencia de CONCENTRATION_RE, sigue buscando
+ * dosis adicionales unidas con "+" inmediatamente después ("5MG+60MG",
+ * o hasta tres partes: "4G+4G+0.4G"). Si no hay ninguna, devuelve solo la
+ * primera parte -- comportamiento idéntico al anterior.
+ */
+function extractDoseParts(upper: string, firstMatch: RegExpMatchArray): { parts: DosePart[]; end: number } {
+  const parts: DosePart[] = [{ value: firstMatch[1].replace(",", "."), unit: firstMatch[2].toUpperCase() }];
+  let end = (firstMatch.index ?? 0) + firstMatch[0].length;
+  for (;;) {
+    const next = EXTRA_DOSE_RE.exec(upper.slice(end));
+    if (!next) break;
+    parts.push({ value: next[1].replace(",", "."), unit: next[2].toUpperCase() });
+    end += next[0].length;
+  }
+  return { parts, end };
+}
 
 const DOSAGE_FORM_MAP: Record<string, string> = {
   TAB: "Tableta",
@@ -318,7 +346,12 @@ export function extractProductAttributes(
   // X 400G" de una fórmula infantil), donde el mismo número sí describe
   // legítimamente tanto la "concentración" como el peso del envase.
   const concentrationStart = concentrationMatch?.index ?? -1;
-  const concentrationEnd = concentrationMatch ? concentrationStart + concentrationMatch[0].length : -1;
+  // Si el combinado trae más dosis pegadas con "+" ("5MG+60MG"), el final
+  // real de la concentración se corre hasta el final de la ÚLTIMA parte,
+  // no solo la primera -- necesario para que lo que venga después (forma
+  // farmacéutica, presentación) no se confunda con parte de la dosis.
+  const doseParts = concentrationMatch ? extractDoseParts(upper, concentrationMatch) : null;
+  const concentrationEnd = doseParts ? doseParts.end : -1;
   const presentationCandidates = [...upper.matchAll(PRESENTATION_QTY_RE)].filter((m) => {
     if (m[2]) return true;
     const start = m.index;
@@ -344,7 +377,7 @@ export function extractProductAttributes(
     }, null);
   const singleUnitMatch = presentationMatch ? null : SINGLE_UNIT_CONTAINER_RE.exec(upper);
 
-  if (!concentrationMatch) {
+  if (!concentrationMatch || !doseParts) {
     return null;
   }
   if (!presentationMatch && !singleUnitMatch && requirePresentation) {
@@ -408,6 +441,37 @@ export function extractProductAttributes(
     return null;
   }
 
+  // Cuando el combinado trae varias dosis ("5MG+60MG"), el proveedor puede
+  // listar los principios en cualquier orden -- confirmado con el cliente
+  // (2026-09-24): "HIDROCORTISONA+LIDOCAINA 5MG+60MG" y "LIDOCAINA +
+  // HIDROCORTISONA 60MG+5MG" son el mismo medicamento, pero antes no se
+  // reconocían como tal (la ordenación por palabras de canonicalizeIngredient
+  // no sirve de nada si la DOSIS de cada principio también quedó
+  // intercambiada). Se reordenan nombre y dosis EN PAREJA, alfabéticamente
+  // por principio, para que el orden del texto no cambie la identidad del
+  // producto. Solo se aplica cuando hay tantos principios separados por "+"
+  // como dosis encontradas; si no coinciden, se deja tal cual -- más
+  // conservador que adivinar la asociación. Se unen con "/" (como el
+  // formato de razón fija "500/125" que ya se aceptaba) y no con "+": un
+  // genericKey nunca debe llevar "+" ni "(" (ver test de buildGenericKey).
+  let finalActiveIngredient = activeIngredient;
+  let finalConcentration = doseParts.parts[0].value;
+  let finalConcentrationUnit = doseParts.parts[0].unit;
+  if (doseParts.parts.length > 1) {
+    const ingredientSegments = activeIngredient
+      .split(/\s*\+\s*/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (ingredientSegments.length === doseParts.parts.length) {
+      const paired = ingredientSegments
+        .map((name, i) => ({ name, ...doseParts.parts[i] }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      finalActiveIngredient = paired.map((p) => p.name).join(" + ");
+      finalConcentration = paired.map((p) => p.value).join("/");
+      finalConcentrationUnit = paired[0].unit;
+    }
+  }
+
   let presentationQuantity: number;
   let presentationUnit: string;
   if (presentationMatch) {
@@ -433,9 +497,9 @@ export function extractProductAttributes(
 
   return {
     attributes: {
-      activeIngredient,
-      concentration: concentrationMatch[1].replace(",", "."),
-      concentrationUnit: concentrationMatch[2].toUpperCase(),
+      activeIngredient: finalActiveIngredient,
+      concentration: finalConcentration,
+      concentrationUnit: finalConcentrationUnit,
       dosageForm,
       presentationType,
       presentationQuantity,

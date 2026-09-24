@@ -397,6 +397,35 @@ describe("buildGenericKey", () => {
     expect(result?.attributes.activeIngredient).not.toMatch(/[(+]$/);
     expect(buildGenericKey(result!.attributes)).not.toMatch(/[+(]/);
   });
+
+  it("reconoce el mismo combinado aunque el proveedor invierta el orden de los principios Y sus dosis", () => {
+    // Caso real reportado por el cliente (2026-09-24): Disfarma escribe
+    // "HIDROCORTISONA+LIDOCAINA 5MG+60MG" (sin espacios alrededor del "+")
+    // y Ramédicas "LIDOCAINA + HIDROCORTISONA 60MG+5MG" (con espacios) --
+    // es el MISMO medicamento (hidrocortisona 5mg + lidocaina 60mg), pero
+    // antes no se reconocían como tal: alfabetizar solo el nombre no basta
+    // si la dosis de cada principio también quedó en el orden contrario.
+    const disfarma = extractProductAttributes("HIDROCORTISONA+LIDOCAINA 5MG+60MG C*10 SUPOS");
+    // Ramédicas trae la presentación en su propia columna ("CAJA X 10"), que
+    // el importador concatena al nombre antes de extraer (ver readMappedRow
+    // en lib/excel/importer.ts) -- se simula igual aquí.
+    const ramedicas = extractProductAttributes("LIDOCAINA + HIDROCORTISONA 60MG+5MG SUPOSITORIO RECTAL CAJA X 10");
+    expect(disfarma).not.toBeNull();
+    expect(ramedicas).not.toBeNull();
+    expect(buildGenericKey(disfarma!.attributes)).toBe(buildGenericKey(ramedicas!.attributes));
+    // La dosis de cada principio se conserva correctamente emparejada, no
+    // solo el nombre: hidrocortisona (alfabéticamente primero) con 5, no 60.
+    expect(disfarma!.attributes.concentration).toBe("5/60");
+    expect(ramedicas!.attributes.concentration).toBe("5/60");
+  });
+
+  it("no reordena la dosis si la cantidad de principios y de dosis no coincide (más conservador que adivinar)", () => {
+    const result = extractProductAttributes("ALUMINIO HIDROXIDO+MAGNESIO+SIMETICONA 4G+4G X150ML");
+    expect(result).not.toBeNull();
+    // 3 principios pero solo 2 dosis -- no hay forma segura de emparejar; se
+    // deja el comportamiento anterior (solo la primera dosis encontrada).
+    expect(result!.attributes.concentration).toBe("4");
+  });
 });
 
 describe("buildNormalizedName", () => {
