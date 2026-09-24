@@ -4,7 +4,7 @@ import { getVerifiedSession } from "@/lib/auth/dal";
 import { capAlternatives } from "@/lib/pricing/cap-alternatives";
 import { formatCOP, formatUnitCOP } from "@/lib/pricing/format";
 import { isSealedUnitForm } from "@/lib/pricing/measured-forms";
-import { calculatePackagesNeededMeasured, calculateSavings, calculateTotal } from "@/lib/pricing/price-calculator";
+import { calculateSavings, calculateTotal, resolvePackagesNeeded } from "@/lib/pricing/price-calculator";
 import type { OfferOption } from "@/lib/pricing/types";
 
 const bodySchema = z.object({ supplierOfferId: z.string().min(1) });
@@ -58,7 +58,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ ite
     // sueltas -- ver el comentario en selection-engine.ts.
     const packagesNeeded = isSealedUnit
       ? item!.quantityToPurchase!
-      : calculatePackagesNeededMeasured(item!.quantityToPurchase!, item!.requestedPresentationQuantity, packageSize);
+      : resolvePackagesNeeded(item!.quantityToPurchase!, item!.requestedPresentationQuantity, packageSize, c.product.presentationUnit);
     const packagePrice = Number(c.price);
     return {
       supplierOfferId: c.supplierOfferId,

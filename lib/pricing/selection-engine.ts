@@ -3,7 +3,7 @@ import { checkAvailability } from "@/lib/pricing/availability";
 import { capAlternatives } from "@/lib/pricing/cap-alternatives";
 import { filterCurrentOffers } from "@/lib/pricing/current-offers";
 import { formatCOP, formatUnitCOP } from "@/lib/pricing/format";
-import { calculatePackagesNeededMeasured, calculateSavings, calculateTotal } from "@/lib/pricing/price-calculator";
+import { calculateSavings, calculateTotal, resolvePackagesNeeded } from "@/lib/pricing/price-calculator";
 import { isSafeExpirationLabel } from "@/lib/pricing/expiration";
 import { isSealedUnitForm } from "@/lib/pricing/measured-forms";
 import { DEFAULT_PRICING_RULES } from "@/lib/pricing/rules";
@@ -126,7 +126,7 @@ export async function selectBestOffer(
     // mencione una caja de varias).
     const packagesNeeded = isSealedUnit
       ? quantityToPurchase
-      : calculatePackagesNeededMeasured(quantityToPurchase, item.requestedPresentationQuantity, packageSize);
+      : resolvePackagesNeeded(quantityToPurchase, item.requestedPresentationQuantity, packageSize, offer.product.presentationUnit);
     const check = checkAvailability(offer.availability, offer.stockQuantity, packagesNeeded);
     // El precio que reporta el proveedor es por el EMPAQUE/presentación
     // completa, no por unidad suelta -- así está diseñado el importador

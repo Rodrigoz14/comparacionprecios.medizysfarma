@@ -1,3 +1,5 @@
+import { isMeasureUnit } from "@/lib/pricing/measured-forms";
+
 /**
  * Cálculos financieros determinísticos: la IA nunca calcula totales ni ahorros
  * (Sección 6.32). No se compran unidades sueltas: siempre se redondea hacia
@@ -32,6 +34,40 @@ export function calculatePackagesNeededMeasured(
   }
   const totalNeeded = quantityToPurchase * requestedPresentationQuantity;
   return calculatePackagesNeeded(totalNeeded, offerPackageSize);
+}
+
+/**
+ * Cuando el cliente SÍ mencionó un tamaño de envase en el texto de su pedido
+ * (p. ej. "TAB X30" o "JBE X30ML" -- requestedPresentationQuantity no nulo),
+ * "cantidad solicitada" siempre significa número de ESOS envases, sin
+ * importar la forma farmacéutica -- por eso ese caso sigue resolviéndose
+ * igual que antes con calculatePackagesNeededMeasured (caja de 30 tabletas
+ * vs. caja de 100 se comparan por costo total real, mismo criterio que un
+ * frasco de jarabe de 30ml vs. uno de 15ml).
+ *
+ * Cuando el cliente NO mencionó ningún tamaño, el significado de "cantidad
+ * solicitada" sí depende de la forma: para formas MEDIDAS (jarabe, crema...
+ * -- ver isMeasureUnit) se sigue asumiendo esa cantidad de envases tal cual
+ * vengan (no hay unidad suelta que contar). Pero para formas de UNIDADES
+ * SUELTAS (tabletas, cápsulas, óvulos...) esa cantidad es un conteo de
+ * unidades sueltas (p. ej. "9000 tabletas"), no de cajas -- confirmado con
+ * el cliente (2026-09-24): antes se trataba ese número directamente como
+ * cantidad de EMPAQUES a comprar, comprando cientos de veces más de lo
+ * necesario (bug real: 9000 tabletas de Losartán, empaque de 300, terminaba
+ * pidiendo 6300 empaques de 300 en vez de 21). Ampollas/viales sellados no
+ * pasan por aquí: su cantidad de empaques se resuelve aparte (ver
+ * isSealedUnitForm en cada punto de llamada).
+ */
+export function resolvePackagesNeeded(
+  quantityToPurchase: number,
+  requestedPresentationQuantity: number | null,
+  offerPackageSize: number,
+  presentationUnit: string,
+): number {
+  if (requestedPresentationQuantity === null && !isMeasureUnit(presentationUnit)) {
+    return calculatePackagesNeeded(quantityToPurchase, offerPackageSize);
+  }
+  return calculatePackagesNeededMeasured(quantityToPurchase, requestedPresentationQuantity, offerPackageSize);
 }
 
 export function calculateTotal(packagePrice: number, packagesNeeded: number): number {

@@ -206,6 +206,52 @@ describe("selectBestOffer (comparacion entre presentaciones distintas del mismo 
   });
 });
 
+describe("selectBestOffer (formas de unidades sueltas: cantidad solicitada sin tamaño de empaque mencionado)", () => {
+  const productIds: string[] = [];
+  const laboratoryIds: string[] = [];
+  const supplierIds: string[] = [];
+
+  beforeAll(async () => {
+    const product = await createProduct("LOSARTANTEST TAB 50MG X300", "TestLab Losartan");
+    productIds.push(product.id);
+    laboratoryIds.push(product.laboratoryId!);
+
+    const supplier = await prisma.supplier.create({ data: { name: "Ofimedicas Test Losartan" } });
+    supplierIds.push(supplier.id);
+
+    // Precio por unidad (tal como reportan Disfarma/Ramédicas/Ofimédicas): $37
+    // por tableta, empaque de 300 -> $11.100 por caja.
+    await prisma.supplierOffer.create({
+      data: {
+        supplierId: supplier.id,
+        productId: product.id,
+        price: 11100,
+        unitPriceAsImported: 37,
+        availability: "AVAILABLE",
+        stockQuantity: 10000,
+      },
+    });
+  });
+
+  afterAll(async () => {
+    await prisma.priceComparison.deleteMany({ where: { productId: { in: productIds } } });
+    await prisma.supplierOffer.deleteMany({ where: { productId: { in: productIds } } });
+    await prisma.supplier.deleteMany({ where: { id: { in: supplierIds } } });
+    await prisma.product.deleteMany({ where: { id: { in: productIds } } });
+    await prisma.laboratory.deleteMany({ where: { id: { in: laboratoryIds } } });
+  });
+
+  it("bug real (2026-09-24): pide 9000 tabletas sueltas (sin mencionar tamaño de empaque en el texto) -- con empaque de 300, son 30 empaques, no 9000", async () => {
+    const { itemId } = await createRequestItem("LOSARTANTEST 50MG", 9000);
+    await resolveCustomerRequestItem(itemId);
+
+    const result = await selectBestOffer(itemId);
+    expect(result.status).toBe("SELECTED");
+    expect(result.selected?.packagesNeeded).toBe(30); // 9000 tabletas / 300 por caja
+    expect(result.totalPrice).toBe(30 * 11100); // 333.000, no 6300 x 11.100 = 69.930.000
+  });
+});
+
 // Caso pedido por el cliente: si ya hay existencia en bodega, no se debe
 // cotizar lo que ya se tiene -- solo el faltante, y si bodega cubre todo, no
 // se cotiza nada.

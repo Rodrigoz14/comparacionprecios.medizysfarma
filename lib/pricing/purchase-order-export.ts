@@ -1,7 +1,7 @@
 import ExcelJS from "exceljs";
 import { prisma } from "@/lib/db/client";
 import { isSealedUnitForm } from "@/lib/pricing/measured-forms";
-import { calculatePackagesNeededMeasured, calculateTotal } from "@/lib/pricing/price-calculator";
+import { calculateTotal, resolvePackagesNeeded } from "@/lib/pricing/price-calculator";
 
 const CURRENCY_FORMAT = '"$"#,##0';
 
@@ -58,7 +58,7 @@ export async function buildPurchaseOrderWorkbook(
     // proveedores coincida con lo que se mostró en pantalla al cotizar.
     const packagesNeeded = isSealedUnit
       ? item.quantityToPurchase
-      : calculatePackagesNeededMeasured(item.quantityToPurchase, item.requestedPresentationQuantity, packageSize);
+      : resolvePackagesNeeded(item.quantityToPurchase, item.requestedPresentationQuantity, packageSize, comparison.product.presentationUnit);
     const packagePrice = Number(comparison.price);
     // El precio unitario NUNCA se calcula cuando el proveedor ya lo reportó
     // tal cual en su archivo (confirmado con el cliente, 2026-09-22) -- se

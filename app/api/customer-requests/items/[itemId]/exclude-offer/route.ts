@@ -2,7 +2,7 @@ import { prisma } from "@/lib/db/client";
 import { getVerifiedSession } from "@/lib/auth/dal";
 import { capAlternatives } from "@/lib/pricing/cap-alternatives";
 import { isSealedUnitForm } from "@/lib/pricing/measured-forms";
-import { calculatePackagesNeededMeasured, calculateTotal } from "@/lib/pricing/price-calculator";
+import { calculateTotal, resolvePackagesNeeded } from "@/lib/pricing/price-calculator";
 import type { OfferOption } from "@/lib/pricing/types";
 
 /**
@@ -45,7 +45,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ it
     // sueltas -- ver el comentario en selection-engine.ts.
     const packagesNeeded = isSealedUnit
       ? quantity
-      : calculatePackagesNeededMeasured(quantity, item.requestedPresentationQuantity, packageSize);
+      : resolvePackagesNeeded(quantity, item.requestedPresentationQuantity, packageSize, c.product.presentationUnit);
     const packagePrice = Number(c.price);
     return {
       supplierOfferId: c.supplierOfferId,
