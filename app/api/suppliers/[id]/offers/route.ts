@@ -2,20 +2,13 @@ import { prisma } from "@/lib/db/client";
 import { getVerifiedSession } from "@/lib/auth/dal";
 import { getLatestFilesBySupplier } from "@/lib/pricing/current-offers";
 import { isSafeExpirationLabel } from "@/lib/pricing/expiration";
-import { isSealedUnitForm } from "@/lib/pricing/measured-forms";
+import { isMeasureUnit, isSealedUnitForm } from "@/lib/pricing/measured-forms";
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
 
 type SortKey = "product" | "laboratory" | "unitPrice" | "availability";
 const SORT_KEYS: SortKey[] = ["product", "laboratory", "unitPrice", "availability"];
-
-// Unidades de MEDIDA (volumen/peso), nunca de conteo -- confirmado con el
-// cliente (2026-09-21): "No. unidades" no debe mostrar ninguna medida (ni
-// "30 ml" ni "120 g"), solo cuántas unidades comprables trae el empaque.
-// Coincide con las unidades que PRESENTATION_UNIT_BY_FORM (extract-attributes.ts)
-// asigna a formas líquidas/semisólidas (jarabe, solución, crema, loción...).
-const MEASURE_UNITS = new Set(["ml", "g"]);
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   if (!(await getVerifiedSession())) {
@@ -112,7 +105,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         : isSealedUnit
           ? packagePrice
           : packagePrice / packageSize;
-    const isMeasureUnit = MEASURE_UNITS.has(o.product.presentationUnit);
+    const measureUnit = isMeasureUnit(o.product.presentationUnit);
     return {
       id: o.id,
       productName: o.product.standardName,
@@ -126,9 +119,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       // medida (ml/g), siempre una cantidad de unidades comprables.
       presentationQuantity: o.product.presentationQuantity,
       presentationUnit: o.product.presentationUnit,
-      isMeasureUnit,
-      purchaseQuantity: isMeasureUnit ? 1 : o.product.presentationQuantity,
-      purchaseUnit: isMeasureUnit ? "unidad" : o.product.presentationUnit,
+      isMeasureUnit: measureUnit,
+      purchaseQuantity: measureUnit ? 1 : o.product.presentationQuantity,
+      purchaseUnit: measureUnit ? "unidad" : o.product.presentationUnit,
       laboratoryName: o.product.laboratory?.name ?? null,
       supplierProductCode: o.supplierProductCode,
       price: packagePrice,

@@ -339,6 +339,79 @@ describe("perfiles fijos de proveedor conocido (integracion contra base de datos
     });
   });
 
+  it("Disfarma: sin ningún conteo de empaque (ni en el nombre ni en PRESENTACION), no se rechaza la fila -- el precio de empaque queda igual al precio unidad", async () => {
+    // Confirmado con el cliente (2026-09-24): antes estas filas se
+    // descartaban del todo por no poder determinar la presentación; ahora
+    // se importan asumiendo 1 unidad, así que precio de empaque = precio
+    // unidad (sin multiplicar).
+    await withSupplier("Disfarma", async (supplierId) => {
+      const rows = [
+        ["CODIGO", "DESCRIPCION", "Ger_EPS_UND", "FORMA_FARMACEUTICA", "PRESENTACION", "LABORATORIO", "FEC_VENC"],
+        ["D300", "AMOXICILINA 500MG CAPSULA", 1500, "CAPSULA", "", "MK", ""],
+      ];
+      const buffer = await buildXlsxBuffer(rows);
+      const analysis = await analyzeSupplierFile(buffer, "disfarma-sin-conteo.xlsx", supplierId);
+      const mapping: ColumnMapping = {};
+      for (const col of analysis.columns) if (col.proposedTarget) mapping[col.proposedTarget] = col.index;
+
+      const report = await confirmSupplierImport({
+        buffer,
+        originalName: "disfarma-sin-conteo.xlsx",
+        storagePath: null,
+        supplierId,
+        sheetName: analysis.selectedSheet,
+        headerRowIndex: analysis.headerRowIndex,
+        mapping,
+        priceFormat: { thousands: ".", decimal: "," },
+      });
+      expect(report.errorRows).toBe(0);
+      expect(report.importedRows).toBe(1);
+
+      const offer = await prisma.supplierOffer.findFirst({
+        where: { supplierId, product: { normalizedName: { contains: "amoxicilina" } } },
+      });
+      expect(Number(offer!.price)).toBe(1500); // sin conteo -> precio de empaque = precio unidad
+      expect(Number(offer!.unitPriceAsImported)).toBe(1500);
+    });
+  });
+
+  it("Disfarma: presentación medida en ml (jarabe) sin unidades nombradas -- no se multiplica el precio unitario por el volumen", async () => {
+    // Confirmado con el cliente (2026-09-24): "240ML" es el volumen del
+    // único frasco, no una cantidad de envases a multiplicar -- el precio
+    // reportado ya es el del frasco completo.
+    await withSupplier("Disfarma", async (supplierId) => {
+      const rows = [
+        ["CODIGO", "DESCRIPCION", "Ger_EPS_UND", "FORMA_FARMACEUTICA", "PRESENTACION", "LABORATORIO", "FEC_VENC"],
+        ["D400", "ACETAMINOFEN 150MG/5ML JARABE", 5000, "JARABE", "FCO X 240ML", "MK", ""],
+      ];
+      const buffer = await buildXlsxBuffer(rows);
+      const analysis = await analyzeSupplierFile(buffer, "disfarma-jarabe.xlsx", supplierId);
+      const mapping: ColumnMapping = {};
+      for (const col of analysis.columns) if (col.proposedTarget) mapping[col.proposedTarget] = col.index;
+
+      const report = await confirmSupplierImport({
+        buffer,
+        originalName: "disfarma-jarabe.xlsx",
+        storagePath: null,
+        supplierId,
+        sheetName: analysis.selectedSheet,
+        headerRowIndex: analysis.headerRowIndex,
+        mapping,
+        priceFormat: { thousands: ".", decimal: "," },
+      });
+      expect(report.errorRows).toBe(0);
+      expect(report.importedRows).toBe(1);
+
+      const offer = await prisma.supplierOffer.findFirst({
+        where: { supplierId, product: { normalizedName: { contains: "acetaminofen" } } },
+        include: { product: true },
+      });
+      expect(offer!.product.presentationUnit).toBe("ml");
+      expect(Number(offer!.price)).toBe(5000); // sin multiplicar por los 240ml
+      expect(Number(offer!.unitPriceAsImported)).toBe(5000);
+    });
+  });
+
   it("Ramédicas: excluye del todo las filas con STOCK ACTUAL = 0 (no se importan, no cuentan como error)", async () => {
     await withSupplier("Ramedicas", async (supplierId) => {
       const rows = [

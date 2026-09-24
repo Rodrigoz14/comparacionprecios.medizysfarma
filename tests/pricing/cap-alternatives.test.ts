@@ -29,6 +29,12 @@ describe("capAlternatives", () => {
     expect(capAlternatives(offers, offers[0])).toHaveLength(2);
   });
 
+  it("siempre ordena de menor a mayor precio unitario, aunque no haya que recortar", () => {
+    const offers = [makeOffer("c", 300), makeOffer("a", 100), makeOffer("b", 200)];
+    const result = capAlternatives(offers, null);
+    expect(result.map((o) => o.supplierOfferId)).toEqual(["a", "b", "c"]);
+  });
+
   it("recorta a las mas baratas cuando hay muchas, evitando una respuesta gigante", () => {
     const offers = Array.from({ length: 200 }, (_, i) => makeOffer(`o${i}`, 1000 - i));
     const capped = capAlternatives(offers, null);

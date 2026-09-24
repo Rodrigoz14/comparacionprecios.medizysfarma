@@ -4,7 +4,7 @@ import { detectPriceFormat, normalizeAvailability, normalizeExpirationLabel, par
 import { parseWorkbook } from "@/lib/excel/parser";
 import { buildGenericKey, buildNormalizedName, canonicalizeIngredient, normalizeText } from "@/lib/matching/normalize";
 import { extractProductAttributes, normalizeDosageForm } from "@/lib/matching/extract-attributes";
-import { isSealedUnitForm } from "@/lib/pricing/measured-forms";
+import { isMeasureUnit, isSealedUnitForm } from "@/lib/pricing/measured-forms";
 import { hashBuffer } from "@/lib/excel/storage";
 import type {
   AnalyzeResult,
@@ -153,7 +153,16 @@ function readMappedRow(
   const presentationText = presentationRaw === null || presentationRaw === undefined ? "" : String(presentationRaw).trim();
   const extractionInput = presentationText ? `${originalProductName} ${presentationText}` : originalProductName;
 
-  const extraction = extractProductAttributes(extractionInput);
+  // Cuando el proveedor reporta precio POR UNIDAD (priceIsPerUnit), no hace
+  // falta rechazar la fila si no se encuentra un conteo de empaque explícito
+  // (ni en el nombre ni en la columna de presentación): el precio de empaque
+  // simplemente se calcula como 1 x precio unidad -- confirmado con el
+  // cliente (2026-09-24), antes esas filas se descartaban del todo. Para
+  // proveedores que reportan precio de EMPAQUE (priceIsPerUnit=false) sigue
+  // exigiéndose el conteo, porque ahí sí se usa para derivar el precio por
+  // unidad (división) en otras partes del motor de precios, y asumir 1
+  // silenciosamente distorsionaría ese cálculo.
+  const extraction = extractProductAttributes(extractionInput, { requirePresentation: !priceIsPerUnit });
   if (!extraction) {
     return {
       row: null,
@@ -191,13 +200,20 @@ function readMappedRow(
   // multiplica por las unidades del empaque para calcular el precio de
   // empaque completo, como el resto del motor de precios espera. No aplica
   // a ampollas/viales: esos siempre se compran como 1 unidad sellada, sin
-  // importar su volumen (mismo criterio que selection-engine.ts). El precio
-  // por unidad tal como vino en el archivo se conserva sin tocar (nunca se
-  // vuelve a derivar por división al mostrarlo) -- confirmado con el
-  // cliente: "el precio unitario no se debe calcular, ya viene en el excel".
+  // importar su volumen (mismo criterio que selection-engine.ts). Tampoco
+  // aplica a presentaciones medidas en ml/g (jarabe, solución, crema...)
+  // cuando no se nombran unidades aparte: ahí "240ML" es el volumen del
+  // único frasco, no una cantidad de envases -- el precio reportado YA es
+  // el del frasco completo (confirmado con el cliente, 2026-09-24), no se
+  // multiplica por el volumen. El precio por unidad tal como vino en el
+  // archivo se conserva sin tocar (nunca se vuelve a derivar por división
+  // al mostrarlo) -- confirmado con el cliente: "el precio unitario no se
+  // debe calcular, ya viene en el excel".
   const unitPriceAsImported = priceIsPerUnit ? unitOrPackagePrice : null;
   const price =
-    priceIsPerUnit && !isSealedUnitForm(extraction.attributes.dosageForm)
+    priceIsPerUnit &&
+    !isSealedUnitForm(extraction.attributes.dosageForm) &&
+    !isMeasureUnit(extraction.attributes.presentationUnit)
       ? Math.round(unitOrPackagePrice * extraction.attributes.presentationQuantity * 100) / 100
       : unitOrPackagePrice;
 
