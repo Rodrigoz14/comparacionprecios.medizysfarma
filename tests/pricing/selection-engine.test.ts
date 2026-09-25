@@ -129,6 +129,56 @@ describe("selectBestOffer (integracion contra base de datos real)", () => {
   });
 });
 
+describe("selectBestOffer (disponibilidad desconocida ya no descarta la oferta)", () => {
+  const productIds: string[] = [];
+  const laboratoryIds: string[] = [];
+  const supplierIds: string[] = [];
+
+  beforeAll(async () => {
+    const product = await createProduct("DISPOTEST TAB 50MG X10", "TestLab Dispo");
+    productIds.push(product.id);
+    laboratoryIds.push(product.laboratoryId!);
+
+    const barato = await prisma.supplier.create({ data: { name: "Proveedor Dispo Barato" } });
+    const confirmado = await prisma.supplier.create({ data: { name: "Proveedor Dispo Confirmado" } });
+    supplierIds.push(barato.id, confirmado.id);
+
+    // Más barato, pero el proveedor no reportó disponibilidad (queda en
+    // UNKNOWN por defecto). Confirmado con el cliente (2026-09-25): debe
+    // poder ganar igual por precio, solo con una advertencia.
+    await prisma.supplierOffer.create({
+      data: { supplierId: barato.id, productId: product.id, price: 3000 },
+    });
+    await prisma.supplierOffer.create({
+      data: { supplierId: confirmado.id, productId: product.id, price: 5000, availability: "AVAILABLE", stockQuantity: 50 },
+    });
+  });
+
+  afterAll(async () => {
+    await prisma.priceComparison.deleteMany({ where: { productId: { in: productIds } } });
+    await prisma.supplierOffer.deleteMany({ where: { productId: { in: productIds } } });
+    await prisma.supplier.deleteMany({ where: { id: { in: supplierIds } } });
+    await prisma.product.deleteMany({ where: { id: { in: productIds } } });
+    await prisma.laboratory.deleteMany({ where: { id: { in: laboratoryIds } } });
+  });
+
+  it("gana la oferta mas barata aunque su disponibilidad sea desconocida, y lo advierte en el motivo", async () => {
+    const { itemId } = await createRequestItem("DISPOTEST 50MG", 10);
+    await resolveCustomerRequestItem(itemId);
+
+    const result = await selectBestOffer(itemId);
+    expect(result.status).toBe("SELECTED");
+    expect(result.selected?.supplierName).toBe("Proveedor Dispo Barato");
+    expect(result.selected?.eligible).toBe(true);
+    expect(result.selected?.discardReason).toMatch(/desconocida/);
+    expect(result.reason).toMatch(/desconocida/);
+
+    const confirmadoAlt = result.alternatives.find((a) => a.supplierName === "Proveedor Dispo Confirmado");
+    expect(confirmadoAlt?.eligible).toBe(true);
+    expect(confirmadoAlt?.discardReason).toBeNull();
+  });
+});
+
 // Caso real reportado por el cliente: Sildenafil 100mg en caja x30 (Ramedicas)
 // vs caja x100 (Disfarma) — deben compararse por costo total para cubrir lo
 // pedido, no descartarse entre si por tener presentaciones distintas.

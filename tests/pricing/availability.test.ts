@@ -6,8 +6,13 @@ describe("checkAvailability", () => {
     expect(checkAvailability("OUT_OF_STOCK", 0, 10).eligible).toBe(false);
   });
 
-  it("rechaza disponibilidad desconocida (nunca asume)", () => {
-    expect(checkAvailability("UNKNOWN", null, 10).eligible).toBe(false);
+  it("acepta disponibilidad desconocida, pero con advertencia (puede ganar por precio)", () => {
+    // Confirmado con el cliente (2026-09-25): antes se descartaba igual que
+    // "sin existencias", dejando fuera la opción más barata solo porque el
+    // proveedor no reportó ese dato.
+    const result = checkAvailability("UNKNOWN", null, 10);
+    expect(result.eligible).toBe(true);
+    expect(result.reason).toMatch(/desconocida/);
   });
 
   it("rechaza cuando el stock reportado es menor a lo solicitado", () => {

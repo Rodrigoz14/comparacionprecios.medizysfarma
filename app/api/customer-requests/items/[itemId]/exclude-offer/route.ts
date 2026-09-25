@@ -65,7 +65,12 @@ export async function POST(_request: Request, { params }: { params: Promise<{ it
       // primera vez, en selectBestOffer) -- reconstruir esta lista para
       // mostrarla de nuevo no necesita volver a evaluarla.
       expirationLabel: null,
-      eligible: c.discardReason === null,
+      // "Disponibilidad desconocida" ya no descarta la oferta (ver
+      // lib/pricing/availability.ts) -- discardReason puede venir lleno en
+      // una oferta igualmente elegible, así que la elegibilidad se deriva de
+      // `availability` (lo único que sí distingue "sin existencias" de las
+      // demás en este historial, que no guarda stockQuantity).
+      eligible: c.availability !== "OUT_OF_STOCK",
       discardReason: c.discardReason,
     };
   };

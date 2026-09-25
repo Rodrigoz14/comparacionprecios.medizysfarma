@@ -205,9 +205,14 @@ export async function selectBestOffer(
       totalPrice: selected.totalCost,
       savings,
       reason:
-        ranked.length === 1
+        (ranked.length === 1
           ? `Única oferta elegible: ${selected.supplierName}, ${selected.packagesNeeded} empaque(s) x${selected.packageSize} a ${formatUnitCOP(selected.unitPrice)} c/u = ${formatCOP(selected.totalCost)}.`
-          : `Menor costo total entre ${ranked.length} ofertas elegibles: ${selected.supplierName}, ${selected.packagesNeeded} empaque(s) x${selected.packageSize} a ${formatUnitCOP(selected.unitPrice)} c/u = ${formatCOP(selected.totalCost)}.`,
+          : `Menor costo total entre ${ranked.length} ofertas elegibles: ${selected.supplierName}, ${selected.packagesNeeded} empaque(s) x${selected.packageSize} a ${formatUnitCOP(selected.unitPrice)} c/u = ${formatCOP(selected.totalCost)}.`) +
+        // La oferta ganadora puede tener disponibilidad sin confirmar (elegible
+        // igual, ver lib/pricing/availability.ts) -- se avisa en el mismo texto
+        // en vez de dejarlo solo en la lista de alternativas, para que no pase
+        // desapercibido justo en la oferta que se va a comprar.
+        (selected.discardReason ? ` ⚠ ${selected.discardReason}` : ""),
     };
   }
 
