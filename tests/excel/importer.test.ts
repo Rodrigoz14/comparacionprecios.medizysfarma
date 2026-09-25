@@ -415,7 +415,7 @@ describe("perfiles fijos de proveedor conocido (integracion contra base de datos
   it("Ramédicas: excluye del todo las filas con STOCK ACTUAL = 0 (no se importan, no cuentan como error)", async () => {
     await withSupplier("Ramedicas", async (supplierId) => {
       const rows = [
-        ["CODIGO INTERNO MEDICAMENTO", "DESCRIPCION COMPLETA DE PRODUCTO", "PRESENTACION", "PRECIO X UD", "LABORATORIO", "STOCK ACTUAL"],
+        ["CODIGO INTERNO MEDICAMENTO", "DESCRIPCION COMPLETA DEL PRODUCTO", "PRESENTACION", "PRECIO X UD", "LABORATORIO", "STOCK ACTUAL"],
         ["R001", "IBUPROFENO 400MG", "X30 TAB", 50, "MK", 20],
         ["R002", "LORATADINA 10MG", "X10 TAB", 30, "MK", 0],
       ];
@@ -460,7 +460,7 @@ describe("perfiles fijos de proveedor conocido (integracion contra base de datos
     // Offimédicas -- no es algo especial de un solo proveedor.
     await withSupplier("Ramedicas", async (supplierId) => {
       const rows = [
-        ["CODIGO INTERNO MEDICAMENTO", "DESCRIPCION COMPLETA DE PRODUCTO", "PRESENTACION", "PRECIO X UD", "LABORATORIO", "STOCK ACTUAL"],
+        ["CODIGO INTERNO MEDICAMENTO", "DESCRIPCION COMPLETA DEL PRODUCTO", "PRESENTACION", "PRECIO X UD", "LABORATORIO", "STOCK ACTUAL"],
         ["R010", "VARITEST3 400MG X20", "X20 TAB", 50, "MK", 20],
         ["R020", "VARITEST3 400MG X20", "X20 TAB", 55, "MK", 10],
       ];

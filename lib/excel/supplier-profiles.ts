@@ -74,7 +74,7 @@ const RAMEDICAS: SupplierColumnProfile = {
   matchesSupplierName: (name) => normalizeHeaderName(name).includes("ramedicas"),
   columns: {
     supplierProductCode: "CODIGO INTERNO MEDICAMENTO",
-    productName: "DESCRIPCION COMPLETA DE PRODUCTO",
+    productName: "DESCRIPCION COMPLETA DEL PRODUCTO",
     presentation: "PRESENTACION",
     price: "PRECIO X UD",
     laboratory: "LABORATORIO",

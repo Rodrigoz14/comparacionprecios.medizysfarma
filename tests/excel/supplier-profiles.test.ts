@@ -80,7 +80,7 @@ describe("resolveFixedMapping (Ramédicas)", () => {
     const profile = findSupplierProfile("Ramedicas")!;
     const row = headerRow(
       "CODIGO INTERNO MEDICAMENTO",
-      "DESCRIPCION COMPLETA DE PRODUCTO",
+      "DESCRIPCION COMPLETA DEL PRODUCTO",
       "PRESENTACION",
       "PRECIO X UD",
       "LABORATORIO",
