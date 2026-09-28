@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db/client";
+import type { Sector } from "@/lib/generated/prisma/client";
 import { fuzzyIngredientThreshold, levenshteinDistance } from "@/lib/matching/fuzzy";
 import { canonicalizeIngredient, normalizeText, stripAccents } from "@/lib/matching/normalize";
 import { expandIngredientTerms } from "@/lib/matching/synonym-service";
@@ -43,7 +44,10 @@ function extractBrandFromStandardName(standardName: string): string | null {
  * normal (con concentración) como de la búsqueda "solo ingrediente" que se
  * usa cuando el cliente no dio concentración (matching-service.ts).
  */
-export async function searchCandidatesByIngredientText(rawIngredient: string): Promise<CandidateSearchResult[]> {
+export async function searchCandidatesByIngredientText(
+  rawIngredient: string,
+  sector?: Sector,
+): Promise<CandidateSearchResult[]> {
   const normalizedIngredient = normalizeText(rawIngredient);
   const terms = await expandIngredientTerms(normalizedIngredient);
   // Se busca por ingredientKey (palabras ordenadas alfabéticamente) para que
@@ -54,6 +58,7 @@ export async function searchCandidatesByIngredientText(rawIngredient: string): P
     where: {
       status: "ACTIVE",
       ingredientKey: { in: ingredientKeys },
+      ...(sector ? { sector } : {}),
     },
   });
 
@@ -72,7 +77,7 @@ export async function searchCandidatesByIngredientText(rawIngredient: string): P
   }
 
   const distinctIngredientKeys = await prisma.product.findMany({
-    where: { status: "ACTIVE" },
+    where: { status: "ACTIVE", ...(sector ? { sector } : {}) },
     distinct: ["ingredientKey"],
     select: { ingredientKey: true },
   });
@@ -102,7 +107,7 @@ export async function searchCandidatesByIngredientText(rawIngredient: string): P
 
     if (subsetKeys.length > 0) {
       const subsetProducts = await prisma.product.findMany({
-        where: { status: "ACTIVE", ingredientKey: { in: subsetKeys } },
+        where: { status: "ACTIVE", ingredientKey: { in: subsetKeys }, ...(sector ? { sector } : {}) },
       });
       return subsetProducts.map((product) => ({
         product: toCandidateProduct(product),
@@ -129,7 +134,7 @@ export async function searchCandidatesByIngredientText(rawIngredient: string): P
 
   if (closeKeys.length > 0) {
     const fuzzyProducts = await prisma.product.findMany({
-      where: { status: "ACTIVE", ingredientKey: { in: closeKeys } },
+      where: { status: "ACTIVE", ingredientKey: { in: closeKeys }, ...(sector ? { sector } : {}) },
     });
 
     return fuzzyProducts.map((product) => ({
@@ -154,7 +159,7 @@ export async function searchCandidatesByIngredientText(rawIngredient: string): P
   if (queryBrand.length < 3) return [];
 
   const allActiveProducts = await prisma.product.findMany({
-    where: { status: "ACTIVE" },
+    where: { status: "ACTIVE", ...(sector ? { sector } : {}) },
     select: { id: true, standardName: true },
   });
   const brandThreshold = fuzzyIngredientThreshold(queryBrand.length);
@@ -180,8 +185,11 @@ export async function searchCandidatesByIngredientText(rawIngredient: string): P
   }));
 }
 
-export async function searchCandidates(attributes: ExtractedAttributes): Promise<CandidateSearchResult[]> {
-  return searchCandidatesByIngredientText(attributes.activeIngredient);
+export async function searchCandidates(
+  attributes: ExtractedAttributes,
+  sector?: Sector,
+): Promise<CandidateSearchResult[]> {
+  return searchCandidatesByIngredientText(attributes.activeIngredient, sector);
 }
 
 function toCandidateProduct(product: {

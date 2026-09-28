@@ -1,12 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db/client";
+import type { Sector } from "@/lib/generated/prisma/client";
 import { resolveCustomerRequestItem, resolveProductMatch } from "@/lib/matching/matching-service";
 import { extractProductAttributes } from "@/lib/matching/extract-attributes";
 import { buildGenericKey, buildNormalizedName, canonicalizeIngredient, normalizeText } from "@/lib/matching/normalize";
 
 // "Zoltraxina" es un principio activo ficticio usado solo en estas pruebas, para
 // no depender de (ni contaminar) datos reales o los del seed.
-async function createProduct(rawName: string, laboratoryName: string) {
+async function createProduct(rawName: string, laboratoryName: string, sector?: Sector) {
   const extraction = extractProductAttributes(rawName)!;
   const laboratoryNormalizedName = normalizeText(laboratoryName);
   const laboratory = await prisma.laboratory.upsert({
@@ -29,6 +30,7 @@ async function createProduct(rawName: string, laboratoryName: string) {
       presentationQuantity: extraction.attributes.presentationQuantity,
       presentationUnit: extraction.attributes.presentationUnit,
       laboratoryId: laboratory.id,
+      ...(sector ? { sector } : {}),
     },
   });
 }
@@ -488,5 +490,46 @@ describe("resolveProductMatch (todas las opciones sin existencia: se muestran ig
     const result = await resolveProductMatch("ZOLTRAXAGEL 75MG");
     expect(result.candidates.length).toBeGreaterThan(0);
     expect(result.reasons.join(" ")).toMatch(/existencia confirmada/i);
+  });
+});
+
+describe("resolveProductMatch (filtrado por sector)", () => {
+  const productIds: string[] = [];
+  const laboratoryIds: string[] = [];
+
+  beforeAll(async () => {
+    // Mismo ingrediente y concentración exactos, pero uno queda fijado como
+    // Medicamentos y el otro como Dispositivos médicos (confirmado con el
+    // cliente, 2026-09-28: cada producto importado queda en un solo sector).
+    const medicamento = await createProduct("ZOLTRASECTOR TAB 50MG X30", "TestLab Zoltrasector Med", "MEDICAMENTOS");
+    const dispositivo = await createProduct(
+      "ZOLTRASECTOR TAB 50MG X30",
+      "TestLab Zoltrasector Disp",
+      "DISPOSITIVOS_MEDICOS",
+    );
+    productIds.push(medicamento.id, dispositivo.id);
+    laboratoryIds.push(medicamento.laboratoryId!, dispositivo.laboratoryId!);
+  });
+
+  afterAll(async () => {
+    await prisma.product.deleteMany({ where: { id: { in: productIds } } });
+    await prisma.laboratory.deleteMany({ where: { id: { in: laboratoryIds } } });
+  });
+
+  it("sin sector, encuentra los dos (comportamiento de siempre)", async () => {
+    const result = await resolveProductMatch("ZOLTRASECTOR TAB 50MG X30");
+    expect(result.decision).toBe("MATCH");
+    expect(result.matchedProductIds.sort()).toEqual([...productIds].sort());
+  });
+
+  it("con sector, solo encuentra el del sector correcto", async () => {
+    const result = await resolveProductMatch("ZOLTRASECTOR TAB 50MG X30", "DISPOSITIVOS_MEDICOS");
+    expect(result.decision).toBe("MATCH");
+    expect(result.matchedProductIds).toEqual([productIds[1]]);
+  });
+
+  it("con un sector sin ninguna oferta de ese producto, no lo encuentra", async () => {
+    const result = await resolveProductMatch("ZOLTRASECTOR TAB 50MG X30", "PAPELERIA");
+    expect(result.decision).not.toBe("MATCH");
   });
 });

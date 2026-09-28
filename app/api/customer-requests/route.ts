@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db/client";
 import { resolveCustomerRequestItem } from "@/lib/matching/matching-service";
 import { selectBestOffer } from "@/lib/pricing/selection-engine";
 import { getVerifiedSession } from "@/lib/auth/dal";
+import { SECTOR_VALUES } from "@/lib/sectors";
 
 // Homologar y cotizar cada producto implica varias consultas reales a la
 // base de datos (y a veces una llamada a la IA); un pedido grande puede
@@ -12,6 +13,10 @@ export const maxDuration = 300;
 
 const bodySchema = z.object({
   customerName: z.string().min(1),
+  // Rubro de TODA la solicitud (confirmado con el cliente, 2026-09-28): una
+  // sola vez por solicitud, no por fila -- acota la búsqueda de cada ítem a
+  // ese sector, más rápida y sin candidatos de un rubro que no aplica.
+  sector: z.enum(SECTOR_VALUES),
   items: z
     .array(
       z.object({
@@ -40,7 +45,12 @@ export async function POST(request: Request) {
   }
 
   const customerRequest = await prisma.customerRequest.create({
-    data: { customerName: parsed.data.customerName, status: "ANALYZING", responsibleUserId: session.userId },
+    data: {
+      customerName: parsed.data.customerName,
+      sector: parsed.data.sector,
+      status: "ANALYZING",
+      responsibleUserId: session.userId,
+    },
   });
 
   const results = await mapWithConcurrency(parsed.data.items, 8, async (line) => {
@@ -53,7 +63,7 @@ export async function POST(request: Request) {
       },
     });
 
-    const match = await resolveCustomerRequestItem(item.id);
+    const match = await resolveCustomerRequestItem(item.id, parsed.data.sector);
     const pricing = await selectBestOffer(item.id);
 
     return {

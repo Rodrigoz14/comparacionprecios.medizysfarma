@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { confirmSupplierImport } from "@/lib/excel/importer";
 import { getVerifiedSession } from "@/lib/auth/dal";
+import { SECTOR_VALUES } from "@/lib/sectors";
 
 // Confirmar la importación de un archivo grande (miles de filas) puede
 // tardar más que el límite por defecto (10s).
@@ -17,6 +18,7 @@ const bodySchema = z.object({
     thousands: z.enum([".", ",", "none"]),
     decimal: z.enum([".", ","]),
   }),
+  sector: z.enum(SECTOR_VALUES),
   force: z.boolean().optional(),
 });
 
@@ -53,6 +55,7 @@ export async function POST(request: Request) {
       headerRowIndex: parsed.data.headerRowIndex,
       mapping: parsed.data.mapping,
       priceFormat: parsed.data.priceFormat,
+      sector: parsed.data.sector,
       force: parsed.data.force,
     });
     return Response.json(report);

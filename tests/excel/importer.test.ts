@@ -86,6 +86,33 @@ describe("importador de Excel (integracion contra base de datos real)", () => {
     expect(Number(offer!.price)).toBe(8500); // se conserva la ultima aparicion del duplicado
   });
 
+  it("el sector activo al importar queda fijado en el producto creado", async () => {
+    // Confirmado con el cliente (2026-09-28): el sector no viene del archivo,
+    // sino de la pestaña activa en Proveedores al momento de importar.
+    const rows = [HEADER, ["S001", "SECTORTEST TAB 500MG X20", "MK", "3.000", "SI"]];
+    const buffer = await buildXlsxBuffer(rows);
+    const analysis = await analyzeSupplierFile(buffer, "sector-test.xlsx", supplierId);
+    const mapping: ColumnMapping = {};
+    for (const col of analysis.columns) if (col.proposedTarget) mapping[col.proposedTarget] = col.index;
+
+    await confirmSupplierImport({
+      buffer,
+      originalName: "sector-test.xlsx",
+      storagePath: null,
+      supplierId,
+      sheetName: analysis.selectedSheet,
+      headerRowIndex: analysis.headerRowIndex,
+      mapping,
+      priceFormat: { thousands: ".", decimal: "," },
+      sector: "DISPOSITIVOS_MEDICOS",
+    });
+
+    const product = await prisma.product.findFirst({
+      where: { normalizedName: { contains: "sectortest" } },
+    });
+    expect(product?.sector).toBe("DISPOSITIVOS_MEDICOS");
+  });
+
   it("rechaza reimportar el mismo archivo sin 'force'", async () => {
     const analysis = await analyzeSupplierFile(baseBuffer, "test-ramedicas.xlsx", supplierId);
     expect(analysis.alreadyImported).not.toBeNull();

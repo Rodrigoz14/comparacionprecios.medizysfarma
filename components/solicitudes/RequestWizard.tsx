@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { parsePastedList } from "@/lib/solicitudes/parse-pasted-list";
+import type { Sector } from "@/lib/generated/prisma/client";
+import { SECTOR_OPTIONS } from "@/lib/sectors";
 
 interface ItemLine {
   text: string;
@@ -117,10 +119,12 @@ function ProductNameInput({
   value,
   onChange,
   placeholder,
+  sector,
 }: {
   value: string;
   onChange: (text: string) => void;
   placeholder?: string;
+  sector: Sector;
 }) {
   const [suggestions, setSuggestions] = useState<ProductSuggestion[]>([]);
   const [open, setOpen] = useState(false);
@@ -147,7 +151,7 @@ function ProductNameInput({
     const controller = new AbortController();
     const timer = setTimeout(() => {
       setLoading(true);
-      fetch(`/api/products/search?q=${encodeURIComponent(query)}`, { signal: controller.signal })
+      fetch(`/api/products/search?q=${encodeURIComponent(query)}&sector=${sector}`, { signal: controller.signal })
         .then((res) => res.json())
         .then((data) => setSuggestions(data.products ?? []))
         .catch(() => {})
@@ -157,7 +161,7 @@ function ProductNameInput({
       clearTimeout(timer);
       controller.abort();
     };
-  }, [value]);
+  }, [value, sector]);
 
   function handleSelect(s: ProductSuggestion) {
     onChange(s.standardName);
@@ -208,6 +212,10 @@ function ProductNameInput({
 
 export function RequestWizard() {
   const [customerName, setCustomerName] = useState("");
+  // Sector de TODA la solicitud (confirmado con el cliente, 2026-09-28): se
+  // elige una sola vez, no por fila, y acota la búsqueda de cada producto a
+  // ese rubro.
+  const [sector, setSector] = useState<Sector>("MEDICAMENTOS");
   const [lines, setLines] = useState<ItemLine[]>([{ text: "", quantity: 1 }]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -294,7 +302,7 @@ export function RequestWizard() {
       const res = await fetch("/api/customer-requests", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ customerName, items }),
+        body: JSON.stringify({ customerName, sector, items }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Error al procesar la solicitud.");
@@ -445,6 +453,24 @@ export function RequestWizard() {
         </div>
 
         <div>
+          <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Sector</label>
+          <select
+            value={sector}
+            onChange={(e) => setSector(e.target.value as Sector)}
+            className="mt-1 w-full rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+          >
+            {SECTOR_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-zinc-500">
+            Acota la búsqueda de productos a este rubro, para no mezclar proveedores de otros sectores.
+          </p>
+        </div>
+
+        <div>
           <div className="flex gap-1 text-sm">
             {(
               [
@@ -544,6 +570,7 @@ export function RequestWizard() {
                     value={line.text}
                     onChange={(text) => updateLine(i, { text })}
                     placeholder="Ej: Acetaminofén 500 mg x 100"
+                    sector={sector}
                   />
                   <input
                     type="number"

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db/client";
+import type { Sector } from "@/lib/generated/prisma/client";
 import { detectColumns, detectHeaderRowIndex } from "@/lib/excel/detector";
 import { detectPriceFormat, normalizeAvailability, normalizeExpirationLabel, parsePrice } from "@/lib/excel/normalizer";
 import { parseWorkbook } from "@/lib/excel/parser";
@@ -276,6 +277,14 @@ export interface ConfirmImportInput {
   headerRowIndex: number;
   mapping: ColumnMapping;
   priceFormat: PriceFormat;
+  /// Sector activo en la pestaña de Proveedores al importar este archivo
+  /// (confirmado con el cliente, 2026-09-28) -- queda fijado en cada
+  /// Product creado/actualizado por esta importación, para que la búsqueda
+  /// de productos en Solicitudes pueda filtrar por sector sin tener que
+  /// unir con Supplier en cada consulta. La ruta API siempre lo exige; queda
+  /// opcional aquí (con el mismo default que el esquema, "MEDICAMENTOS")
+  /// solo para no obligar a cada test/caller interno a pasarlo.
+  sector?: Sector;
   force?: boolean;
 }
 
@@ -434,6 +443,7 @@ export async function confirmSupplierImport(input: ConfirmImportInput): Promise<
           presentationUnit: row.attributes.presentationUnit,
           presentationDescription: row.originalProductName,
           laboratoryId,
+          sector: input.sector ?? "MEDICAMENTOS",
         };
 
         const existingProduct = productByNormalizedName.get(row.normalizedName);

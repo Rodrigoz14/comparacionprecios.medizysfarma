@@ -2,15 +2,22 @@ import { z } from "zod";
 import { prisma } from "@/lib/db/client";
 import { getVerifiedSession } from "@/lib/auth/dal";
 import { getLatestFilesBySupplier } from "@/lib/pricing/current-offers";
+import { SECTOR_VALUES } from "@/lib/sectors";
 
-export async function GET() {
+export async function GET(request: Request) {
   if (!(await getVerifiedSession())) {
     return Response.json({ error: "No autenticado." }, { status: 401 });
   }
 
+  // Filtro opcional por sector, para la barra de pestañas de Proveedores --
+  // sin él, se listan todos (comportamiento de siempre).
+  const { searchParams } = new URL(request.url);
+  const sectorParam = searchParams.get("sector");
+  const sector = SECTOR_VALUES.find((v) => v === sectorParam) ?? null;
+
   const suppliers = await prisma.supplier.findMany({
-    where: { status: "ACTIVE" },
-    select: { id: true, name: true },
+    where: { status: "ACTIVE", ...(sector ? { sectors: { has: sector } } : {}) },
+    select: { id: true, name: true, sectors: true },
     orderBy: { name: "asc" },
   });
 
@@ -42,6 +49,7 @@ export async function GET() {
       return {
         id: s.id,
         name: s.name,
+        sectors: s.sectors,
         offerCount: (currentCountBySupplier.get(s.id) ?? 0) + (manualCountBySupplier.get(s.id) ?? 0),
         lastUploadAt: lastFile?.processedAt ?? null,
         lastUploadName: lastFile?.originalName ?? null,
@@ -52,6 +60,9 @@ export async function GET() {
 
 const createSupplierSchema = z.object({
   name: z.string().trim().min(1, "El nombre no puede estar vacío."),
+  // Un proveedor puede vender en más de un sector a la vez (confirmado con
+  // el cliente, 2026-09-28).
+  sectors: z.array(z.enum(SECTOR_VALUES)).min(1, "Elige al menos un sector."),
 });
 
 export async function POST(request: Request) {
@@ -62,10 +73,10 @@ export async function POST(request: Request) {
   const body = await request.json();
   const parsed = createSupplierSchema.safeParse(body);
   if (!parsed.success) {
-    return Response.json({ error: "Nombre de proveedor inválido." }, { status: 400 });
+    return Response.json({ error: "Datos de proveedor inválidos." }, { status: 400 });
   }
 
-  const { name } = parsed.data;
+  const { name, sectors } = parsed.data;
   const existing = await prisma.supplier.findFirst({
     where: { name: { equals: name, mode: "insensitive" }, status: "ACTIVE" },
     select: { id: true, name: true },
@@ -75,8 +86,8 @@ export async function POST(request: Request) {
   }
 
   const supplier = await prisma.supplier.create({
-    data: { name },
-    select: { id: true, name: true },
+    data: { name, sectors },
+    select: { id: true, name: true, sectors: true },
   });
   return Response.json({ supplier }, { status: 201 });
 }

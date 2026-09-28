@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db/client";
+import type { Sector } from "@/lib/generated/prisma/client";
 import { guessIngredientWithAI } from "@/lib/matching/ai-ingredient-guess";
 import { judgeWithAI } from "@/lib/matching/ai-judge";
 import type { CandidateSearchResult } from "@/lib/matching/candidate-search";
@@ -59,7 +60,7 @@ function toGuessCandidate(
  * siempre — si la IA no está configurada, la red falla, o ninguna sugerencia
  * encuentra nada real, se devuelve una lista vacía sin ningún efecto.
  */
-async function tryAIFallback(rawText: string): Promise<CandidateSearchResult[]> {
+async function tryAIFallback(rawText: string, sector?: Sector): Promise<CandidateSearchResult[]> {
   const guesses = await guessIngredientWithAI(rawText);
   for (const guess of guesses) {
     // La IA a veces separa los principios activos de un combinado con "/"
@@ -67,7 +68,7 @@ async function tryAIFallback(rawText: string): Promise<CandidateSearchResult[]> 
     // separador real del catálogo (espacio o "+"); se normaliza a espacio
     // para que la búsqueda por subconjunto de palabras sí lo reconozca.
     const normalizedGuess = guess.replace(/\//g, " ");
-    const found = await searchCandidatesByIngredientText(normalizedGuess);
+    const found = await searchCandidatesByIngredientText(normalizedGuess, sector);
     if (found.length > 0) {
       return found.map((f) => ({ ...f, viaAI: true }));
     }
@@ -114,8 +115,8 @@ async function withStockNoted(candidates: ScoredCandidate[]): Promise<{ candidat
  * cualquier laboratorio); elegir el más barato entre ellos —comparando por
  * unidad, no por presentación— es responsabilidad del motor de precios, no de este.
  */
-export async function resolveProductMatch(rawText: string): Promise<MatchResult> {
-  const result = await resolveProductMatchCore(rawText);
+export async function resolveProductMatch(rawText: string, sector?: Sector): Promise<MatchResult> {
+  const result = await resolveProductMatchCore(rawText, sector);
   // Solo se filtra por existencia cuando se le está por ofrecer al cliente una
   // lista para ELEGIR (REVIEW, o NO_MATCH que igual muestra candidatos
   // cercanos): un MATCH ya es una decisión tomada, y si no hay existencia el
@@ -126,7 +127,7 @@ export async function resolveProductMatch(rawText: string): Promise<MatchResult>
   return { ...result, candidates, reasons: [...result.reasons, ...note] };
 }
 
-async function resolveProductMatchCore(rawText: string): Promise<MatchResult> {
+async function resolveProductMatchCore(rawText: string, sector?: Sector): Promise<MatchResult> {
   // No se exige presentación en lo que escribe un cliente: pide "cuántas
   // unidades", no "en caja de cuántas" — eso ya no es parte de la identidad
   // del medicamento (se compara por unidad en el motor de precios).
@@ -137,10 +138,12 @@ async function resolveProductMatchCore(rawText: string): Promise<MatchResult> {
     // más, se busca el ingrediente solo para poder mostrar qué concentraciones
     // existen en el catálogo y que el cliente elija — nunca se adivina cuál es.
     const ingredientGuess = extractIngredientGuess(rawText);
-    let found: CandidateSearchResult[] = ingredientGuess ? await searchCandidatesByIngredientText(ingredientGuess) : [];
+    let found: CandidateSearchResult[] = ingredientGuess
+      ? await searchCandidatesByIngredientText(ingredientGuess, sector)
+      : [];
 
     if (found.length === 0) {
-      found = await tryAIFallback(rawText);
+      found = await tryAIFallback(rawText, sector);
     }
 
     if (found.length > 0) {
@@ -193,7 +196,9 @@ async function resolveProductMatchCore(rawText: string): Promise<MatchResult> {
     : null;
 
   const genericKey = buildGenericKey(extraction.attributes);
-  const exactMatches = await prisma.product.findMany({ where: { genericKey, status: "ACTIVE" } });
+  const exactMatches = await prisma.product.findMany({
+    where: { genericKey, status: "ACTIVE", ...(sector ? { sector } : {}) },
+  });
   if (exactMatches.length > 0) {
     // Cuando el cliente pidió un tamaño de envase específico, se prefiere ese
     // producto exacto como matchedProductId[0] (el que se muestra como "el
@@ -219,13 +224,13 @@ async function resolveProductMatchCore(rawText: string): Promise<MatchResult> {
     };
   }
 
-  let found = await searchCandidates(extraction.attributes);
+  let found = await searchCandidates(extraction.attributes, sector);
   if (found.length === 0) {
     // Nada por ninguna regla determinística (ni exacto, ni sinónimo, ni typo,
     // ni subconjunto, ni marca): último recurso, preguntarle a la IA a qué
     // principio activo real podría referirse un texto muy mal escrito o mal
     // transcrito, y verificar esa sugerencia contra el catálogo real.
-    found = await tryAIFallback(rawText);
+    found = await tryAIFallback(rawText, sector);
   }
   if (found.length === 0) {
     return {
@@ -436,12 +441,12 @@ function describeMatch(candidate: ScoredCandidate): string {
   return `Mejor candidato: ${candidate.product.standardName} (${parts.join(", ")}).`;
 }
 
-export async function resolveCustomerRequestItem(customerRequestItemId: string): Promise<MatchResult> {
+export async function resolveCustomerRequestItem(customerRequestItemId: string, sector?: Sector): Promise<MatchResult> {
   const item = await prisma.customerRequestItem.findUniqueOrThrow({
     where: { id: customerRequestItemId },
   });
 
-  const result = await resolveProductMatch(item.originalText);
+  const result = await resolveProductMatch(item.originalText, sector);
 
   await prisma.customerRequestItem.update({
     where: { id: customerRequestItemId },

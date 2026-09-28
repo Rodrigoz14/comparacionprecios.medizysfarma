@@ -27,6 +27,22 @@ enum UserRole {
   CONSULTA
 }
 
+/// Rubro de negocio de un proveedor/producto/solicitud (confirmado con el
+/// cliente, 2026-09-28): un proveedor puede vender en varios sectores a la
+/// vez (Supplier.sectors), pero cada producto importado queda fijado a UNO
+/// solo -- el que estaba activo en la pestaña de Proveedores al subir ese
+/// archivo (ver lib/excel/importer.ts) -- y cada Solicitud también elige uno
+/// solo para toda la lista, no por fila. Esto permite que la búsqueda de
+/// producto filtre por `Product.sector` con una comparación simple e
+/// indexada, en vez de tener que unir con Supplier en cada consulta.
+enum Sector {
+  MEDICAMENTOS
+  DISPOSITIVOS_MEDICOS
+  ODONTOLOGIA
+  ASEO
+  PAPELERIA
+}
+
 enum Availability {
   AVAILABLE
   PARTIAL
@@ -129,6 +145,11 @@ model Supplier {
   phone           String?
   status          RecordStatus @default(ACTIVE)
   commercialTerms String?      @map("commercial_terms")
+  /// Rubros que este proveedor puede servir (puede ser más de uno, p. ej. un
+  /// distribuidor que vende tanto medicamentos como dispositivos médicos).
+  /// Determina qué proveedores se ofrecen en cada pestaña de sector al
+  /// importar (lib/sectors.ts, components/proveedores/ImportWizard.tsx).
+  sectors         Sector[]     @default([])
   createdAt       DateTime     @default(now()) @map("created_at")
   updatedAt       DateTime     @updatedAt @map("updated_at")
 
@@ -181,6 +202,11 @@ model Product {
   presentationDescription String?      @map("presentation_description")
   laboratoryId            String?      @map("laboratory_id")
   barcode                 String?      @unique
+  /// Rubro fijado al importar (el que estaba activo en la pestaña de
+  /// Proveedores para ese archivo, ver lib/excel/importer.ts) -- uno solo
+  /// por producto, así la búsqueda filtra con una comparación simple e
+  /// indexada en vez de unir con Supplier en cada consulta.
+  sector                  Sector       @default(MEDICAMENTOS)
   status                  RecordStatus @default(ACTIVE)
   createdAt               DateTime     @default(now()) @map("created_at")
   updatedAt               DateTime     @updatedAt @map("updated_at")
@@ -196,6 +222,7 @@ model Product {
   @@index([activeIngredient, concentration, dosageForm])
   @@index([genericKey])
   @@index([ingredientKey])
+  @@index([sector])
   @@index([laboratoryId])
   @@map("products")
 }
@@ -367,6 +394,9 @@ model CustomerRequest {
   status            CustomerRequestStatus @default(RECEIVED)
   originalFileUrl   String?               @map("original_file_url")
   notes             String?
+  /// Rubro de TODA la solicitud (uno solo, no por fila) -- acota la búsqueda
+  /// de producto de cada ítem a ese sector (lib/matching/candidate-search.ts).
+  sector            Sector                @default(MEDICAMENTOS)
   createdAt         DateTime              @default(now()) @map("created_at")
 
   responsibleUser User? @relation(fields: [responsibleUserId], references: [id])

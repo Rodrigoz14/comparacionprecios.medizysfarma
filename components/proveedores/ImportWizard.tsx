@@ -4,10 +4,13 @@ import { upload } from "@vercel/blob/client";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { AnalyzeResult, ColumnMapping, ColumnTarget, ImportReport, PriceFormat } from "@/lib/excel/types";
+import type { Sector } from "@/lib/generated/prisma/client";
+import { SECTOR_OPTIONS } from "@/lib/sectors";
 
 interface Supplier {
   id: string;
   name: string;
+  sectors: Sector[];
 }
 
 const TARGET_LABELS: Record<ColumnTarget | "none", string> = {
@@ -48,11 +51,12 @@ function samePriceFormat(a: PriceFormat, b: PriceFormat) {
   return a.thousands === b.thousands && a.decimal === b.decimal;
 }
 
-const PRODUCT_CATEGORIES = ["Medicamentos", "Dispositivos médicos", "Aseo", "Papelería", "Odontología"] as const;
-type ProductCategory = (typeof PRODUCT_CATEGORIES)[number];
-
 export function ImportWizard() {
-  const [category, setCategory] = useState<ProductCategory>("Medicamentos");
+  // El sector activo (pestaña) determina DOS cosas (confirmado con el
+  // cliente, 2026-09-28): qué proveedores se ofrecen en el desplegable (solo
+  // los que sirven ese sector) y bajo qué sector queda fijado cada producto
+  // del archivo que se importe a continuación (lib/excel/importer.ts).
+  const [sector, setSector] = useState<Sector>("MEDICAMENTOS");
 
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [supplierId, setSupplierId] = useState("");
@@ -60,6 +64,7 @@ export function ImportWizard() {
 
   const [creatingSupplier, setCreatingSupplier] = useState(false);
   const [newSupplierName, setNewSupplierName] = useState("");
+  const [newSupplierSectors, setNewSupplierSectors] = useState<Sector[]>(["MEDICAMENTOS"]);
   const [createSupplierError, setCreateSupplierError] = useState<string | null>(null);
   const [savingSupplier, setSavingSupplier] = useState(false);
 
@@ -82,8 +87,16 @@ export function ImportWizard() {
       .then((data) => setSuppliers(data.suppliers ?? []));
   }, []);
 
-  function handleCategoryChange(next: ProductCategory) {
-    setCategory(next);
+  // Proveedores que sirven el sector activo -- son los únicos que tiene
+  // sentido ofrecer para importarles un archivo bajo esa pestaña.
+  const visibleSuppliers = suppliers.filter((s) => s.sectors.includes(sector));
+
+  function handleSectorChange(next: Sector) {
+    setSector(next);
+    setSupplierId((prev) => {
+      const stillVisible = suppliers.find((s) => s.id === prev)?.sectors.includes(next);
+      return stillVisible ? prev : "";
+    });
     setFile(null);
     setAnalysis(null);
     setAnalyzeError(null);
@@ -138,14 +151,14 @@ export function ImportWizard() {
 
   async function handleCreateSupplier() {
     const name = newSupplierName.trim();
-    if (!name) return;
+    if (!name || newSupplierSectors.length === 0) return;
     setSavingSupplier(true);
     setCreateSupplierError(null);
     try {
       const res = await fetch("/api/suppliers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name, sectors: newSupplierSectors }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Error al crear el proveedor.");
@@ -154,12 +167,19 @@ export function ImportWizard() {
       setSuppliers((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
       setSupplierId(created.id);
       setNewSupplierName("");
+      setNewSupplierSectors([sector]);
       setCreatingSupplier(false);
     } catch (err) {
       setCreateSupplierError(err instanceof Error ? err.message : "Error inesperado.");
     } finally {
       setSavingSupplier(false);
     }
+  }
+
+  function toggleNewSupplierSector(value: Sector) {
+    setNewSupplierSectors((prev) =>
+      prev.includes(value) ? prev.filter((s) => s !== value) : [...prev, value],
+    );
   }
 
   function handleColumnTargetChange(columnIndex: number, target: ColumnTarget | "none") {
@@ -192,6 +212,7 @@ export function ImportWizard() {
           headerRowIndex: analysis.headerRowIndex,
           mapping,
           priceFormat,
+          sector,
           force,
         }),
       });
@@ -220,19 +241,19 @@ export function ImportWizard() {
       </div>
 
       <nav className="flex flex-wrap gap-1 border-b border-zinc-200 dark:border-zinc-800">
-        {PRODUCT_CATEGORIES.map((c) => (
+        {SECTOR_OPTIONS.map((o) => (
           <button
-            key={c}
+            key={o.value}
             type="button"
-            onClick={() => handleCategoryChange(c)}
-            aria-current={category === c ? "page" : undefined}
+            onClick={() => handleSectorChange(o.value)}
+            aria-current={sector === o.value ? "page" : undefined}
             className={`-mb-px rounded-t px-3 py-2 text-sm font-medium transition-colors ${
-              category === c
+              sector === o.value
                 ? "border-b-2 border-brand-blue text-brand-blue"
                 : "border-b-2 border-transparent text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
             }`}
           >
-            {c}
+            {o.label}
           </button>
         ))}
       </nav>
@@ -247,6 +268,7 @@ export function ImportWizard() {
                 onClick={() => {
                   setCreatingSupplier(true);
                   setCreateSupplierError(null);
+                  setNewSupplierSectors([sector]);
                 }}
                 className="text-xs font-medium text-zinc-600 underline hover:text-brand-blue dark:text-zinc-400 dark:hover:text-brand-blue"
               >
@@ -257,20 +279,37 @@ export function ImportWizard() {
 
           {creatingSupplier ? (
             <div className="mt-1 space-y-2">
+              <input
+                type="text"
+                value={newSupplierName}
+                onChange={(e) => setNewSupplierName(e.target.value)}
+                placeholder="Nombre del proveedor"
+                autoFocus
+                className="w-full rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              />
+              <div>
+                <span className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                  Sectores que vende (puede ser más de uno)
+                </span>
+                <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
+                  {SECTOR_OPTIONS.map((o) => (
+                    <label key={o.value} className="flex items-center gap-1.5 text-sm text-zinc-700 dark:text-zinc-300">
+                      <input
+                        type="checkbox"
+                        checked={newSupplierSectors.includes(o.value)}
+                        onChange={() => toggleNewSupplierSector(o.value)}
+                      />
+                      {o.label}
+                    </label>
+                  ))}
+                </div>
+              </div>
               <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={newSupplierName}
-                  onChange={(e) => setNewSupplierName(e.target.value)}
-                  placeholder="Nombre del proveedor"
-                  autoFocus
-                  className="w-full rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-                />
                 <button
                   type="button"
                   onClick={handleCreateSupplier}
-                  disabled={!newSupplierName.trim() || savingSupplier}
-                  className="shrink-0 rounded bg-brand-blue px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-navy disabled:opacity-40"
+                  disabled={!newSupplierName.trim() || newSupplierSectors.length === 0 || savingSupplier}
+                  className="rounded bg-brand-blue px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-navy disabled:opacity-40"
                 >
                   {savingSupplier ? "Creando..." : "Crear"}
                 </button>
@@ -281,7 +320,7 @@ export function ImportWizard() {
                     setNewSupplierName("");
                     setCreateSupplierError(null);
                   }}
-                  className="shrink-0 rounded border border-zinc-300 px-3 py-2 text-sm text-zinc-600 dark:border-zinc-700 dark:text-zinc-400"
+                  className="rounded border border-zinc-300 px-3 py-2 text-sm text-zinc-600 dark:border-zinc-700 dark:text-zinc-400"
                 >
                   Cancelar
                 </button>
@@ -295,7 +334,7 @@ export function ImportWizard() {
               className="mt-1 w-full rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
             >
               <option value="">Selecciona un proveedor</option>
-              {suppliers.map((s) => (
+              {visibleSuppliers.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}
                 </option>

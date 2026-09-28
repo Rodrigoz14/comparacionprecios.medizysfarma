@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db/client";
 import { getVerifiedSession } from "@/lib/auth/dal";
 import { levenshteinDistance } from "@/lib/matching/fuzzy";
 import { stripAccents } from "@/lib/matching/normalize";
+import { SECTOR_VALUES } from "@/lib/sectors";
 
 /**
  * Más permisivo que el umbral usado para principio activo
@@ -38,8 +39,17 @@ export async function GET(request: Request) {
   const q = (searchParams.get("q") ?? "").trim();
   if (q.length < 2) return Response.json({ products: [] });
 
+  // Acota la búsqueda al sector de la solicitud activa, cuando se manda --
+  // sin él, busca en todo el catálogo (comportamiento de siempre).
+  const sectorParam = searchParams.get("sector");
+  const sector = SECTOR_VALUES.find((v) => v === sectorParam) ?? null;
+
   const exactMatches = await prisma.product.findMany({
-    where: { status: "ACTIVE", standardName: { contains: q, mode: "insensitive" } },
+    where: {
+      status: "ACTIVE",
+      standardName: { contains: q, mode: "insensitive" },
+      ...(sector ? { sector } : {}),
+    },
     take: MAX_RESULTS,
     orderBy: { standardName: "asc" },
     select: {
@@ -62,7 +72,7 @@ export async function GET(request: Request) {
 
   const seen = new Set(exactMatches.map((p) => p.id));
   const pool = await prisma.product.findMany({
-    where: { status: "ACTIVE", id: { notIn: [...seen] } },
+    where: { status: "ACTIVE", id: { notIn: [...seen] }, ...(sector ? { sector } : {}) },
     take: FUZZY_SCAN_LIMIT,
     select: {
       id: true,
