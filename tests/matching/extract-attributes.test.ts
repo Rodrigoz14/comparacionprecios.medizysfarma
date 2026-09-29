@@ -264,6 +264,20 @@ describe("extractProductAttributes", () => {
     expect(cliente?.attributes.concentrationUnit).toBe("%");
   });
 
+  it("bug real (2026-09-29): 'AMP'/'AMPOLLA' (el envase) ya no es una forma farmaceutica aparte de 'Inyectable'", () => {
+    // Bodega registraba "DICLOFENACO 75MG/3ML C*100 AMP X 3ML" (sin decir
+    // "solucion inyectable") y nunca coincidia con el "DICLOFENACO 75MG/3ML
+    // SOLUCION INYECTABLE" del catalogo -- mismo medicamento, forma
+    // farmaceutica distinta ("Ampolla" vs "Inyectable"), generic_key distinto.
+    const bodega = extractProductAttributes("DICLOFENACO 75MG/3ML C*100 AMP X 3ML");
+    const catalogo = extractProductAttributes("DICLOFENACO 75MG/3ML (25MG/ML) SOLUCION INYECTABLE", {
+      requirePresentation: false,
+    });
+    expect(bodega?.attributes.dosageForm).toBe("Inyectable");
+    expect(catalogo?.attributes.dosageForm).toBe("Inyectable");
+    expect(buildGenericKey(bodega!.attributes)).toBe(buildGenericKey(catalogo!.attributes));
+  });
+
   it("reconoce 'gotas' como sinonimo coloquial de 'Solucion', no como forma aparte", () => {
     // Ningun producto real del catalogo tiene 'Gotas' como forma
     // farmaceutica: los proveedores siempre lo normalizan a 'Solucion' (p.

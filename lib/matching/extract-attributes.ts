@@ -78,8 +78,20 @@ const DOSAGE_FORM_MAP: Record<string, string> = {
   UNG: "Ungüento",
   UNGUENTO: "Ungüento",
   POMADA: "Ungüento",
-  AMPOLLA: "Ampolla",
-  AMP: "Ampolla",
+  // "AMP"/"AMPOLLA" describen el ENVASE (una ampolla), no una forma
+  // farmacéutica aparte de "Inyectable" -- el propio código ya las trata
+  // como lo mismo para precios (isSealedUnitForm incluía ambas como unidad
+  // sellada). Mantenerlas separadas solo causaba que el mismo medicamento
+  // quedara con genericKey distinto según si el texto decía "SOLUCION
+  // INYECTABLE" o solo "AMPOLLA"/"AMP" (bug real, 2026-09-29: bodega
+  // registraba "DICLOFENACO 75MG/3ML C*100 AMP X 3ML" y nunca coincidía con
+  // el "DICLOFENACO 75MG/3ML SOLUCION INYECTABLE" del catálogo). Además,
+  // "AMP" es una abreviatura muy ambigua (también aparece truncando otras
+  // palabras, p. ej. "amp espectro" por "amplio espectro" en un producto
+  // real) -- confirmado revisando el catálogo completo: los únicos 2
+  // productos que quedaban como "Ampolla" estaban mal clasificados.
+  AMPOLLA: "Inyectable",
+  AMP: "Inyectable",
   INY: "Inyectable",
   INYECTABLE: "Inyectable",
   // "Gotas" no existe como forma farmacéutica propia en ningún producto real
