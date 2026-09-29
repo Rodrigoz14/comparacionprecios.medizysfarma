@@ -23,6 +23,7 @@ export function WarehouseStockManager() {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<ImportReport | null>(null);
+  const [query, setQuery] = useState("");
 
   function fetchStock(): Promise<StockItem[]> {
     return fetch("/api/warehouse")
@@ -36,6 +37,10 @@ export function WarehouseStockManager() {
       .catch(() => setError("No se pudo cargar el inventario actual."))
       .finally(() => setLoading(false));
   }, []);
+
+  const filteredItems = (items ?? []).filter((item) =>
+    item.productName.toLowerCase().includes(query.trim().toLowerCase()),
+  );
 
   async function handleFileUpload(file: File) {
     setUploading(true);
@@ -120,14 +125,33 @@ export function WarehouseStockManager() {
         )}
 
         <section className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-          <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Inventario actual</h2>
+          <div className="flex items-center justify-between gap-4">
+            <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Inventario actual</h2>
+            {items && items.length > 0 && (
+              <span className="text-xs text-zinc-500">
+                {filteredItems.length} de {items.length}
+              </span>
+            )}
+          </div>
+          {!loading && items && items.length > 0 && (
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Buscar producto en bodega..."
+              className="mt-3 w-full rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            />
+          )}
           {loading && <p className="mt-2 text-xs text-zinc-500">Cargando...</p>}
           {!loading && items && items.length === 0 && (
             <p className="mt-2 text-xs text-zinc-500">Todavía no se ha subido ningún inventario de bodega.</p>
           )}
-          {!loading && items && items.length > 0 && (
+          {!loading && items && items.length > 0 && filteredItems.length === 0 && (
+            <p className="mt-3 text-xs text-zinc-500">Ningún producto coincide con la búsqueda.</p>
+          )}
+          {!loading && filteredItems.length > 0 && (
             <ul className="mt-3 divide-y divide-zinc-100 dark:divide-zinc-800">
-              {items.map((item) => (
+              {filteredItems.map((item) => (
                 <li key={item.genericKey} className="flex items-center justify-between py-2 text-sm">
                   <span className="text-zinc-700 dark:text-zinc-300">{item.productName}</span>
                   <span className="font-medium text-zinc-900 dark:text-zinc-50">{item.quantity} unidades</span>
