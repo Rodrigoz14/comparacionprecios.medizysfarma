@@ -62,6 +62,27 @@ describe("extractProductAttributes", () => {
       expect(result?.attributes.presentationQuantity).toBe(400);
       expect(result?.attributes.presentationUnit).toBe("g");
     });
+
+    it("bug real (2026-09-29): reconoce el tamaño del envase aunque no vaya pegado a una 'X' (Ofimedicas: 'Tarro 400 g x 1')", () => {
+      // El "x 1" del final es cuántos tarros trae la caja (1), no el tamaño
+      // del tarro (400g) -- antes se quedaba con el "x1" y el producto
+      // quedaba guardado como presentación "1 ml", carísimo por unidad.
+      const result = extractProductAttributes(
+        "Poliestireno Sulfonato Calcico 99 % polvo para reconstituir solucion o suspension oral Tarro 400 g x 1",
+      );
+      expect(result).not.toBeNull();
+      expect(result?.attributes.presentationQuantity).toBe(400);
+      expect(result?.attributes.presentationUnit).toBe("g");
+    });
+
+    it("no confunde una dosis repetida ('AMP 1G') con el tamaño del envase -- conserva el conteo real del 'X10'", () => {
+      // El respaldo de tamaño suelto no debe robarle el conteo real de
+      // ampollas a un "X10" solo porque la dosis (1g) se repite en el texto.
+      const result = extractProductAttributes("Ampicilina 1 g inyectable amp 1 g x 10 FARMALOGICA 20102511-01");
+      expect(result).not.toBeNull();
+      expect(result?.attributes.presentationQuantity).toBe(10);
+      expect(result?.attributes.presentationUnit).toBe("ampollas");
+    });
   });
 
   it("asume cantidad 1 para envases de una sola unidad sin numero explicito (CAJA X VIAL)", () => {
@@ -215,6 +236,32 @@ describe("extractProductAttributes", () => {
       concentrationUnit: "%",
       dosageForm: "Solución",
     });
+  });
+
+  it("bug real (2026-09-29): dos proveedores escriben la misma concentracion distinto (razon G/ML vs %) y deben quedar con la misma clave", () => {
+    // Ramédicas: "2G/10ML (0,2G/ML) (20%)". Disfarma: "20% SOL INY". Son el
+    // mismo Sulfato de Magnesio, pero antes quedaban con concentracion "2 G"
+    // y "20 %" respectivamente -- generic_key distinto, nunca se comparaban.
+    const ramedicas = extractProductAttributes(
+      "MAGNESIO SULFATO 2G/10ML (0,2G/ML) (20%) SOLUCION INYECTABLE CAJA X10",
+    );
+    const disfarma = extractProductAttributes("EPS-SULFATO MAGNESIO 20% SOL INY AMPX10ML CX40 - ROPSOHN");
+    expect(ramedicas?.attributes.concentration).toBe("20");
+    expect(ramedicas?.attributes.concentrationUnit).toBe("%");
+    expect(disfarma?.attributes.concentration).toBe("20");
+    expect(disfarma?.attributes.concentrationUnit).toBe("%");
+  });
+
+  it("bug real (2026-09-29): 'X/100G' (misma unidad arriba y abajo) se prefiere como '%' cuando el texto lo trae explicito", () => {
+    // Catalogo: "0,2G/100G (0,2%)". Cliente escribe directo "0.2%". Antes el
+    // catalogo quedaba en concentracion "0.2 G" (de la razon) y no coincidia
+    // con lo que escribe un cliente o cualquier proveedor que solo ponga "%".
+    const catalogo = extractProductAttributes("NITROFURAZONA 0,2G/100G (0,2%) POMADA TOPICA CAJA X40");
+    const cliente = extractProductAttributes("NITROFURAZONA POMADA  0.2 %/40 G", { requirePresentation: false });
+    expect(catalogo?.attributes.concentration).toBe("0.2");
+    expect(catalogo?.attributes.concentrationUnit).toBe("%");
+    expect(cliente?.attributes.concentration).toBe("0.2");
+    expect(cliente?.attributes.concentrationUnit).toBe("%");
   });
 
   it("reconoce 'gotas' como sinonimo coloquial de 'Solucion', no como forma aparte", () => {

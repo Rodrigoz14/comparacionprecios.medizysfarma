@@ -178,6 +178,17 @@ async function main() {
     });
   }
 
+  // Dipirona (metamizol sódico): bodega registra el inventario como "Dipirona
+  // SÓDICA", pero los 3 proveedores lo describen solo como "Dipirona" -- sin
+  // este sinónimo, el genericKey queda distinto ("dipirona sodica..." vs
+  // "dipirona...") y la existencia en bodega nunca se descuenta al cotizar
+  // (bug real reportado por el cliente, 2026-09-29).
+  await prisma.ingredientSynonym.upsert({
+    where: { term: "dipirona sodica" },
+    update: {},
+    create: { term: "dipirona sodica", canonicalTerm: "dipirona", source: "Variante real de bodega (manual)" },
+  });
+
   console.log("Seed completado: proveedores, laboratorios, productos, ofertas y sinónimos de prueba creados.");
 }
 

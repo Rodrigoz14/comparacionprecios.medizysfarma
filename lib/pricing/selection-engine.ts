@@ -8,6 +8,7 @@ import { isSafeExpirationLabel } from "@/lib/pricing/expiration";
 import { isSealedUnitForm } from "@/lib/pricing/measured-forms";
 import { DEFAULT_PRICING_RULES } from "@/lib/pricing/rules";
 import { rankOffers } from "@/lib/pricing/supplier-ranking";
+import { findWarehouseStock } from "@/lib/pricing/warehouse-lookup";
 import { findSupplierProfile } from "@/lib/excel/supplier-profiles";
 import type { OfferOption, PricingRules, SelectionResult } from "@/lib/pricing/types";
 
@@ -63,7 +64,7 @@ export async function selectBestOffer(
   // Se descuenta lo que ya hay en bodega antes de cotizar (por genericKey,
   // igual que la selección de oferta: el laboratorio no importa). Si la
   // bodega ya cubre lo pedido, no tiene sentido comparar ni comprar nada.
-  const stock = await prisma.warehouseStock.findUnique({ where: { genericKey: matchedProduct.genericKey } });
+  const stock = await findWarehouseStock(matchedProduct);
   const warehouseStock = stock?.quantity ?? 0;
   const quantityToPurchase = Math.max(0, item.requestedQuantity - warehouseStock);
   await prisma.customerRequestItem.update({

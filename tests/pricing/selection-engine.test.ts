@@ -388,6 +388,60 @@ describe("selectBestOffer (descuento de inventario propio en bodega)", () => {
   });
 });
 
+describe("selectBestOffer (bodega descuenta aunque el ingrediente esté registrado con un nombre distinto)", () => {
+  const productIds: string[] = [];
+  const laboratoryIds: string[] = [];
+  const supplierIds: string[] = [];
+  let genericKey: string;
+
+  beforeAll(async () => {
+    // Sinónimo ficticio propio de este test (no el real "dipirona sodica" de
+    // producción) para no depender de datos de seed.
+    await prisma.ingredientSynonym.upsert({
+      where: { term: "bodegasinonimo sodica" },
+      update: {},
+      create: { term: "bodegasinonimo sodica", canonicalTerm: "bodegasinonimo", source: "test" },
+    });
+
+    const product = await createProduct("BODEGASINONIMO JBE 100MG X1", "TestLab Bodega Sinonimo");
+    productIds.push(product.id);
+    laboratoryIds.push(product.laboratoryId!);
+    genericKey = product.genericKey; // "bodegasinonimo 100 mg jarabe"
+
+    const supplier = await prisma.supplier.create({ data: { name: "Proveedor Bodega Sinonimo Test" } });
+    supplierIds.push(supplier.id);
+    await prisma.supplierOffer.create({
+      data: { supplierId: supplier.id, productId: product.id, price: 1000, availability: "AVAILABLE", stockQuantity: 1000 },
+    });
+
+    // Bodega registra el mismo genérico, pero con el nombre químico completo
+    // ("...SODICA"), como pasa de verdad con "Dipirona" vs "Dipirona sódica".
+    await prisma.warehouseStock.create({
+      data: { genericKey: "bodegasinonimo sodica 100 mg jarabe", quantity: 50 },
+    });
+  });
+
+  afterAll(async () => {
+    await prisma.warehouseStock.deleteMany({ where: { genericKey: { in: [genericKey, "bodegasinonimo sodica 100 mg jarabe"] } } });
+    await prisma.priceComparison.deleteMany({ where: { productId: { in: productIds } } });
+    await prisma.supplierOffer.deleteMany({ where: { productId: { in: productIds } } });
+    await prisma.supplier.deleteMany({ where: { id: { in: supplierIds } } });
+    await prisma.product.deleteMany({ where: { id: { in: productIds } } });
+    await prisma.laboratory.deleteMany({ where: { id: { in: laboratoryIds } } });
+    await prisma.ingredientSynonym.deleteMany({ where: { term: "bodegasinonimo sodica" } });
+  });
+
+  it("bug real (2026-09-29): descuenta la existencia aunque bodega la haya registrado con un nombre quimico distinto (ej. Dipirona vs Dipirona sodica)", async () => {
+    const { itemId } = await createRequestItem("BODEGASINONIMO JBE 100MG X1", 30);
+    await resolveCustomerRequestItem(itemId);
+
+    const result = await selectBestOffer(itemId);
+    expect(result.warehouseStock).toBe(50); // encontrado via sinonimo, no por genericKey exacto
+    expect(result.status).toBe("COVERED_BY_STOCK");
+    expect(result.quantityToPurchase).toBe(0);
+  });
+});
+
 // Caso real reportado por el cliente: "Beta metildigoxina solucion inyectable"
 // y "Furosemida solucion inyectable" -- el sistema ofrecia una ampolla de
 // 100ml como si fuera intercambiable "1 a 1" con una de 2ml para la misma

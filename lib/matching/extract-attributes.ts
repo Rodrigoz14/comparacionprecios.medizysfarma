@@ -19,6 +19,14 @@ const PRESENTATION_QTY_RE = /[X*]\s*(\d+(?:[.,]\d+)?)\s*(ML|L|G)?\b/gi;
 // Envases de una sola unidad donde el proveedor no escribe "X1" (p. ej.
 // biológicos/oncológicos vendidos como "CAJA X VIAL"): se asume cantidad 1.
 const SINGLE_UNIT_CONTAINER_RE = /[X*]\s*(VIAL|AMPOLLA|AMPOLLAS|JERINGA|FRASCO|TUBO|SOBRE)\b/i;
+// Cuando el tamaño real del envase va SUELTO, sin "X"/"*" pegado ("Tarro 400
+// G X 1" -- el "X 1" del final es cuántos tarros trae la caja, no el tamaño
+// del tarro), PRESENTATION_QTY_RE nunca lo encuentra porque exige X/* justo
+// antes del número. Solo se usa como respaldo cuando no hay ningún candidato
+// "X<numero><unidad>" ya encontrado (ver más abajo) -- bug real (2026-09-29):
+// un Tarro de 400g de Ofimedicas quedaba guardado como presentación "1 ml"
+// (tomando el "X1" final) en vez de "400 g".
+const BARE_MEASURE_RE = /(\d+(?:[.,]\d+)?)\s*(ML|L|G)\b/gi;
 // Una dosis adicional de un combinado, pegada con "+" justo después de la
 // anterior ("...5MG+60MG..."): cada principio activo trae su propia unidad
 // repetida, a diferencia del formato de razón fija ("500/125 MG") que
@@ -358,6 +366,36 @@ export function extractProductAttributes(
     const end = start + m[0].length;
     return end <= concentrationStart || start >= concentrationEnd;
   });
+  // "100MG/5ML" -- el "/5ML" es la base por volumen de la propia
+  // concentración (dosis por cada 5ml), no un tamaño de envase aparte.
+  // CONCENTRATION_RE nunca lo incluyó en concentrationEnd (su razón interna
+  // solo cubre "500/125", mismas unidades a ambos lados), así que se extiende
+  // aparte, solo para que el respaldo de tamaño suelto no lo confunda con una
+  // presentación real (bug real: "JARABETEST 100MG/5ML JBE" sin tamaño de
+  // frasco mencionado tomaba el "5ML" como si el cliente hubiera pedido
+  // frascos de 5ml).
+  const concentrationRatioSuffix = /^\s*\/\s*\d+(?:[.,]\d+)?\s*(ML|L|G)\b/i.exec(upper.slice(concentrationEnd));
+  const bareMeasureExclusionEnd = concentrationRatioSuffix
+    ? concentrationEnd + concentrationRatioSuffix[0].length
+    : concentrationEnd;
+  // Respaldo para cuando el tamaño real ("400 G") va suelto en vez de pegado
+  // a una "X" (ver BARE_MEASURE_RE) -- solo se activa si ningún candidato
+  // "X<numero><unidad>" ya trae unidad propia, para no interferir con el
+  // caso normal (que siempre gana si existe). Se descarta cualquier
+  // coincidencia que repita el mismo número y unidad de alguna dosis ya
+  // extraída (p. ej. "AMPICILINA 1G INYECTABLE AMP 1G X10" -- el "1G" de
+  // "AMP 1G" solo repite la dosis, no describe un tamaño de envase distinto;
+  // sin este descarte, se perdía el conteo real de ampollas del "X10").
+  const doseValues = new Set((doseParts?.parts ?? []).map((p) => `${p.value}\u0000${p.unit}`));
+  const bareMeasureCandidates = presentationCandidates.some((m) => m[2])
+    ? []
+    : [...upper.matchAll(BARE_MEASURE_RE)].filter((m) => {
+        const start = m.index;
+        const end = start + m[0].length;
+        if (doseValues.has(`${m[1].replace(",", ".")}\u0000${m[2].toUpperCase()}`)) return false;
+        return end <= concentrationStart || start >= bareMeasureExclusionEnd;
+      });
+  const allPresentationCandidates = [...presentationCandidates, ...bareMeasureCandidates];
   // Cuando hay varias coincidencias (p. ej. "C*1 FCO X 240ML"), se prefiere
   // la que trae volumen/peso explícito sobre un conteo de envases genérico.
   // Si ninguna trae unidad (p. ej. "C*1 FCO X 60 TAB"), se prefiere la
@@ -368,8 +406,8 @@ export function extractProductAttributes(
   // el texto, y el precio de empaque terminaba calculado como si el frasco
   // trajera 1 sola tableta en vez de 60.
   const presentationMatch =
-    presentationCandidates.find((m) => m[2]) ??
-    presentationCandidates.reduce<RegExpMatchArray | null>((best, candidate) => {
+    allPresentationCandidates.find((m) => m[2]) ??
+    allPresentationCandidates.reduce<RegExpMatchArray | null>((best, candidate) => {
       if (!best) return candidate;
       const bestQty = Number.parseFloat(best[1].replace(",", "."));
       const candidateQty = Number.parseFloat(candidate[1].replace(",", "."));
@@ -469,6 +507,27 @@ export function extractProductAttributes(
       finalActiveIngredient = paired.map((p) => p.name).join(" + ");
       finalConcentration = paired.map((p) => p.value).join("/");
       finalConcentrationUnit = paired[0].unit;
+    }
+  }
+
+  // Cuando el mismo texto trae la concentración expresada de más de una forma
+  // equivalente (p. ej. "2G/10ML (0,2G/ML) (20%)" -- las tres describen la
+  // misma dosis), se prefiere la que viene en "%": es la única forma que no
+  // depende de cómo cada proveedor eligió expresar la razón masa/volumen, así
+  // que dos proveedores con la MISMA concentración real siempre terminan con
+  // la misma clave genérica -- bug real confirmado (2026-09-29): el Sulfato
+  // de Magnesio de Ramédicas ("2G/10ML...(20%)") y el de Disfarma ("20% SOL
+  // INY") quedaban con concentración "2 G" y "20 %" respectivamente, en
+  // genericKey distinto, y nunca se comparaban entre sí; lo mismo le pasaba a
+  // la Nitrofurazona ("0,2G/100G (0,2%)" vs cómo la escribe un cliente,
+  // "0.2%", directo). Solo aplica a principio activo único (los combinados ya
+  // quedaron resueltos arriba) y solo si el propio texto trae un "%" en algún
+  // lado -- nunca se convierte una unidad a otra por cuenta propia.
+  if (doseParts.parts.length === 1) {
+    const percentMatch = concentrationCandidates.find((m) => m[2]?.toUpperCase() === "%");
+    if (percentMatch) {
+      finalConcentration = percentMatch[1].replace(",", ".");
+      finalConcentrationUnit = "%";
     }
   }
 
