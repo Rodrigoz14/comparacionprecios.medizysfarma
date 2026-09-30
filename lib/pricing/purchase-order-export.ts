@@ -19,11 +19,21 @@ interface SupplierOrderLine {
   unitPrice: number;
 }
 
+interface WarehouseCoveredLine {
+  clientName: string;
+  productName: string;
+  requestedQuantity: number;
+  coveredByWarehouse: number;
+  pendingToPurchase: number;
+}
+
 /**
  * Arma el pedido a colocarle a cada proveedor a partir de las ofertas ya
  * seleccionadas (`PriceComparison.selected`) de una solicitud de cliente.
  * Solo entran ítems con `quantityToPurchase > 0`: lo cubierto por bodega no
- * genera pedido de compra. Devuelve null si no hay nada que comprar.
+ * genera pedido de compra, pero sí aparece en la pestaña "Bodega" (ver más
+ * abajo). Devuelve null si no hay nada que comprar NI nada cubierto por
+ * bodega para mostrar.
  */
 export async function buildPurchaseOrderWorkbook(
   customerRequestId: string,
@@ -44,6 +54,23 @@ export async function buildPurchaseOrderWorkbook(
       },
     },
   });
+
+  // Ítems con existencia en bodega al momento de cotizar (cubiertos del todo
+  // o en parte) -- se muestran aparte para que quede claro qué no hubo que
+  // comprarle a ningún proveedor, sin importar si `quantityToPurchase` quedó
+  // en 0 (cobertura total, ni siquiera entra en el query de arriba) o mayor
+  // a 0 (cobertura parcial, el resto sí aparece en la pestaña del proveedor).
+  const warehouseCoveredItems = await prisma.customerRequestItem.findMany({
+    where: { customerRequestId, warehouseStock: { gt: 0 } },
+    include: { matchedProduct: true },
+  });
+  const warehouseLines: WarehouseCoveredLine[] = warehouseCoveredItems.map((item) => ({
+    clientName: item.clientName ?? customerRequest.customerName,
+    productName: item.matchedProduct?.standardName ?? item.originalText,
+    requestedQuantity: item.requestedQuantity,
+    coveredByWarehouse: Math.min(item.requestedQuantity, item.warehouseStock!),
+    pendingToPurchase: item.quantityToPurchase ?? 0,
+  }));
 
   const linesBySupplier = new Map<string, SupplierOrderLine[]>();
 
@@ -96,9 +123,30 @@ export async function buildPurchaseOrderWorkbook(
     linesBySupplier.set(comparison.supplier.name, list);
   }
 
-  if (linesBySupplier.size === 0) return null;
+  if (linesBySupplier.size === 0 && warehouseLines.length === 0) return null;
 
   const workbook = new ExcelJS.Workbook();
+
+  if (warehouseLines.length > 0) {
+    const warehouseSheet = workbook.addWorksheet("Bodega");
+    warehouseSheet.columns = [
+      { header: "Cliente", key: "client", width: 20 },
+      { header: "Producto", key: "product", width: 45 },
+      { header: "Cantidad pedida", key: "requested", width: 16 },
+      { header: "Cubierto por bodega", key: "covered", width: 18 },
+      { header: "Pendiente por comprar", key: "pending", width: 20 },
+    ];
+    warehouseSheet.getRow(1).font = { bold: true };
+    for (const line of warehouseLines) {
+      warehouseSheet.addRow({
+        client: line.clientName,
+        product: line.productName,
+        requested: line.requestedQuantity,
+        covered: line.coveredByWarehouse,
+        pending: line.pendingToPurchase,
+      });
+    }
+  }
 
   const summary = workbook.addWorksheet("Resumen");
   summary.columns = [
@@ -157,8 +205,15 @@ export async function buildPurchaseOrderWorkbook(
 
   const arrayBuffer = await workbook.xlsx.writeBuffer();
   const safeCustomerName = customerRequest.customerName.replace(/[^a-zA-Z0-9-_ ]/g, "").trim() || "cliente";
-  const dateStamp = new Date().toISOString().slice(0, 10);
-  const fileName = `pedido-${safeCustomerName}-${dateStamp}.xlsx`;
+  const now = new Date();
+  // Formato pedido por el cliente: DD/MM/AAAA -- pero "/" no es válido en un
+  // nombre de archivo (Windows y la mayoría de navegadores lo tratan como
+  // separador de carpeta), así que se usa "-" entre los números manteniendo
+  // el mismo orden día-mes-año.
+  const dd = String(now.getDate()).padStart(2, "0");
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const dateStamp = `${dd}-${mm}-${now.getFullYear()}`;
+  const fileName = `Pedido_${safeCustomerName}_${dateStamp}.xlsx`;
 
   return { buffer: Buffer.from(arrayBuffer), fileName };
 }

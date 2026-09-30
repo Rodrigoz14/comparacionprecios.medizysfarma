@@ -10,7 +10,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const result = await buildPurchaseOrderWorkbook(id);
   if (!result) {
     return Response.json(
-      { error: "No hay productos para comprar en esta solicitud (todo cubierto por bodega o sin ofertas seleccionadas)." },
+      { error: "No hay productos para comprar ni cubiertos por bodega en esta solicitud (sin ofertas seleccionadas)." },
       { status: 400 },
     );
   }

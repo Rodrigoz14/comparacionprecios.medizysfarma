@@ -114,4 +114,36 @@ describe("buildPurchaseOrderWorkbook (integracion contra base de datos real)", (
     expect(disfarmaSheet.getRow(2).getCell(6).value).toBe(3); // empaques a pedir
     expect(disfarmaSheet.getRow(2).getCell(2).value).toBe("DIS-001");
   });
+
+  it("agrega una pestaña 'Bodega' con lo cubierto por existencia propia, completo o en parte", async () => {
+    const request = await prisma.customerRequest.create({ data: { customerName: "Cliente Pedido Bodega" } });
+    requestIds.push(request.id);
+
+    // productA (PEDIDOTEST) pide 5, bodega solo cubre 2 -> quedan 3 por comprar.
+    await prisma.warehouseStock.create({ data: { genericKey: genericKeys[0], quantity: 2 } });
+    const itemA = await prisma.customerRequestItem.create({
+      data: { customerRequestId: request.id, originalText: "PEDIDOTEST TAB 500MG X10", requestedQuantity: 5 },
+    });
+    await resolveCustomerRequestItem(itemA.id);
+    await selectBestOffer(itemA.id);
+
+    const result = await buildPurchaseOrderWorkbook(request.id);
+    expect(result).not.toBeNull();
+
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(result!.buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
+
+    const warehouseSheet = workbook.getWorksheet("Bodega")!;
+    expect(warehouseSheet).toBeDefined();
+    expect(warehouseSheet.getRow(2).getCell(1).value).toBe("Cliente Pedido Bodega");
+    expect(warehouseSheet.getRow(2).getCell(3).value).toBe(5); // cantidad pedida
+    expect(warehouseSheet.getRow(2).getCell(4).value).toBe(2); // cubierto por bodega
+    expect(warehouseSheet.getRow(2).getCell(5).value).toBe(3); // pendiente por comprar
+
+    // Lo pendiente (3) sí debe seguir apareciendo en la hoja del proveedor.
+    const disfarmaSheet = workbook.getWorksheet("Disfarma Test Pedido")!;
+    expect(disfarmaSheet.getRow(2).getCell(6).value).toBe(3);
+
+    await prisma.warehouseStock.deleteMany({ where: { genericKey: genericKeys[0] } });
+  });
 });
