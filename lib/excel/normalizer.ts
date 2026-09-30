@@ -64,7 +64,12 @@ export function detectPriceFormat(samples: Array<string | number | null | undefi
 }
 
 const AVAILABLE_TOKENS = new Set(["si", "s", "disponible", "disp", "true", "yes", "x", "en stock"]);
-const UNAVAILABLE_TOKENS = new Set(["no", "n", "agotado", "sin stock", "false", "0"]);
+// "no disponible" (confirmado con el cliente, 2026-09-30: algunos
+// proveedores reportan la columna de stock como texto "Disponible"/"No
+// Disponible" en vez de una cantidad) no coincidía con ningún token de esta
+// lista -- solo "no" a secas -- así que caía en UNKNOWN (elegible con
+// advertencia) en vez de descartarse como sin existencias.
+const UNAVAILABLE_TOKENS = new Set(["no", "n", "no disponible", "agotado", "sin stock", "false", "0"]);
 
 export function normalizeAvailability(raw: string | number | null | undefined): {
   availability: Availability;

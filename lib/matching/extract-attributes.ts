@@ -386,7 +386,11 @@ export function extractProductAttributes(
   // presentación real (bug real: "JARABETEST 100MG/5ML JBE" sin tamaño de
   // frasco mencionado tomaba el "5ML" como si el cliente hubiera pedido
   // frascos de 5ml).
-  const concentrationRatioSuffix = /^\s*\/\s*\d+(?:[.,]\d+)?\s*(ML|L|G)\b/i.exec(upper.slice(concentrationEnd));
+  // El denominador es opcional ("10MG/ML" implica "10MG/1ML", tan válido
+  // como escribirlo explícito) -- confirmado con el cliente (2026-09-30):
+  // "50MG/5ML" y "10MG/ML" son la misma concentración real, y ambas formas
+  // aparecen en datos reales.
+  const concentrationRatioSuffix = /^\s*\/\s*(\d+(?:[.,]\d+)?)?\s*(ML|L|G)\b/i.exec(upper.slice(concentrationEnd));
   const bareMeasureExclusionEnd = concentrationRatioSuffix
     ? concentrationEnd + concentrationRatioSuffix[0].length
     : concentrationEnd;
@@ -540,6 +544,22 @@ export function extractProductAttributes(
     if (percentMatch) {
       finalConcentration = percentMatch[1].replace(",", ".");
       finalConcentrationUnit = "%";
+    } else if (concentrationRatioSuffix) {
+      // "50MG/5ML" y "10MG/1ML" (o "10MG/ML", denominador 1 implícito) son
+      // la MISMA concentración real (10mg por cada ml) -- confirmado con el
+      // cliente (2026-09-30): sin reducir la razón a "por 1 unidad de
+      // volumen/peso", dos ofertas idénticas descritas con un volumen de
+      // referencia distinto (5ml vs 1ml) quedaban con concentración "50" y
+      // "10" respectivamente, genericKey distinto, y nunca se comparaban ni
+      // se homologaban entre sí al buscar por texto de cliente.
+      const denominatorValue = concentrationRatioSuffix[1]
+        ? Number.parseFloat(concentrationRatioSuffix[1].replace(",", "."))
+        : 1;
+      const numeratorValue = Number.parseFloat(finalConcentration);
+      if (denominatorValue > 0 && Number.isFinite(numeratorValue)) {
+        finalConcentration = String(Math.round((numeratorValue / denominatorValue) * 10000) / 10000);
+        finalConcentrationUnit = `${finalConcentrationUnit}/${concentrationRatioSuffix[2].toUpperCase()}`;
+      }
     }
   }
 

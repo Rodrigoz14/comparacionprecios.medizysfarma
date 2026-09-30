@@ -264,6 +264,22 @@ describe("extractProductAttributes", () => {
     expect(cliente?.attributes.concentrationUnit).toBe("%");
   });
 
+  it("bug real (2026-09-30): 'XMG/YML' se reduce a 'por 1 ml', para que distintos volumenes de referencia den la misma concentracion", () => {
+    // "50MG/5ML" (10mg por cada ml) y "10MG/1ML" o "10MG/ML" (denominador 1
+    // implicito) son la misma concentracion real, escrita de tres formas.
+    const a = extractProductAttributes("MEDICAMENTOTEST 50MG/5ML SOLUCION INYECTABLE", { requirePresentation: false });
+    const b = extractProductAttributes("MEDICAMENTOTEST 10MG/1ML SOLUCION INYECTABLE", { requirePresentation: false });
+    const c = extractProductAttributes("MEDICAMENTOTEST 10MG/ML SOLUCION INYECTABLE", { requirePresentation: false });
+    expect(a?.attributes.concentration).toBe("10");
+    expect(a?.attributes.concentrationUnit).toBe("MG/ML");
+    expect(b?.attributes.concentration).toBe("10");
+    expect(b?.attributes.concentrationUnit).toBe("MG/ML");
+    expect(c?.attributes.concentration).toBe("10");
+    expect(c?.attributes.concentrationUnit).toBe("MG/ML");
+    expect(buildGenericKey(a!.attributes)).toBe(buildGenericKey(b!.attributes));
+    expect(buildGenericKey(a!.attributes)).toBe(buildGenericKey(c!.attributes));
+  });
+
   it("bug real (2026-09-29): 'AMP'/'AMPOLLA' (el envase) ya no es una forma farmaceutica aparte de 'Inyectable'", () => {
     // Bodega registraba "DICLOFENACO 75MG/3ML C*100 AMP X 3ML" (sin decir
     // "solucion inyectable") y nunca coincidia con el "DICLOFENACO 75MG/3ML

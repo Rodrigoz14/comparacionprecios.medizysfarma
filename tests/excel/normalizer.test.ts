@@ -61,6 +61,11 @@ describe("normalizeAvailability", () => {
     expect(normalizeAvailability("NO").availability).toBe("OUT_OF_STOCK");
   });
 
+  it("bug real (2026-09-30): 'No Disponible' (columna de stock en texto) se descarta como sin existencias, no queda en desconocido", () => {
+    expect(normalizeAvailability("No Disponible")).toEqual({ availability: "OUT_OF_STOCK", stock: 0 });
+    expect(normalizeAvailability("Disponible").availability).toBe("AVAILABLE");
+  });
+
   it("interpreta cantidades numericas como stock", () => {
     expect(normalizeAvailability(50)).toEqual({ availability: "AVAILABLE", stock: 50 });
     expect(normalizeAvailability(0)).toEqual({ availability: "OUT_OF_STOCK", stock: 0 });
