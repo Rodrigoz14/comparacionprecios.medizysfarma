@@ -59,7 +59,11 @@ describe("importWarehouseStock (integracion contra base de datos real)", () => {
     await prisma.laboratory.deleteMany({ where: { id: { in: laboratoryIds } } });
   });
 
-  it("suma cantidades de filas distintas que caen en el mismo generico, y reporta filas no identificadas", async () => {
+  it("suma cantidades de filas distintas que caen en el mismo generico, y guarda las no identificadas igual (no las descarta)", async () => {
+    // Confirmado con el cliente (2026-09-29): una fila sin match confiable
+    // contra el catálogo (p. ej. un insumo que todavía no tiene proveedor
+    // propio) no debe perderse -- queda en bodega bajo su propio nombre,
+    // marcada para revisión, no descontable automáticamente pero SÍ visible.
     const buffer = await buildXlsxBuffer([
       ["Producto", "Cantidad"],
       ["BODEGAIMPORT TAB 250MG X20", 15], // genfar, homologa por generico
@@ -72,11 +76,20 @@ describe("importWarehouseStock (integracion contra base de datos real)", () => {
     expect(report.totalRows).toBe(3);
     expect(report.matchedRows).toBe(2);
     expect(report.unmatchedRows).toBe(1);
-    expect(report.distinctProducts).toBe(1);
+    expect(report.distinctProducts).toBe(2); // el identificado + el que no, ninguno se descarta
     expect(report.errors[0].text).toContain("INGREDIENTEDESCONOCIDOXYZ");
 
     const stock = await prisma.warehouseStock.findUnique({ where: { genericKey: genericKeys[0] } });
     expect(stock?.quantity).toBe(40); // 15 + 25
+    expect(stock?.rawProductName).toBeNull(); // sí quedó ligado a un producto real
+
+    const unidentified = await prisma.warehouseStock.findUnique({
+      where: { genericKey: normalizeText("INGREDIENTEDESCONOCIDOXYZ TAB 999MG X1") },
+    });
+    expect(unidentified?.quantity).toBe(5);
+    expect(unidentified?.rawProductName).toBe("INGREDIENTEDESCONOCIDOXYZ TAB 999MG X1");
+
+    await prisma.warehouseStock.deleteMany({ where: { genericKey: unidentified!.genericKey } });
   });
 
   it("una nueva importacion reemplaza el inventario anterior por completo", async () => {

@@ -237,7 +237,16 @@ model WarehouseStock {
   id         String   @id @default(cuid())
   genericKey String   @unique @map("generic_key")
   quantity   Int
-  updatedAt  DateTime @updatedAt @map("updated_at")
+  /// Texto original de la fila cuando NO se pudo homologar con certeza contra
+  /// el catálogo (confirmado con el cliente, 2026-09-29: ya no se descartan
+  /// filas sin match -- se guardan igual, agrupadas por su propio texto
+  /// normalizado en `genericKey`, para no perder existencia real de bodega
+  /// solo porque el producto no está aún en el catálogo de proveedores, p.
+  /// ej. dispositivos médicos u odontología). Null cuando sí hay un producto
+  /// real emparejado, porque ahí el nombre se muestra a partir del producto
+  /// (ver app/api/warehouse/route.ts).
+  rawProductName String?  @map("raw_product_name")
+  updatedAt      DateTime @updatedAt @map("updated_at")
 
   @@map("warehouse_stock")
 }

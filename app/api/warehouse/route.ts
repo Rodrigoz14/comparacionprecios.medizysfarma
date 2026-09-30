@@ -33,9 +33,14 @@ export async function GET() {
       genericKey: s.genericKey,
       quantity: s.quantity,
       updatedAt: s.updatedAt,
+      // Sin producto homologado, se muestra el texto original de la fila
+      // (guardado tal cual en rawProductName) en vez de la clave interna --
+      // confirmado con el cliente (2026-09-29): estas filas ya no se
+      // descartan, así que necesitan un nombre legible, no técnico.
       productName: product
         ? `${product.activeIngredient} ${product.concentration}${product.concentrationUnit} — ${product.dosageForm}`
-        : s.genericKey,
+        : (s.rawProductName ?? s.genericKey),
+      identified: Boolean(product),
     };
   });
 

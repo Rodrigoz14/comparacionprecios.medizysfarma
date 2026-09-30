@@ -2,6 +2,7 @@ import { mapWithConcurrency } from "@/lib/concurrency";
 import { prisma } from "@/lib/db/client";
 import { parseWorkbook } from "@/lib/excel/parser";
 import { resolveProductMatch } from "@/lib/matching/matching-service";
+import { normalizeText } from "@/lib/matching/normalize";
 import { detectRequestColumns } from "@/lib/solicitudes/detect-columns";
 
 export interface WarehouseImportRowError {
@@ -21,11 +22,19 @@ export interface WarehouseImportReport {
 /**
  * Reemplaza el inventario de bodega completo a partir de un Excel con
  * producto + cantidad. Se homologa cada fila con el mismo motor de
- * homologación que las solicitudes de cliente (Sección 5): solo las filas
- * con `decision === "MATCH"` entran al inventario, para no adivinar a qué
- * producto corresponde una fila ambigua. Se agrupa por `genericKey`, así
- * que dos filas que caen en el mismo genérico (p. ej. mismo principio activo
- * pero distinto laboratorio en la fila del Excel) suman sus cantidades.
+ * homologación que las solicitudes de cliente (Sección 5), pero a diferencia
+ * de una solicitud, aquí NINGUNA fila se descarta (confirmado con el
+ * cliente, 2026-09-29: antes una fila sin `decision === "MATCH"` se perdía
+ * del todo, sin quedar en ningún lado -- muchas de esas filas ni siquiera son
+ * medicamentos, como gasas, sondas o insumos dentales que todavía no tienen
+ * catálogo de proveedor propio, y su existencia real igual debe verse en
+ * bodega). Las filas con match confiable se guardan bajo el `genericKey` del
+ * producto real, agrupando cantidades entre filas del mismo genérico (p. ej.
+ * mismo principio activo pero distinto laboratorio). Las que no tienen match
+ * confiable se guardan igual, bajo su propio texto normalizado como clave
+ * (nunca bajo el producto que la IA/heurística sugirió como "mejor
+ * candidato" -- eso seguiría siendo adivinar a qué producto corresponde),
+ * y quedan marcadas para revisión en el reporte.
  */
 export async function importWarehouseStock(buffer: Buffer, originalName: string): Promise<WarehouseImportReport> {
   const workbook = await parseWorkbook(buffer, originalName);
@@ -65,33 +74,44 @@ export async function importWarehouseStock(buffer: Buffer, originalName: string)
   });
   const genericKeyByProductId = new Map(products.map((p) => [p.id, p.genericKey]));
 
-  const stockByGenericKey = new Map<string, number>();
+  const stockByGenericKey = new Map<string, { quantity: number; rawProductName: string | null }>();
   const errors: WarehouseImportRowError[] = [];
 
   parsedRows.forEach((row, i) => {
     const match = matches[i];
-    if (match.decision !== "MATCH" || match.matchedProductIds.length === 0) {
+    const isConfident = match.decision === "MATCH" && match.matchedProductIds.length > 0;
+    if (!isConfident) {
       errors.push({
         text: row.text,
         quantity: row.quantity,
         reason: match.reasons[0] ?? "No se pudo identificar el producto con certeza.",
       });
-      return;
     }
-
-    const genericKey = genericKeyByProductId.get(match.matchedProductIds[0])!;
-    stockByGenericKey.set(genericKey, (stockByGenericKey.get(genericKey) ?? 0) + row.quantity);
+    // Sin match confiable, se agrupa por el propio texto normalizado -- NUNCA
+    // por el "mejor candidato" que sugirió la homologación, porque eso sigue
+    // siendo una suposición sin confirmar (el mismo criterio que ya se usa en
+    // Solicitudes: REVIEW no es MATCH).
+    const genericKey = isConfident ? genericKeyByProductId.get(match.matchedProductIds[0])! : normalizeText(row.text);
+    const existing = stockByGenericKey.get(genericKey);
+    stockByGenericKey.set(genericKey, {
+      quantity: (existing?.quantity ?? 0) + row.quantity,
+      rawProductName: isConfident ? null : row.text,
+    });
   });
 
   // Un genérico en 0 (incluida la suma de varias filas que dan 0 entre sí) no
   // aporta nada al inventario y solo genera confusión al mostrarlo -- no se
   // guarda, ni cuenta como producto distinto en el reporte.
-  const stockToSave = [...stockByGenericKey.entries()].filter(([, quantity]) => quantity > 0);
+  const stockToSave = [...stockByGenericKey.entries()].filter(([, v]) => v.quantity > 0);
 
   await prisma.$transaction([
     prisma.warehouseStock.deleteMany({}),
     prisma.warehouseStock.createMany({
-      data: stockToSave.map(([genericKey, quantity]) => ({ genericKey, quantity })),
+      data: stockToSave.map(([genericKey, v]) => ({
+        genericKey,
+        quantity: v.quantity,
+        rawProductName: v.rawProductName,
+      })),
     }),
   ]);
 
