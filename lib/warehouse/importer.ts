@@ -1,40 +1,29 @@
-import { mapWithConcurrency } from "@/lib/concurrency";
 import { prisma } from "@/lib/db/client";
 import { parseWorkbook } from "@/lib/excel/parser";
-import { resolveProductMatch } from "@/lib/matching/matching-service";
-import { normalizeText } from "@/lib/matching/normalize";
+import { extractProductAttributes } from "@/lib/matching/extract-attributes";
+import { buildGenericKey, normalizeText } from "@/lib/matching/normalize";
 import { detectRequestColumns } from "@/lib/solicitudes/detect-columns";
-
-export interface WarehouseImportRowError {
-  text: string;
-  quantity: number;
-  reason: string;
-}
 
 export interface WarehouseImportReport {
   totalRows: number;
-  matchedRows: number;
-  unmatchedRows: number;
   distinctProducts: number;
-  errors: WarehouseImportRowError[];
 }
 
 /**
  * Reemplaza el inventario de bodega completo a partir de un Excel con
- * producto + cantidad. Se homologa cada fila con el mismo motor de
- * homologación que las solicitudes de cliente (Sección 5), pero a diferencia
- * de una solicitud, aquí NINGUNA fila se descarta (confirmado con el
- * cliente, 2026-09-29: antes una fila sin `decision === "MATCH"` se perdía
- * del todo, sin quedar en ningún lado -- muchas de esas filas ni siquiera son
- * medicamentos, como gasas, sondas o insumos dentales que todavía no tienen
- * catálogo de proveedor propio, y su existencia real igual debe verse en
- * bodega). Las filas con match confiable se guardan bajo el `genericKey` del
- * producto real, agrupando cantidades entre filas del mismo genérico (p. ej.
- * mismo principio activo pero distinto laboratorio). Las que no tienen match
- * confiable se guardan igual, bajo su propio texto normalizado como clave
- * (nunca bajo el producto que la IA/heurística sugirió como "mejor
- * candidato" -- eso seguiría siendo adivinar a qué producto corresponde),
- * y quedan marcadas para revisión en el reporte.
+ * producto + cantidad. Bodega NO tiene relación con el catálogo de
+ * Proveedores (confirmado con el cliente, 2026-09-30): no se busca ni se
+ * exige que el producto exista en ningún proveedor para guardarlo -- esa
+ * relación solo importa después, al calcular una Solicitud (ahí sí se
+ * compara el `genericKey` de bodega contra el del producto pedido). Aquí
+ * solo se interpreta el propio texto de la fila (mismo motor de extracción
+ * que usa el resto del sistema para identificar principio activo +
+ * concentración + forma farmacéutica) para poder sumar cantidades entre
+ * filas que describen el mismo genérico (p. ej. mismo medicamento escrito
+ * distinto por error de tipeo o de otra presentación). Cuando el texto no
+ * alcanza para identificar un genérico (p. ej. insumos sin principio
+ * activo, como gasas o guantes), se agrupa por su propio texto normalizado
+ * -- nunca se descarta la fila.
  */
 export async function importWarehouseStock(buffer: Buffer, originalName: string): Promise<WarehouseImportReport> {
   const workbook = await parseWorkbook(buffer, originalName);
@@ -57,47 +46,17 @@ export async function importWarehouseStock(buffer: Buffer, originalName: string)
     })
     .filter((row) => row.text !== "");
 
-  const matches = await mapWithConcurrency(parsedRows, 8, (row) => resolveProductMatch(row.text));
+  const stockByGenericKey = new Map<string, { quantity: number; rawProductName: string }>();
 
-  // Una sola consulta para todos los productos matcheados, en vez de una por
-  // fila: el genericKey no depende de cuál fila lo pidió.
-  const matchedProductIds = [
-    ...new Set(
-      matches
-        .filter((m) => m.decision === "MATCH" && m.matchedProductIds.length > 0)
-        .map((m) => m.matchedProductIds[0]),
-    ),
-  ];
-  const products = await prisma.product.findMany({
-    where: { id: { in: matchedProductIds } },
-    select: { id: true, genericKey: true },
-  });
-  const genericKeyByProductId = new Map(products.map((p) => [p.id, p.genericKey]));
-
-  const stockByGenericKey = new Map<string, { quantity: number; rawProductName: string | null }>();
-  const errors: WarehouseImportRowError[] = [];
-
-  parsedRows.forEach((row, i) => {
-    const match = matches[i];
-    const isConfident = match.decision === "MATCH" && match.matchedProductIds.length > 0;
-    if (!isConfident) {
-      errors.push({
-        text: row.text,
-        quantity: row.quantity,
-        reason: match.reasons[0] ?? "No se pudo identificar el producto con certeza.",
-      });
-    }
-    // Sin match confiable, se agrupa por el propio texto normalizado -- NUNCA
-    // por el "mejor candidato" que sugirió la homologación, porque eso sigue
-    // siendo una suposición sin confirmar (el mismo criterio que ya se usa en
-    // Solicitudes: REVIEW no es MATCH).
-    const genericKey = isConfident ? genericKeyByProductId.get(match.matchedProductIds[0])! : normalizeText(row.text);
+  for (const row of parsedRows) {
+    const extraction = extractProductAttributes(row.text, { requirePresentation: false });
+    const genericKey = extraction ? buildGenericKey(extraction.attributes) : normalizeText(row.text);
     const existing = stockByGenericKey.get(genericKey);
     stockByGenericKey.set(genericKey, {
       quantity: (existing?.quantity ?? 0) + row.quantity,
-      rawProductName: isConfident ? null : row.text,
+      rawProductName: row.text,
     });
-  });
+  }
 
   // Un genérico en 0 (incluida la suma de varias filas que dan 0 entre sí) no
   // aporta nada al inventario y solo genera confusión al mostrarlo -- no se
@@ -117,9 +76,6 @@ export async function importWarehouseStock(buffer: Buffer, originalName: string)
 
   return {
     totalRows: parsedRows.length,
-    matchedRows: parsedRows.length - errors.length,
-    unmatchedRows: errors.length,
     distinctProducts: stockToSave.length,
-    errors,
   };
 }

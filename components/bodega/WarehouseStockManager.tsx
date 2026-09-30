@@ -7,19 +7,11 @@ interface StockItem {
   quantity: number;
   updatedAt: string;
   productName: string;
-  // false cuando la fila no se pudo homologar con certeza contra el
-  // catálogo -- igual queda guardada (ver reporte de importación), pero no
-  // se descuenta automáticamente al cotizar una solicitud porque no está
-  // ligada a ningún producto real.
-  identified: boolean;
 }
 
 interface ImportReport {
   totalRows: number;
-  matchedRows: number;
-  unmatchedRows: number;
   distinctProducts: number;
-  errors: { text: string; quantity: number; reason: string }[];
 }
 
 export function WarehouseStockManager() {
@@ -98,36 +90,20 @@ export function WarehouseStockManager() {
             }}
             className="text-sm text-zinc-500 file:mr-3 file:cursor-pointer file:rounded file:border-0 file:bg-brand-green file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white file:transition-colors hover:file:opacity-90 disabled:file:cursor-not-allowed disabled:file:opacity-40"
           />
-          {uploading && <p className="text-xs text-zinc-500">Importando y homologando productos...</p>}
+          {uploading && <p className="text-xs text-zinc-500">Importando inventario...</p>}
           {error && <p className="text-sm text-red-600">{error}</p>}
         </section>
 
         {report && (
           <section className="space-y-2 rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
             <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
-              Importación completada: {report.matchedRows} de {report.totalRows} filas identificadas contra el
-              catálogo ({report.distinctProducts} productos distintos en bodega en total).
+              Importación completada: {report.totalRows} filas leídas, {report.distinctProducts} productos distintos
+              en bodega.
             </p>
             <p className="text-xs text-zinc-500">
-              Ninguna fila se descarta: las que no se pudieron identificar quedan igual en el inventario, bajo su
-              propio nombre (por eso puede verse texto tal cual venía en el Excel). Las que sí se identificaron con
-              existencia en 0 no se guardan, por eso puede haber menos productos que filas identificadas.
+              Ninguna fila se descarta. Las filas con existencia en 0 no se guardan, por eso puede haber menos
+              productos que filas leídas.
             </p>
-            {report.errors.length > 0 && (
-              <details className="mt-2">
-                <summary className="cursor-pointer text-xs text-amber-700 dark:text-amber-400">
-                  {report.errors.length} fila(s) no se pudieron identificar contra el catálogo (quedaron guardadas
-                  igual, sin ligar a ningún producto)
-                </summary>
-                <ul className="mt-2 space-y-1 text-xs text-zinc-600 dark:text-zinc-400">
-                  {report.errors.map((e, i) => (
-                    <li key={i}>
-                      <span className="font-medium">{e.text}</span> (cantidad {e.quantity}) — {e.reason}
-                    </li>
-                  ))}
-                </ul>
-              </details>
-            )}
           </section>
         )}
 
@@ -160,17 +136,7 @@ export function WarehouseStockManager() {
             <ul className="mt-3 divide-y divide-zinc-100 dark:divide-zinc-800">
               {filteredItems.map((item) => (
                 <li key={item.genericKey} className="flex items-center justify-between gap-3 py-2 text-sm">
-                  <span className="flex items-center gap-2 text-zinc-700 dark:text-zinc-300">
-                    {item.productName}
-                    {!item.identified && (
-                      <span
-                        title="No se pudo identificar contra el catálogo de proveedores; no se descuenta automáticamente al cotizar."
-                        className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300"
-                      >
-                        Sin identificar
-                      </span>
-                    )}
-                  </span>
+                  <span className="text-zinc-700 dark:text-zinc-300">{item.productName}</span>
                   <span className="shrink-0 font-medium text-zinc-900 dark:text-zinc-50">{item.quantity} unidades</span>
                 </li>
               ))}

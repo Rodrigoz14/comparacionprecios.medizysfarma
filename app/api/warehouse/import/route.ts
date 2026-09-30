@@ -4,10 +4,8 @@ import { importWarehouseStock } from "@/lib/warehouse/importer";
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 const ALLOWED_EXTENSIONS = [".xlsx", ".xls", ".xlsm", ".csv"];
 
-// Homologar cada fila contra el catálogo implica al menos una consulta real
-// a la base de datos por fila, en serie -- un inventario de varios cientos
-// o miles de productos puede superar fácilmente el límite de tiempo por
-// defecto de la función.
+// Un inventario de varios miles de filas más el reemplazo completo de la
+// tabla puede superar el límite de tiempo por defecto de la función.
 export const maxDuration = 300;
 
 export async function POST(request: Request) {
