@@ -1,5 +1,28 @@
 import { stripAccents } from "@/lib/matching/normalize";
+import { isSealedUnitForm } from "@/lib/pricing/measured-forms";
 import type { ExtractedAttributes } from "@/lib/matching/types";
+
+/**
+ * Los Excel de proveedores usan la convención colombiana: "." separa miles,
+ * "," separa decimales (al revés de lo que JS espera) -- mismo criterio que
+ * ya usa `detectPriceFormat` en lib/excel/normalizer.ts para precios. Sin
+ * esto, "1.000MG" (mil miligramos) se leía como "1.000" = 1 (JS interpreta
+ * el punto como decimal) -- un error de 1000x confirmado en datos reales de
+ * producción (Acetaminofeno inyectable de Ramédicas). Un "." seguido de
+ * EXACTAMENTE 3 dígitos se asume agrupador de miles, nunca un decimal real:
+ * ninguna concentración real en estos datos necesita 3 cifras decimales
+ * exactas (las que sí son decimales genuinos usan 1 o 2, p. ej. "12,5MG").
+ * La parte entera nunca puede ser "0": nadie agrupa miles escribiendo "0.625"
+ * para decir "625" (lo escribiría directo) -- un "0" inicial es la señal
+ * segura de que es un decimal real menor a 1 (p. ej. "0.625MG/G"), no miles.
+ */
+function parseColombianNumber(raw: string): string {
+  if (raw.includes(",")) {
+    return raw.replace(/\./g, "").replace(",", ".");
+  }
+  const thousandsMatch = /^([1-9]\d{0,2})\.(\d{3})$/.exec(raw);
+  return thousandsMatch ? thousandsMatch[1] + thousandsMatch[2] : raw;
+}
 
 // El signo "%" (peso/volumen, la convención real usada en gotas oftálmicas
 // y otras soluciones: p. ej. "Carboximetilcelulosa 0.5%" = 5MG/ML, el mismo
@@ -8,7 +31,14 @@ import type { ExtractedAttributes } from "@/lib/matching/types";
 // paréntesis o el final del texto — ninguno de los dos es un límite de
 // palabra válido en regex (ambos son caracteres "no palabra"), así que \b
 // nunca coincidiría ahí.
-const CONCENTRATION_RE = /(\d+(?:[.,]\d+)?(?:\s*\/\s*\d+(?:[.,]\d+)?)?)\s*(MG\b|MCG\b|UI\b|G\b|ML\b|%)/i;
+// "GR" (abreviatura real de "gramos" en datos colombianos, p. ej. "1 GR
+// CJ*10") y "MEQ" (miliequivalentes, unidad real y distinta de MG para
+// electrolitos como Cloruro de Potasio/Sodio) -- confirmados en datos reales
+// de producción (Cefazolina, Meropenem, Cloruro de Potasio): sin
+// reconocerlas, la concentración no se encontraba en absoluto, o el regex
+// terminaba agarrando por error otro número del texto (p. ej. el volumen del
+// envase) como si fuera la concentración.
+const CONCENTRATION_RE = /(\d+(?:[.,]\d+)?(?:\s*\/\s*\d+(?:[.,]\d+)?)?)\s*(MG\b|MCG\b|UI\b|MEQ\b|GR\b|G\b|ML\b|%)/i;
 // El símbolo de multiplicación varía por proveedor: "X100" (Ramédicas) o
 // "*30"/"C*1" (Disfarma). Cubre tanto conteos discretos ("X100" -> 100
 // tabletas) como volumen/peso por envase pegado a la unidad, sin espacio
@@ -31,7 +61,15 @@ const BARE_MEASURE_RE = /(\d+(?:[.,]\d+)?)\s*(ML|L|G)\b/gi;
 // anterior ("...5MG+60MG..."): cada principio activo trae su propia unidad
 // repetida, a diferencia del formato de razón fija ("500/125 MG") que
 // CONCENTRATION_RE ya captura como un solo valor.
-const EXTRA_DOSE_RE = /^\s*\+\s*(\d+(?:[.,]\d+)?)\s*(MG|MCG|UI|G|ML|%)\b/i;
+const EXTRA_DOSE_RE = /^\s*\+\s*(\d+(?:[.,]\d+)?)\s*(MG|MCG|UI|MEQ|GR|G|ML|%)\b/i;
+
+// "GR" es solo una forma distinta de escribir "G" (gramos), no una unidad
+// distinta -- se normaliza para que "1GR" y "1G" terminen en la misma clave
+// genérica. "MEQ" sí es una unidad real y distinta (miliequivalentes), no se
+// normaliza a nada más.
+function normalizeConcentrationUnit(unit: string): string {
+  return unit === "GR" ? "G" : unit;
+}
 
 interface DosePart {
   value: string;
@@ -45,12 +83,14 @@ interface DosePart {
  * primera parte -- comportamiento idéntico al anterior.
  */
 function extractDoseParts(upper: string, firstMatch: RegExpMatchArray): { parts: DosePart[]; end: number } {
-  const parts: DosePart[] = [{ value: firstMatch[1].replace(",", "."), unit: firstMatch[2].toUpperCase() }];
+  const parts: DosePart[] = [
+    { value: parseColombianNumber(firstMatch[1]), unit: normalizeConcentrationUnit(firstMatch[2].toUpperCase()) },
+  ];
   let end = (firstMatch.index ?? 0) + firstMatch[0].length;
   for (;;) {
     const next = EXTRA_DOSE_RE.exec(upper.slice(end));
     if (!next) break;
-    parts.push({ value: next[1].replace(",", "."), unit: next[2].toUpperCase() });
+    parts.push({ value: parseColombianNumber(next[1]), unit: normalizeConcentrationUnit(next[2].toUpperCase()) });
     end += next[0].length;
   }
   return { parts, end };
@@ -408,7 +448,7 @@ export function extractProductAttributes(
     : [...upper.matchAll(BARE_MEASURE_RE)].filter((m) => {
         const start = m.index;
         const end = start + m[0].length;
-        if (doseValues.has(`${m[1].replace(",", ".")}\u0000${m[2].toUpperCase()}`)) return false;
+        if (doseValues.has(`${parseColombianNumber(m[1])}\u0000${m[2].toUpperCase()}`)) return false;
         return end <= concentrationStart || start >= bareMeasureExclusionEnd;
       });
   const allPresentationCandidates = [...presentationCandidates, ...bareMeasureCandidates];
@@ -425,8 +465,8 @@ export function extractProductAttributes(
     allPresentationCandidates.find((m) => m[2]) ??
     allPresentationCandidates.reduce<RegExpMatchArray | null>((best, candidate) => {
       if (!best) return candidate;
-      const bestQty = Number.parseFloat(best[1].replace(",", "."));
-      const candidateQty = Number.parseFloat(candidate[1].replace(",", "."));
+      const bestQty = Number.parseFloat(parseColombianNumber(best[1]));
+      const candidateQty = Number.parseFloat(parseColombianNumber(candidate[1]));
       return candidateQty > bestQty ? candidate : best;
     }, null);
   const singleUnitMatch = presentationMatch ? null : SINGLE_UNIT_CONTAINER_RE.exec(upper);
@@ -483,13 +523,29 @@ export function extractProductAttributes(
   // suelto queda pegado justo antes del corte; ningún principio activo real
   // termina en una "X" o "*" aislada, así que se recorta igual que la
   // puntuación (dato real: búsquedas de clientes con Esomeprazol).
-  const activeIngredient = upper
+  let activeIngredient = upper
     .slice(0, cutIndex)
     .trim()
     .replace(/\s+/g, " ")
     .replace(/[+(),./-]+$/, "")
     .replace(/\s[X*]$/, "")
     .trim();
+
+  // "ACETAMINOFEN (PARACETAMOL) 1.000MG/100ML..." -- el alias entre
+  // paréntesis queda ANTES de la concentración, así que el recorte de
+  // puntuación de arriba se come el ")" de cierre pero deja el "(" de
+  // apertura colgando ("ACETAMINOFEN (PARACETAMOL"). Un "(" sin su pareja es
+  // la señal de que esto pasó: se descarta desde ese "(" en adelante -- el
+  // alias entre paréntesis no aporta nada a la identidad del genérico, y
+  // dejarlo a medias rompía tanto canonicalizeIngredient como cualquier
+  // comparación contra el mismo principio activo escrito sin el alias (bug
+  // real confirmado en producción: el Acetaminofén de Ramédicas nunca se
+  // comparaba contra el de Disfarma/Ofimédicas por esto).
+  const openParens = (activeIngredient.match(/\(/g) ?? []).length;
+  const closeParens = (activeIngredient.match(/\)/g) ?? []).length;
+  if (openParens > closeParens) {
+    activeIngredient = activeIngredient.slice(0, activeIngredient.lastIndexOf("(")).trim();
+  }
 
   if (!activeIngredient) {
     return null;
@@ -542,9 +598,9 @@ export function extractProductAttributes(
   if (doseParts.parts.length === 1) {
     const percentMatch = concentrationCandidates.find((m) => m[2]?.toUpperCase() === "%");
     if (percentMatch) {
-      finalConcentration = percentMatch[1].replace(",", ".");
+      finalConcentration = parseColombianNumber(percentMatch[1]);
       finalConcentrationUnit = "%";
-    } else if (concentrationRatioSuffix) {
+    } else if (concentrationRatioSuffix && !isSealedUnitForm(dosageForm)) {
       // "50MG/5ML" y "10MG/1ML" (o "10MG/ML", denominador 1 implícito) son
       // la MISMA concentración real (10mg por cada ml) -- confirmado con el
       // cliente (2026-09-30): sin reducir la razón a "por 1 unidad de
@@ -552,9 +608,17 @@ export function extractProductAttributes(
       // referencia distinto (5ml vs 1ml) quedaban con concentración "50" y
       // "10" respectivamente, genericKey distinto, y nunca se comparaban ni
       // se homologaban entre sí al buscar por texto de cliente.
-      const denominatorValue = concentrationRatioSuffix[1]
-        ? Number.parseFloat(concentrationRatioSuffix[1].replace(",", "."))
-        : 1;
+      //
+      // Nunca se aplica a formas selladas (ampolla/inyectable): ahí el
+      // envase NO se fracciona (ver isSealedUnitForm, lib/pricing/
+      // measured-forms.ts) -- el volumen escrito es el contenido TOTAL de esa
+      // presentación puntual, no una tasa que se puede medir en cualquier
+      // cantidad. Bug real confirmado (2026-09-30): "40MG/0.4ML",
+      // "60MG/0.6ML" y "80MG/0.8ML" de Enoxaparina son TRES presentaciones
+      // reales distintas (jeringas precargadas de dosis distinta), pero las
+      // tres reducen a la misma concentración "100MG/ML" -- reducir la razón
+      // las fusionaba en una sola, como si fueran la misma jeringa.
+      const denominatorValue = concentrationRatioSuffix[1] ? Number.parseFloat(parseColombianNumber(concentrationRatioSuffix[1])) : 1;
       const numeratorValue = Number.parseFloat(finalConcentration);
       if (denominatorValue > 0 && Number.isFinite(numeratorValue)) {
         finalConcentration = String(Math.round((numeratorValue / denominatorValue) * 10000) / 10000);
@@ -566,7 +630,7 @@ export function extractProductAttributes(
   let presentationQuantity: number;
   let presentationUnit: string;
   if (presentationMatch) {
-    const rawQuantity = Number.parseFloat(presentationMatch[1].replace(",", "."));
+    const rawQuantity = Number.parseFloat(parseColombianNumber(presentationMatch[1]));
     const volumeUnit = presentationMatch[2]?.toUpperCase();
     if (volumeUnit === "L") {
       presentationQuantity = Math.round(rawQuantity * 1000);

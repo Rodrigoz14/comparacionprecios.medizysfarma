@@ -267,9 +267,11 @@ describe("extractProductAttributes", () => {
   it("bug real (2026-09-30): 'XMG/YML' se reduce a 'por 1 ml', para que distintos volumenes de referencia den la misma concentracion", () => {
     // "50MG/5ML" (10mg por cada ml) y "10MG/1ML" o "10MG/ML" (denominador 1
     // implicito) son la misma concentracion real, escrita de tres formas.
-    const a = extractProductAttributes("MEDICAMENTOTEST 50MG/5ML SOLUCION INYECTABLE", { requirePresentation: false });
-    const b = extractProductAttributes("MEDICAMENTOTEST 10MG/1ML SOLUCION INYECTABLE", { requirePresentation: false });
-    const c = extractProductAttributes("MEDICAMENTOTEST 10MG/ML SOLUCION INYECTABLE", { requirePresentation: false });
+    // Forma NO sellada (suspension/solucion oral, jarabe...) a proposito: para
+    // un frasco que se mide, el volumen de referencia realmente no importa.
+    const a = extractProductAttributes("MEDICAMENTOTEST 50MG/5ML SUSPENSION ORAL", { requirePresentation: false });
+    const b = extractProductAttributes("MEDICAMENTOTEST 10MG/1ML SUSPENSION ORAL", { requirePresentation: false });
+    const c = extractProductAttributes("MEDICAMENTOTEST 10MG/ML SUSPENSION ORAL", { requirePresentation: false });
     expect(a?.attributes.concentration).toBe("10");
     expect(a?.attributes.concentrationUnit).toBe("MG/ML");
     expect(b?.attributes.concentration).toBe("10");
@@ -278,6 +280,67 @@ describe("extractProductAttributes", () => {
     expect(c?.attributes.concentrationUnit).toBe("MG/ML");
     expect(buildGenericKey(a!.attributes)).toBe(buildGenericKey(b!.attributes));
     expect(buildGenericKey(a!.attributes)).toBe(buildGenericKey(c!.attributes));
+  });
+
+  it("bug real (2026-10-01): '1.000MG' (convencion colombiana de miles) no se confunde con un decimal -- son 1000mg, no 1mg", () => {
+    // Confirmado en datos reales de produccion: "ACETAMINOFEN (PARACETAMOL)
+    // 1.000MG/100ML..." (Ramedicas) se leia como concentracion "1" (JS
+    // interpreta el punto como decimal), un error de 1000x.
+    const result = extractProductAttributes("ACETAMINOFEN 1.000MG/100ML SOLUCION INYECTABLE", {
+      requirePresentation: false,
+    });
+    expect(result?.attributes.concentration).toBe("1000");
+    expect(result?.attributes.concentrationUnit).toBe("MG");
+  });
+
+  it("'0.625MG/G' (decimal real menor a 1) no se confunde con miles solo porque tiene 3 cifras despues del punto", () => {
+    const result = extractProductAttributes("ESTROGENOS CONJUGADOS 0.625MG/G CREMA VAGINAL X43G");
+    expect(result?.attributes.concentration).toBe("0.625");
+  });
+
+  it("bug real (2026-10-01): 'ACETAMINOFEN (PARACETAMOL)' no deja un parentesis sin cerrar en el principio activo", () => {
+    // El recorte de puntuacion se comia el ")" de cierre (porque queda justo
+    // antes de la concentracion) pero dejaba el "(" de apertura colgando --
+    // "ACETAMINOFEN (PARACETAMOL" nunca coincidia con el "ACETAMINOFEN" liso
+    // que reportan otros proveedores para el mismo medicamento.
+    const conAlias = extractProductAttributes("ACETAMINOFEN (PARACETAMOL) 10MG/ML (1%) SOLUCION INYECTABLE", {
+      requirePresentation: false,
+    });
+    const sinAlias = extractProductAttributes("ACETAMINOFEN 10MG/ML (1%) SOLUCION INYECTABLE", {
+      requirePresentation: false,
+    });
+    expect(conAlias?.attributes.activeIngredient).toBe("ACETAMINOFEN");
+    expect(buildGenericKey(conAlias!.attributes)).toBe(buildGenericKey(sinAlias!.attributes));
+  });
+
+  it("bug real (2026-10-01): 'GR' (gramos) y 'MEQ' (miliequivalentes) se reconocen como unidades de concentracion", () => {
+    // Antes "1 GR" ni siquiera se reconocia como concentracion (la extraccion
+    // fallaba por completo, GR no estaba en la lista de unidades), y "2MEQ"
+    // hacia que el regex agarrara por error otro numero del texto (el volumen
+    // del envase) como si fuera la concentracion.
+    const gr = extractProductAttributes("CEFAZOLINA 1GR C*10AMP", { requirePresentation: false });
+    expect(gr?.attributes.concentration).toBe("1");
+    expect(gr?.attributes.concentrationUnit).toBe("G");
+
+    const meq = extractProductAttributes("CLORURO DE POTASIO 2MEQ/ML SOL INY AMPOULEPACKX10ML CX40", {
+      requirePresentation: false,
+    });
+    expect(meq?.attributes.concentration).toBe("2");
+    expect(meq?.attributes.concentrationUnit).toBe("MEQ");
+  });
+
+  it("bug real (2026-10-01): para formas SELLADAS (ampolla/inyectable) la razon MG/ML NO se reduce -- el volumen es el contenido total de ESA presentacion, no se fracciona", () => {
+    // Bug real confirmado en produccion: Enoxaparina 40MG/0.4ML, 60MG/0.6ML y
+    // 80MG/0.8ML son TRES jeringas precargadas de dosis real distinta, pero
+    // las tres reducen a la misma concentracion "100MG/ML" -- si se redujera,
+    // quedarian con la MISMA clave generica, como si fueran intercambiables.
+    const d40 = extractProductAttributes("ENOXAPARINA 40MG/0.4ML SOLUCION INYECTABLE", { requirePresentation: false });
+    const d60 = extractProductAttributes("ENOXAPARINA 60MG/0.6ML SOLUCION INYECTABLE", { requirePresentation: false });
+    expect(d40?.attributes.concentration).toBe("40");
+    expect(d40?.attributes.concentrationUnit).toBe("MG");
+    expect(d60?.attributes.concentration).toBe("60");
+    expect(d60?.attributes.concentrationUnit).toBe("MG");
+    expect(buildGenericKey(d40!.attributes)).not.toBe(buildGenericKey(d60!.attributes));
   });
 
   it("bug real (2026-09-29): 'AMP'/'AMPOLLA' (el envase) ya no es una forma farmaceutica aparte de 'Inyectable'", () => {
