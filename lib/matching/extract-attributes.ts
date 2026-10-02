@@ -658,7 +658,19 @@ export function extractProductAttributes(
       // único (un combinado real de 3+ principios en este formato no se
       // intenta -- más conservador que adivinar mal la asociación).
       const interleaved = INTERLEAVED_COMBO_RE.exec(upper);
-      if (interleaved) {
+      // Si un TERCER principio sigue con el mismo patrón ("+ INGREDIENTE3
+      // DOSIS3"), esto es una fórmula de 3+ principios (p. ej. complejos
+      // vitamínicos) -- no se intenta: quedarse solo con los primeros dos
+      // fusionaría por error fórmulas distintas que comparten sus primeros
+      // dos componentes pero difieren en el resto (bug real detectado antes
+      // de desplegar: "Ácido Ascórbico + Ácido Fólico + Fumarato Ferroso +
+      // Vitamina B12" perdía los últimos dos principios).
+      const hasThirdSegment =
+        interleaved &&
+        /^\s*\+\s*[A-ZÁÉÍÓÚÑ]+(?:\s+[A-ZÁÉÍÓÚÑ]+)*?\s+\d+(?:[.,]\d+)?\s*(MG|MCG|UI|MEQ|GR|G|ML|%)\b/i.test(
+          upper.slice(interleaved.index + interleaved[0].length),
+        );
+      if (interleaved && !hasThirdSegment) {
         const pair = [
           { name: interleaved[1].trim(), value: parseColombianNumber(interleaved[2]), unit: normalizeConcentrationUnit(interleaved[3].toUpperCase()) },
           { name: interleaved[4].trim(), value: parseColombianNumber(interleaved[5]), unit: normalizeConcentrationUnit(interleaved[6].toUpperCase()) },

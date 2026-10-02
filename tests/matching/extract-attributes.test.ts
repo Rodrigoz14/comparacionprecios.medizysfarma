@@ -391,6 +391,21 @@ describe("extractProductAttributes", () => {
     expect(buildGenericKey(sola!.attributes)).not.toBe(buildGenericKey(intercalado!.attributes));
   });
 
+  it("formula con 3+ principios en formato intercalado no se intenta -- evita fusionar formulas distintas que comparten los primeros dos", () => {
+    // Encontrado antes de desplegar el fix anterior: "Acido Ascorbico 100mg +
+    // Acido Folico 2mg + Fumarato Ferroso 330mg + Vitamina B12 1mg" quedaba
+    // como "acido ascorbico + acido folico" (perdiendo los ultimos dos
+    // principios) si el patron intercalado no se limitaba a exactamente 2 --
+    // dos complejos vitaminicos DISTINTOS que comparten los primeros dos
+    // componentes habrian quedado con la misma clave generica.
+    const result = extractProductAttributes(
+      "Acido Ascorbico 100 mg + Acido Folico 2 mg + fumarato ferroso 330 mg + Vitamina B12 1 mg capsula dura Caja x 30",
+      { requirePresentation: false },
+    );
+    expect(result?.attributes.activeIngredient).toBe("ACIDO ASCORBICO");
+    expect(result?.attributes.concentration).toBe("100");
+  });
+
   it("bug real (2026-09-29): 'AMP'/'AMPOLLA' (el envase) ya no es una forma farmaceutica aparte de 'Inyectable'", () => {
     // Bodega registraba "DICLOFENACO 75MG/3ML C*100 AMP X 3ML" (sin decir
     // "solucion inyectable") y nunca coincidia con el "DICLOFENACO 75MG/3ML
