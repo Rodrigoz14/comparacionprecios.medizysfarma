@@ -321,6 +321,38 @@ const CHANNEL_PREFIX_RE = /^(EPS|POS|NO[\s-]?POS|PBS)[\s-]+/i;
 // presentación real y distinta (con vasoconstrictor).
 const WITHOUT_EPINEPHRINE_RE = /\s*(SIN\s+EPINEFRINA|S\/\s*EPINEFRINA)\b/i;
 
+// Marca real de jeringa precargada ("JER PREX0.4ML", "JERPREX1.750ML" --
+// "JER"+"PRE" a veces vienen pegados, a veces con espacio). Sirve para
+// distinguir, en el tamaño de envase, un volumen PRECISO y chico (una
+// jeringa real nunca pasa de un par de decenas de ml) de un volumen GRANDE
+// expresado con "." como separador de miles (una bolsa o frasco de suero sí
+// llega a cientos o miles de ml) -- ver JERINGA_PRELLENADA_RE más abajo.
+const JERINGA_PRELLENADA_RE = /JER(?:INGA)?\s*PRE(?:LLENADA)?/i;
+
+/**
+ * Mismo problema de ambigüedad colombiana que `parseColombianNumber`, pero
+ * para el TAMAÑO DEL ENVASE en vez de la dosis -- y con la respuesta
+ * contraria por defecto. Una dosis con 3 decimales exactos ("1.000MG") casi
+ * siempre es miles; un volumen de envase con 3 decimales exactos casi
+ * siempre es un tamaño grande real expresado en miles también ("SOLUCION
+ * INYECTABLE X 1.000ML" = una bolsa de 1 litro, "GALON X 3.800ML" = un galón
+ * real de 3800ml) -- confirmado en datos reales de producción, 2026-10-02.
+ * La ÚNICA excepción confirmada es la jeringa precargada: ahí el mismo
+ * patrón de 3 decimales SÍ es un volumen real y chico ("JERPREX1.750ML" =
+ * 1.75 ml, la dosis de una jeringa de Paliperidona de depósito), nunca
+ * "1750 ml" (ninguna jeringa precargada real mide litro y medio).
+ */
+function parsePresentationVolumeNumber(raw: string, upper: string): string {
+  if (raw.includes(",")) {
+    return raw.replace(/\./g, "").replace(",", ".");
+  }
+  if (JERINGA_PRELLENADA_RE.test(upper)) {
+    return raw;
+  }
+  const thousandsMatch = /^([1-9]\d{0,2})\.(\d{3})$/.exec(raw);
+  return thousandsMatch ? thousandsMatch[1] + thousandsMatch[2] : raw;
+}
+
 // Segunda forma real de escribir un combinado, distinta de "INGREDIENTE1 +
 // INGREDIENTE2 DOSIS1+DOSIS2" (esa ya la maneja EXTRA_DOSE_RE más abajo):
 // aquí cada principio activo trae SU PROPIA dosis pegada antes del "+"
@@ -685,14 +717,11 @@ export function extractProductAttributes(
   let presentationQuantity: number;
   let presentationUnit: string;
   if (presentationMatch) {
-    // NUNCA parseColombianNumber aquí: un tamaño de envase preciso como
-    // "X1.750ML" (jeringa de Paliperidona Invega Trinza, 1.75 ml reales) tiene
-    // exactamente 3 cifras después del punto por coincidencia -- confundirlo
-    // con miles lo convertía en "1750 ml" (bug real encontrado en producción,
-    // 2026-10-02). La ambigüedad de miles vs. decimal solo se resuelve de
-    // forma segura para DOSIS (mg/g/ui), donde nadie escribe 3 decimales
-    // reales; un volumen de envase sí los usa legítimamente.
-    const rawQuantity = Number.parseFloat(presentationMatch[1].replace(",", "."));
+    // Ver parsePresentationVolumeNumber: a diferencia de la dosis, un tamaño
+    // de envase con 3 decimales exactos ("X 1.000ML") normalmente SÍ es
+    // miles (bolsas/frascos de suero de 1 litro) -- excepto en una jeringa
+    // precargada, donde ese mismo patrón es un volumen real y chico.
+    const rawQuantity = Number.parseFloat(parsePresentationVolumeNumber(presentationMatch[1], upper));
     const volumeUnit = presentationMatch[2]?.toUpperCase();
     if (volumeUnit === "L") {
       presentationQuantity = Math.round(rawQuantity * 1000);

@@ -406,17 +406,45 @@ describe("extractProductAttributes", () => {
     expect(result?.attributes.concentration).toBe("100");
   });
 
-  it("bug real (2026-10-02): un tamaño de envase con 3 decimales ('X1.750ML') no se confunde con miles", () => {
+  it("bug real (2026-10-02): un tamaño de envase con 3 decimales ('X1.750ML') no se confunde con miles EN una jeringa precargada", () => {
     // Confirmado en datos reales de producción: la jeringa precargada de
     // Paliperidona (Invega Trinza) trae "JERPREX1.750ML" -- 1.75 ml reales,
     // no "1750 ml". El fix de miles (1.000MG = 1000) es correcto para DOSIS,
-    // pero aplicado al tamaño del envase convertía por error 1.75 en 1750.
-    const result = extractProductAttributes(
+    // pero aplicado tal cual al tamaño del envase convertía por error 1.75 en
+    // 1750 -- ninguna jeringa precargada real mide litro y medio.
+    const r1 = extractProductAttributes(
       "EPS-PALIPERIDONA 350MG/1.750ML SUSP INY JERPREX1.750ML CX1 (INVEGA TRINZA 546MG - 3 MESES) - JANSSEN",
       { requirePresentation: false },
     );
-    expect(result?.attributes.concentration).toBe("350"); // la dosis SI usa el fix de miles (no aplica aqui, ya es un numero chico)
-    expect(result?.attributes.presentationQuantity).toBe(2); // 1.75 redondeado, no 1750
+    expect(r1?.attributes.concentration).toBe("350"); // la dosis SI usa el fix de miles (no aplica aqui, ya es un numero chico)
+    expect(r1?.attributes.presentationQuantity).toBe(2); // 1.75 redondeado, no 1750
+
+    const r2 = extractProductAttributes(
+      "EPS-PALIPERIDONA 263MG/1.315ML SUSP INY JERPREX1.315ML CX1 (INVEGA TRINZA 410MG - 3 MESES) - JANSSEN",
+      { requirePresentation: false },
+    );
+    expect(r2?.attributes.presentationQuantity).toBe(1); // 1.315 redondeado, no 1315
+  });
+
+  it("bug real (2026-10-02): un tamaño de envase con 3 decimales SÍ se interpreta como miles fuera de una jeringa precargada", () => {
+    // Confirmado en datos reales de producción: bolsas/frascos de suero y
+    // soluciones de gran volumen SÍ usan "." como separador de miles en el
+    // tamaño del envase ("SOLUCION INYECTABLE X 1.000ML" es una bolsa de 1
+    // litro, no de 1 ml) -- antes de este fix, estos quedaban todos en "1 ml"
+    // (el mismo bug que las jeringas, pero en sentido contrario: aquí SÍ hay
+    // que leerlo como miles).
+    expect(
+      extractProductAttributes("SODIO CLORURO (0,9%) SOLUCION INYECTABLE X 1.000ML", { requirePresentation: false })
+        ?.attributes.presentationQuantity,
+    ).toBe(1000);
+    expect(
+      extractProductAttributes("SODIO CLORURO (0,9%) SOLUCION INYECTABLE X 3.000ML", { requirePresentation: false })
+        ?.attributes.presentationQuantity,
+    ).toBe(3000);
+    expect(
+      extractProductAttributes("FORMOL (10%) GALON X 3.800ML", { requirePresentation: false })?.attributes
+        .presentationQuantity,
+    ).toBe(3800);
   });
 
   it("bug real (2026-09-29): 'AMP'/'AMPOLLA' (el envase) ya no es una forma farmaceutica aparte de 'Inyectable'", () => {
