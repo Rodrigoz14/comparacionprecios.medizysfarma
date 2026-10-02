@@ -343,6 +343,30 @@ describe("extractProductAttributes", () => {
     expect(buildGenericKey(d40!.attributes)).not.toBe(buildGenericKey(d60!.attributes));
   });
 
+  it("bug real (2026-10-02): 'SIN EPINEFRINA'/'S/EPINEFRINA' es la presentacion por defecto -- coincide con la version sin ninguna aclaracion", () => {
+    // Confirmado en datos reales de produccion: proveedores que aclaran "sin
+    // epinefrina" y proveedores que simplemente no mencionan epinefrina
+    // (significa lo mismo, sin vasoconstrictor) nunca coincidian entre si.
+    const sinAclarar = extractProductAttributes("EPS-BUPIVACAINA 50MG/10ML (0.5%) SOL INY AMPX10ML CX100 - BIOSANO", {
+      requirePresentation: false,
+    });
+    const sinEpinefrina = extractProductAttributes("Bupivacaina sin epinefrina 0.5 % solucion inyectable amp 10 mL x 100 BIOSANO", {
+      requirePresentation: false,
+    });
+    const sBarraEpinefrina = extractProductAttributes("BUPIVACAINA S/EPINEFRINA 50MG/10ML (5MG/ML) (0,5%) SOLUCION INYECTABLE", {
+      requirePresentation: false,
+    });
+    expect(buildGenericKey(sinAclarar!.attributes)).toBe(buildGenericKey(sinEpinefrina!.attributes));
+    expect(buildGenericKey(sinAclarar!.attributes)).toBe(buildGenericKey(sBarraEpinefrina!.attributes));
+
+    // "CON epinefrina" SI es una presentacion distinta (con vasoconstrictor) -- no se quita.
+    const conEpinefrina = extractProductAttributes("Bupivacaina Con Epinefrina 0.5 % solucion inyectable amp 10 mL x 24 ROPSOHN", {
+      requirePresentation: false,
+    });
+    expect(conEpinefrina?.attributes.activeIngredient).toBe("BUPIVACAINA CON EPINEFRINA");
+    expect(buildGenericKey(conEpinefrina!.attributes)).not.toBe(buildGenericKey(sinAclarar!.attributes));
+  });
+
   it("bug real (2026-09-29): 'AMP'/'AMPOLLA' (el envase) ya no es una forma farmaceutica aparte de 'Inyectable'", () => {
     // Bodega registraba "DICLOFENACO 75MG/3ML C*100 AMP X 3ML" (sin decir
     // "solucion inyectable") y nunca coincidia con el "DICLOFENACO 75MG/3ML

@@ -311,6 +311,16 @@ export function normalizeDosageForm(rawText: string): string | null {
 // que un cliente escribe normalmente ("Zopiclona").
 const CHANNEL_PREFIX_RE = /^(EPS|POS|NO[\s-]?POS|PBS)[\s-]+/i;
 
+// Anestésicos locales (Bupivacaína, Lidocaína...) a veces aclaran "SIN
+// EPINEFRINA"/"S/EPINEFRINA" aunque esa sea la presentación por defecto --
+// cuando NINGÚN proveedor menciona epinefrina para esa misma concentración,
+// es la misma presentación que uno que sí lo aclara explícitamente (bug real
+// confirmado en producción: "BUPIVACAINA S/EPINEFRINA 50MG/10ML" nunca
+// coincidía con "EPS-BUPIVACAINA 50MG/10ML" sin esa aclaración, mismo
+// medicamento). Nunca se quita "CON"/"C/EPINEFRINA": ESA sí es una
+// presentación real y distinta (con vasoconstrictor).
+const WITHOUT_EPINEPHRINE_RE = /\s*(SIN\s+EPINEFRINA|S\/\s*EPINEFRINA)\b/i;
+
 export interface ExtractOptions {
   /**
    * Si es false, no exigir una cantidad de presentación explícita en el texto:
@@ -341,7 +351,11 @@ export interface ExtractOptions {
  * suspensión X 360 ml" no debía descartarse solo por el "360").
  */
 export function extractIngredientGuess(rawText: string): string | null {
-  const upper = stripAccents(rawText).toUpperCase().replace(CHANNEL_PREFIX_RE, "").trim();
+  const upper = stripAccents(rawText)
+    .toUpperCase()
+    .replace(CHANNEL_PREFIX_RE, "")
+    .replace(WITHOUT_EPINEPHRINE_RE, "")
+    .trim();
   if (!upper) return null;
 
   const withoutPresentation = upper.replace(PRESENTATION_QTY_RE, " ").trim();
@@ -375,7 +389,7 @@ export function extractProductAttributes(
   options: ExtractOptions = {},
 ): { attributes: ExtractedAttributes; warnings: string[]; presentationSpecified: boolean } | null {
   const requirePresentation = options.requirePresentation ?? true;
-  const upper = stripAccents(rawName).toUpperCase().replace(CHANNEL_PREFIX_RE, "");
+  const upper = stripAccents(rawName).toUpperCase().replace(CHANNEL_PREFIX_RE, "").replace(WITHOUT_EPINEPHRINE_RE, "");
   const warnings: string[] = [];
 
   // Un volumen (ML/L) escrito justo despues de "X"/"*" es SIEMPRE tamaño de
