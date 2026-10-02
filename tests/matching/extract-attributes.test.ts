@@ -406,6 +406,19 @@ describe("extractProductAttributes", () => {
     expect(result?.attributes.concentration).toBe("100");
   });
 
+  it("bug real (2026-10-02): un tamaño de envase con 3 decimales ('X1.750ML') no se confunde con miles", () => {
+    // Confirmado en datos reales de producción: la jeringa precargada de
+    // Paliperidona (Invega Trinza) trae "JERPREX1.750ML" -- 1.75 ml reales,
+    // no "1750 ml". El fix de miles (1.000MG = 1000) es correcto para DOSIS,
+    // pero aplicado al tamaño del envase convertía por error 1.75 en 1750.
+    const result = extractProductAttributes(
+      "EPS-PALIPERIDONA 350MG/1.750ML SUSP INY JERPREX1.750ML CX1 (INVEGA TRINZA 546MG - 3 MESES) - JANSSEN",
+      { requirePresentation: false },
+    );
+    expect(result?.attributes.concentration).toBe("350"); // la dosis SI usa el fix de miles (no aplica aqui, ya es un numero chico)
+    expect(result?.attributes.presentationQuantity).toBe(2); // 1.75 redondeado, no 1750
+  });
+
   it("bug real (2026-09-29): 'AMP'/'AMPOLLA' (el envase) ya no es una forma farmaceutica aparte de 'Inyectable'", () => {
     // Bodega registraba "DICLOFENACO 75MG/3ML C*100 AMP X 3ML" (sin decir
     // "solucion inyectable") y nunca coincidia con el "DICLOFENACO 75MG/3ML

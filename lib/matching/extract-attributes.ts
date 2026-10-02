@@ -685,7 +685,14 @@ export function extractProductAttributes(
   let presentationQuantity: number;
   let presentationUnit: string;
   if (presentationMatch) {
-    const rawQuantity = Number.parseFloat(parseColombianNumber(presentationMatch[1]));
+    // NUNCA parseColombianNumber aquí: un tamaño de envase preciso como
+    // "X1.750ML" (jeringa de Paliperidona Invega Trinza, 1.75 ml reales) tiene
+    // exactamente 3 cifras después del punto por coincidencia -- confundirlo
+    // con miles lo convertía en "1750 ml" (bug real encontrado en producción,
+    // 2026-10-02). La ambigüedad de miles vs. decimal solo se resuelve de
+    // forma segura para DOSIS (mg/g/ui), donde nadie escribe 3 decimales
+    // reales; un volumen de envase sí los usa legítimamente.
+    const rawQuantity = Number.parseFloat(presentationMatch[1].replace(",", "."));
     const volumeUnit = presentationMatch[2]?.toUpperCase();
     if (volumeUnit === "L") {
       presentationQuantity = Math.round(rawQuantity * 1000);
