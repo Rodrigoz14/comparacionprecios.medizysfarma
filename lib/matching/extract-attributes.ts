@@ -331,16 +331,19 @@ const JERINGA_PRELLENADA_RE = /JER(?:INGA)?\s*PRE(?:LLENADA)?/i;
 
 /**
  * Mismo problema de ambigüedad colombiana que `parseColombianNumber`, pero
- * para el TAMAÑO DEL ENVASE en vez de la dosis -- y con la respuesta
- * contraria por defecto. Una dosis con 3 decimales exactos ("1.000MG") casi
- * siempre es miles; un volumen de envase con 3 decimales exactos casi
- * siempre es un tamaño grande real expresado en miles también ("SOLUCION
- * INYECTABLE X 1.000ML" = una bolsa de 1 litro, "GALON X 3.800ML" = un galón
- * real de 3800ml) -- confirmado en datos reales de producción, 2026-10-02.
- * La ÚNICA excepción confirmada es la jeringa precargada: ahí el mismo
- * patrón de 3 decimales SÍ es un volumen real y chico ("JERPREX1.750ML" =
- * 1.75 ml, la dosis de una jeringa de Paliperidona de depósito), nunca
- * "1750 ml" (ninguna jeringa precargada real mide litro y medio).
+ * para un VOLUMEN DE ENVASE (tamaño de presentación, o el denominador de una
+ * razón dosis/volumen) en vez de una dosis -- y con la respuesta contraria
+ * por defecto. Una dosis con 3 decimales exactos ("1.000MG") casi siempre es
+ * miles; un volumen con 3 decimales exactos casi siempre es un tamaño grande
+ * real expresado en miles también ("SOLUCION INYECTABLE X 1.000ML" = una
+ * bolsa de 1 litro, "GALON X 3.800ML" = un galón real de 3800ml) --
+ * confirmado en datos reales de producción, 2026-10-02. La ÚNICA excepción
+ * confirmada es la jeringa precargada: ahí el mismo patrón de 3 decimales SÍ
+ * es un volumen real y chico ("JERPREX1.750ML" = 1.75 ml, la dosis de una
+ * jeringa de Paliperidona de depósito), nunca "1750 ml" (ninguna jeringa
+ * precargada real mide litro y medio) -- el mismo "1.750" aparece tanto como
+ * tamaño de envase como denominador de la razón de concentración en este
+ * caso, así que ambos usos comparten esta misma función.
  */
 function parsePresentationVolumeNumber(raw: string, upper: string): string {
   if (raw.includes(",")) {
@@ -676,10 +679,33 @@ export function extractProductAttributes(
       // reales distintas (jeringas precargadas de dosis distinta), pero las
       // tres reducen a la misma concentración "100MG/ML" -- reducir la razón
       // las fusionaba en una sola, como si fueran la misma jeringa.
-      const denominatorValue = concentrationRatioSuffix[1] ? Number.parseFloat(parseColombianNumber(concentrationRatioSuffix[1])) : 1;
+      const denominatorValue = concentrationRatioSuffix[1] ? Number.parseFloat(parsePresentationVolumeNumber(concentrationRatioSuffix[1], upper)) : 1;
       const numeratorValue = Number.parseFloat(finalConcentration);
       if (denominatorValue > 0 && Number.isFinite(numeratorValue)) {
         finalConcentration = String(Math.round((numeratorValue / denominatorValue) * 10000) / 10000);
+        finalConcentrationUnit = `${finalConcentrationUnit}/${concentrationRatioSuffix[2].toUpperCase()}`;
+      }
+    } else if (concentrationRatioSuffix && concentrationRatioSuffix[1] && isSealedUnitForm(dosageForm)) {
+      // Para formas SELLADAS sí importa el volumen total de ESA presentación
+      // puntual, cuando el texto lo dice explícitamente con un número
+      // distinto de 1 -- confirmado en datos reales de producción
+      // (2026-10-02): "BACLOFENO 10MG/20ML" (0,5mg/ml) y "BACLOFENO 10MG/5ML"
+      // (2mg/ml) son DOS presentaciones reales con la misma dosis total pero
+      // concentración/volumen distintos (igual pasa con Docetaxel,
+      // Dexmedetomidina, Citarabina...) -- antes quedaban fusionadas en una
+      // sola clave genérica, como si fueran intercambiables.
+      //
+      // Solo se agrega el volumen cuando el texto trae un NÚMERO explícito
+      // ahí Y ese número no es 1: un denominador implícito ("20MG/ML", sin
+      // dígito) o literal "/1ML" no agrega nada real -- es la forma más común
+      // de expresar "por mililitro" y NO debe quedar separada de un proveedor
+      // que simplemente omite el "/ML" (bug real: esto rompía la Hioscina N-
+      // Butil Bromuro, cuyo envase SIEMPRE es de 1ml, entre un proveedor que
+      // escribe "20MG/ML" y otro que solo pone "20MG").
+      const denominatorValue = Number.parseFloat(parsePresentationVolumeNumber(concentrationRatioSuffix[1], upper));
+      if (Number.isFinite(denominatorValue) && denominatorValue !== 1) {
+        const formattedDenominator = String(Math.round(denominatorValue * 10000) / 10000);
+        finalConcentration = `${finalConcentration}/${formattedDenominator}`;
         finalConcentrationUnit = `${finalConcentrationUnit}/${concentrationRatioSuffix[2].toUpperCase()}`;
       }
     } else {

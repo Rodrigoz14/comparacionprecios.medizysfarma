@@ -285,8 +285,10 @@ describe("extractProductAttributes", () => {
   it("bug real (2026-10-01): '1.000MG' (convencion colombiana de miles) no se confunde con un decimal -- son 1000mg, no 1mg", () => {
     // Confirmado en datos reales de produccion: "ACETAMINOFEN (PARACETAMOL)
     // 1.000MG/100ML..." (Ramedicas) se leia como concentracion "1" (JS
-    // interpreta el punto como decimal), un error de 1000x.
-    const result = extractProductAttributes("ACETAMINOFEN 1.000MG/100ML SOLUCION INYECTABLE", {
+    // interpreta el punto como decimal), un error de 1000x. Forma NO sellada
+    // a proposito, para probar solo el parseo de miles de la dosis, sin
+    // mezclarlo con el manejo aparte del volumen en formas selladas.
+    const result = extractProductAttributes("ACETAMINOFEN 1.000MG TABLETA", {
       requirePresentation: false,
     });
     expect(result?.attributes.concentration).toBe("1000");
@@ -334,13 +336,50 @@ describe("extractProductAttributes", () => {
     // 80MG/0.8ML son TRES jeringas precargadas de dosis real distinta, pero
     // las tres reducen a la misma concentracion "100MG/ML" -- si se redujera,
     // quedarian con la MISMA clave generica, como si fueran intercambiables.
+    // (El volumen SÍ queda en la clave -- ver el siguiente bug, 2026-10-02 --
+    // pero sin reducir la razon: "40/0.4", no "100".)
     const d40 = extractProductAttributes("ENOXAPARINA 40MG/0.4ML SOLUCION INYECTABLE", { requirePresentation: false });
     const d60 = extractProductAttributes("ENOXAPARINA 60MG/0.6ML SOLUCION INYECTABLE", { requirePresentation: false });
-    expect(d40?.attributes.concentration).toBe("40");
-    expect(d40?.attributes.concentrationUnit).toBe("MG");
-    expect(d60?.attributes.concentration).toBe("60");
-    expect(d60?.attributes.concentrationUnit).toBe("MG");
+    expect(d40?.attributes.concentration).toBe("40/0.4");
+    expect(d40?.attributes.concentrationUnit).toBe("MG/ML");
+    expect(d60?.attributes.concentration).toBe("60/0.6");
+    expect(d60?.attributes.concentrationUnit).toBe("MG/ML");
     expect(buildGenericKey(d40!.attributes)).not.toBe(buildGenericKey(d60!.attributes));
+  });
+
+  it("bug real (2026-10-02): el volumen SÍ se agrega a la clave de una forma sellada cuando es explícito y distinto de 1ml", () => {
+    // Confirmado en datos reales de producción: "BACLOFENO 10MG/20ML"
+    // (0,5mg/ml) y "BACLOFENO 10MG/5ML" (2mg/ml) tienen la MISMA dosis total
+    // pero son dos presentaciones reales con concentración distinta -- antes
+    // quedaban fusionadas en una sola clave genérica. Mismo caso real con
+    // Docetaxel, Dexmedetomidina (premezcla diluida vs. vial concentrado).
+    const d20 = extractProductAttributes("BACLOFENO 10MG/20ML (0,5MG/ML) SOLUCION INYECTABLE", {
+      requirePresentation: false,
+    });
+    const d5 = extractProductAttributes("BACLOFENO 10MG/5ML (2MG/ML) SOLUCION INYECTABLE", {
+      requirePresentation: false,
+    });
+    expect(d20?.attributes.concentration).toBe("10/20");
+    expect(d5?.attributes.concentration).toBe("10/5");
+    expect(buildGenericKey(d20!.attributes)).not.toBe(buildGenericKey(d5!.attributes));
+
+    // Pero un denominador implícito o igual a 1 ("20MG/ML", "20MG/1ML") NO se
+    // agrega -- son la misma presentación que un proveedor que de plano omite
+    // el "/ML" (bug real: esto rompía la Hioscina N-Butil Bromuro, cuyo
+    // envase SIEMPRE es de 1ml, entre un proveedor que escribe "20MG/ML" y
+    // otro que solo pone "20MG").
+    const sinDenominador = extractProductAttributes("HIOSCINA N-BUTIL BROMURO 20MG SOLUCION INYECTABLE", {
+      requirePresentation: false,
+    });
+    const conMl = extractProductAttributes("HIOSCINA N-BUTIL BROMURO 20MG/ML SOLUCION INYECTABLE", {
+      requirePresentation: false,
+    });
+    const con1Ml = extractProductAttributes("HIOSCINA N-BUTIL BROMURO 20MG/1ML SOLUCION INYECTABLE", {
+      requirePresentation: false,
+    });
+    expect(conMl?.attributes.concentration).toBe("20");
+    expect(buildGenericKey(sinDenominador!.attributes)).toBe(buildGenericKey(conMl!.attributes));
+    expect(buildGenericKey(sinDenominador!.attributes)).toBe(buildGenericKey(con1Ml!.attributes));
   });
 
   it("bug real (2026-10-02): 'SIN EPINEFRINA'/'S/EPINEFRINA' es la presentacion por defecto -- coincide con la version sin ninguna aclaracion", () => {
@@ -416,7 +455,10 @@ describe("extractProductAttributes", () => {
       "EPS-PALIPERIDONA 350MG/1.750ML SUSP INY JERPREX1.750ML CX1 (INVEGA TRINZA 546MG - 3 MESES) - JANSSEN",
       { requirePresentation: false },
     );
-    expect(r1?.attributes.concentration).toBe("350"); // la dosis SI usa el fix de miles (no aplica aqui, ya es un numero chico)
+    // El volumen tambien entra a la concentracion (forma sellada, ver bug
+    // anterior) -- "350/1.75", no "350/1750": la misma deteccion de jeringa
+    // precargada aplica tanto al tamano de envase como a este denominador.
+    expect(r1?.attributes.concentration).toBe("350/1.75");
     expect(r1?.attributes.presentationQuantity).toBe(2); // 1.75 redondeado, no 1750
 
     const r2 = extractProductAttributes(
