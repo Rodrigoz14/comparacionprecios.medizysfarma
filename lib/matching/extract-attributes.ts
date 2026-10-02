@@ -280,6 +280,21 @@ function matchDosageForm(upper: string): { dosageForm: string; index: number } |
     const index = upper.indexOf(phrase);
     if (index >= 0) return { dosageForm: mapped, index };
   }
+  // "POLVO PARA RECONSTITUIR" sin decir a qué (oral vs inyectable) -- bug
+  // real confirmado (2026-10-02): "AMPICILINA SODICA + SULBACTAM SODICO
+  // POLVO PARA RECONSTITUIR 1.5G VIAL" (texto típico de un cliente) no traía
+  // NINGÚN marcador de forma farmacéutica reconocido, así que la frase
+  // completa quedaba pegada al principio activo, rompiendo la homologación
+  // por completo. Cuando el texto NO menciona "ORAL" en ningún lado (si lo
+  // menciona, ya lo resuelve correctamente la palabra "SOLUCION"/
+  // "SUSPENSION" suelta más abajo), un polvo para reconstituir en estos
+  // datos siempre es un antibiótico inyectable (vial/ampolla) que se
+  // reconstituye antes de aplicar -- nunca otra vía.
+  if (upper.includes("RECONSTITUIR") && !upper.includes("ORAL")) {
+    const polvoIndex = upper.indexOf("POLVO");
+    const reconstituirIndex = upper.indexOf("RECONSTITUIR");
+    return { dosageForm: "Inyectable", index: polvoIndex >= 0 ? polvoIndex : reconstituirIndex };
+  }
   const tokens = upper.split(/[^A-ZÁÉÍÓÚÑ]+/).filter(Boolean);
   for (const token of tokens) {
     const mapped = DOSAGE_FORM_MAP[token];
@@ -320,6 +335,18 @@ const CHANNEL_PREFIX_RE = /^(EPS|POS|NO[\s-]?POS|PBS)[\s-]+/i;
 // medicamento). Nunca se quita "CON"/"C/EPINEFRINA": ESA sí es una
 // presentación real y distinta (con vasoconstrictor).
 const WITHOUT_EPINEPHRINE_RE = /\s*(SIN\s+EPINEFRINA|S\/\s*EPINEFRINA)\b/i;
+
+// Adjetivos de sal (concuerdan en género con el principio que modifican:
+// "Ampicilina SÓDICA", "Sulbactam SÓDICO", "Diclofenaco SÓDICO") -- la sal no
+// cambia la identidad del medicamento para homologar en este catálogo (mismo
+// criterio ya confirmado con "Dipirona"/"Dipirona Sódica"). Bug real
+// confirmado (2026-10-02): "AMPICILINA SODICA + SULBACTAM SODICO..." de un
+// cliente nunca coincidía con "AMPICILINA+SULBACTAM..." del catálogo porque
+// "SODICA"/"SODICO" quedaban como parte del nombre del principio activo. No
+// se quitan compuestos donde la palabra de sal SÍ es el núcleo del nombre
+// ("Sulfato de Sodio", "Cloruro de Sodio" ya usan "SODIO", sustantivo con DE,
+// nunca este adjetivo).
+const SALT_FORM_ADJECTIVE_RE = /\b(SODICA|SODICO|POTASICA|POTASICO|CALCICA|CALCICO)\b/gi;
 
 // Marca real de jeringa precargada ("JER PREX0.4ML", "JERPREX1.750ML" --
 // "JER"+"PRE" a veces vienen pegados, a veces con espacio). Sirve para
@@ -402,6 +429,7 @@ export function extractIngredientGuess(rawText: string): string | null {
     .toUpperCase()
     .replace(CHANNEL_PREFIX_RE, "")
     .replace(WITHOUT_EPINEPHRINE_RE, "")
+    .replace(SALT_FORM_ADJECTIVE_RE, "")
     .trim();
   if (!upper) return null;
 
@@ -436,7 +464,11 @@ export function extractProductAttributes(
   options: ExtractOptions = {},
 ): { attributes: ExtractedAttributes; warnings: string[]; presentationSpecified: boolean } | null {
   const requirePresentation = options.requirePresentation ?? true;
-  const upper = stripAccents(rawName).toUpperCase().replace(CHANNEL_PREFIX_RE, "").replace(WITHOUT_EPINEPHRINE_RE, "");
+  const upper = stripAccents(rawName)
+    .toUpperCase()
+    .replace(CHANNEL_PREFIX_RE, "")
+    .replace(WITHOUT_EPINEPHRINE_RE, "")
+    .replace(SALT_FORM_ADJECTIVE_RE, "");
   const warnings: string[] = [];
 
   // Un volumen (ML/L) escrito justo despues de "X"/"*" es SIEMPRE tamaño de

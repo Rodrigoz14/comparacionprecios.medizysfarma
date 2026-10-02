@@ -406,6 +406,37 @@ describe("extractProductAttributes", () => {
     expect(buildGenericKey(conEpinefrina!.attributes)).not.toBe(buildGenericKey(sinAclarar!.attributes));
   });
 
+  it("bug real (2026-10-02): 'POLVO PARA RECONSTITUIR' sin decir a que (oral/inyectable) se reconoce como Inyectable", () => {
+    // Confirmado en datos reales de producción: un cliente escribio
+    // "AMPICILINA SODICA + SULBACTAM SODICO POLVO PARA RECONSTITUIR 1.5G
+    // VIAL" -- sin NINGUN marcador de forma farmaceutica reconocido antes de
+    // este fix, asi que la frase completa quedaba pegada al principio
+    // activo, rompiendo la homologacion.
+    const result = extractProductAttributes(
+      "AMPICILINA SODICA + SULBACTAM SODICO POLVO PARA RECONSTITUIR 1.5G VIAL",
+      { requirePresentation: false },
+    );
+    expect(result?.attributes.activeIngredient).toBe("AMPICILINA + SULBACTAM");
+    expect(result?.attributes.dosageForm).toBe("Inyectable");
+
+    // Cuando SI dice "oral" en algun lado, sigue reconociendose como antes
+    // (no se fuerza a Inyectable por error).
+    const oral = extractProductAttributes(
+      "Ampicilina 250 mg /5mL polvo para reconstituir solucion o suspension oral fco 60 mL x 1 LASANTE",
+      { requirePresentation: false },
+    );
+    expect(oral?.attributes.dosageForm).not.toBe("Inyectable");
+  });
+
+  it("bug real (2026-10-02): adjetivos de sal ('SODICA'/'SODICO'/'POTASICA'...) no cambian la identidad del principio activo", () => {
+    // Mismo criterio ya confirmado con "Dipirona"/"Dipirona Sodica": la sal
+    // no es una sustancia distinta para homologar en este catalogo.
+    const conSal = extractProductAttributes("DICLOFENACO SODICO 50MG TABLETA", { requirePresentation: false });
+    const sinSal = extractProductAttributes("DICLOFENACO 50MG TABLETA", { requirePresentation: false });
+    expect(conSal?.attributes.activeIngredient).toBe("DICLOFENACO");
+    expect(buildGenericKey(conSal!.attributes)).toBe(buildGenericKey(sinSal!.attributes));
+  });
+
   it("bug real (2026-10-02): combinado con cada dosis pegada a su propio principio ('Ampicilina 1 g + Sulbactam 0.5 g') no pierde el segundo principio", () => {
     // Confirmado en datos reales de produccion (Ofimedicas): a diferencia de
     // "AMPICILINA + SULBACTAM 1G+0.5G" (nombres juntos, dosis juntas, ya
