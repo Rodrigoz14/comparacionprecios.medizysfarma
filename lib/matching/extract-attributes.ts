@@ -321,6 +321,18 @@ const CHANNEL_PREFIX_RE = /^(EPS|POS|NO[\s-]?POS|PBS)[\s-]+/i;
 // presentación real y distinta (con vasoconstrictor).
 const WITHOUT_EPINEPHRINE_RE = /\s*(SIN\s+EPINEFRINA|S\/\s*EPINEFRINA)\b/i;
 
+// Segunda forma real de escribir un combinado, distinta de "INGREDIENTE1 +
+// INGREDIENTE2 DOSIS1+DOSIS2" (esa ya la maneja EXTRA_DOSE_RE más abajo):
+// aquí cada principio activo trae SU PROPIA dosis pegada antes del "+"
+// siguiente -- "Ampicilina 1 g + Sulbactam 0.5 g" (visto en datos reales de
+// Ofimédicas). Sin esto, todo lo que viene después del primer "+" se perdía
+// por completo: "Ampicilina 1 g + Sulbactam 0.5 g..." quedaba como Ampicilina
+// sola, sin Sulbactam, y nunca coincidía con el mismo combinado escrito en el
+// formato "Ampicilina + Sulbactam 1g+0.5g". Anclado al inicio del texto para
+// no disparar con un "+" suelto en cualquier otra parte.
+const INTERLEAVED_COMBO_RE =
+  /^([A-ZÁÉÍÓÚÑ]+(?:\s+[A-ZÁÉÍÓÚÑ]+)*?)\s+(\d+(?:[.,]\d+)?)\s*(MG|MCG|UI|MEQ|GR|G|ML|%)\s*\+\s*([A-ZÁÉÍÓÚÑ]+(?:\s+[A-ZÁÉÍÓÚÑ]+)*?)\s+(\d+(?:[.,]\d+)?)\s*(MG|MCG|UI|MEQ|GR|G|ML|%)\b/i;
+
 export interface ExtractOptions {
   /**
    * Si es false, no exigir una cantidad de presentación explícita en el texto:
@@ -637,6 +649,23 @@ export function extractProductAttributes(
       if (denominatorValue > 0 && Number.isFinite(numeratorValue)) {
         finalConcentration = String(Math.round((numeratorValue / denominatorValue) * 10000) / 10000);
         finalConcentrationUnit = `${finalConcentrationUnit}/${concentrationRatioSuffix[2].toUpperCase()}`;
+      }
+    } else {
+      // "Ampicilina 1 g + Sulbactam 0.5 g" -- cada principio con su propia
+      // dosis pegada antes del "+" (ver INTERLEAVED_COMBO_RE). Se revisa solo
+      // cuando ninguno de los casos anteriores (razón %, razón MG/ML) ya
+      // resolvió la concentración, igual que esos, solo para principio activo
+      // único (un combinado real de 3+ principios en este formato no se
+      // intenta -- más conservador que adivinar mal la asociación).
+      const interleaved = INTERLEAVED_COMBO_RE.exec(upper);
+      if (interleaved) {
+        const pair = [
+          { name: interleaved[1].trim(), value: parseColombianNumber(interleaved[2]), unit: normalizeConcentrationUnit(interleaved[3].toUpperCase()) },
+          { name: interleaved[4].trim(), value: parseColombianNumber(interleaved[5]), unit: normalizeConcentrationUnit(interleaved[6].toUpperCase()) },
+        ].sort((a, b) => a.name.localeCompare(b.name));
+        finalActiveIngredient = pair.map((p) => p.name).join(" + ");
+        finalConcentration = pair.map((p) => p.value).join("/");
+        finalConcentrationUnit = pair[0].unit;
       }
     }
   }

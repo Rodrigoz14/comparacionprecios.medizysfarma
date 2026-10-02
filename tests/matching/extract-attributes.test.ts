@@ -367,6 +367,30 @@ describe("extractProductAttributes", () => {
     expect(buildGenericKey(conEpinefrina!.attributes)).not.toBe(buildGenericKey(sinAclarar!.attributes));
   });
 
+  it("bug real (2026-10-02): combinado con cada dosis pegada a su propio principio ('Ampicilina 1 g + Sulbactam 0.5 g') no pierde el segundo principio", () => {
+    // Confirmado en datos reales de produccion (Ofimedicas): a diferencia de
+    // "AMPICILINA + SULBACTAM 1G+0.5G" (nombres juntos, dosis juntas, ya
+    // soportado), aqui cada principio trae pegada su propia dosis antes del
+    // "+" siguiente. Sin el fix, todo lo que sigue al primer "+" se perdia:
+    // quedaba como Ampicilina sola, sin Sulbactam.
+    const intercalado = extractProductAttributes(
+      "Ampicilina 1 g + Sulbactam 0.5 g inyectable amp 1.5 g x 10 ampidelt DELTA 20036512-02",
+      { requirePresentation: false },
+    );
+    const formatoJunto = extractProductAttributes("AMPICILINA + SULBACTAM 1G+0,5G POLVO A SOLUCION INYECTABLE", {
+      requirePresentation: false,
+    });
+    expect(intercalado?.attributes.activeIngredient).toBe("AMPICILINA + SULBACTAM");
+    expect(intercalado?.attributes.concentration).toBe("1/0.5");
+    expect(buildGenericKey(intercalado!.attributes)).toBe(buildGenericKey(formatoJunto!.attributes));
+
+    // Una Ampicilina sola (sin combinar) sigue siendo un producto distinto.
+    const sola = extractProductAttributes("Ampicilina 1 g inyectable amp 1 g x 10 FARMALOGICA 20102511-01", {
+      requirePresentation: false,
+    });
+    expect(buildGenericKey(sola!.attributes)).not.toBe(buildGenericKey(intercalado!.attributes));
+  });
+
   it("bug real (2026-09-29): 'AMP'/'AMPOLLA' (el envase) ya no es una forma farmaceutica aparte de 'Inyectable'", () => {
     // Bodega registraba "DICLOFENACO 75MG/3ML C*100 AMP X 3ML" (sin decir
     // "solucion inyectable") y nunca coincidia con el "DICLOFENACO 75MG/3ML
