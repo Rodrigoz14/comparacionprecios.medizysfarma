@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db/client";
-import { canonicalizeIngredient, normalizeText } from "@/lib/matching/normalize";
+import { buildGenericKeyAliases, canonicalizeIngredient, normalizeText } from "@/lib/matching/normalize";
 import { expandIngredientTerms } from "@/lib/matching/synonym-service";
 import type { WarehouseStock } from "@/lib/generated/prisma/client";
 
@@ -9,10 +9,12 @@ import type { WarehouseStock } from "@/lib/generated/prisma/client";
  * "Dipirona SÓDICA" pero los proveedores solo dicen "Dipirona") -- sin esto,
  * dos nombres reales del MISMO medicamento quedan con `genericKey` distinto
  * y la existencia real en bodega nunca se descuenta al cotizar (bug real
- * reportado por el cliente, 2026-09-29). El genericKey exacto se prueba
- * primero (una sola consulta, sin tocar sinónimos); la expansión por
- * sinónimo solo se intenta si esa consulta no encuentra nada, así que no
- * agrega costo para el caso normal (coincidencia directa).
+ * reportado por el cliente, 2026-09-29). El genericKey exacto (y sus
+ * variantes de unidad equivalentes, p. ej. "1%" = "10MG/ML" -- ver
+ * buildGenericKeyAliases) se prueba primero (una sola consulta, sin tocar
+ * sinónimos); la expansión por sinónimo solo se intenta si esa consulta no
+ * encuentra nada, así que no agrega costo para el caso normal (coincidencia
+ * directa).
  */
 export async function findWarehouseStock(product: {
   genericKey: string;
@@ -21,7 +23,8 @@ export async function findWarehouseStock(product: {
   concentrationUnit: string;
   dosageForm: string;
 }): Promise<WarehouseStock | null> {
-  const exact = await prisma.warehouseStock.findUnique({ where: { genericKey: product.genericKey } });
+  const keysToTry = [product.genericKey, ...buildGenericKeyAliases(product)];
+  const exact = await prisma.warehouseStock.findFirst({ where: { genericKey: { in: keysToTry } } });
   if (exact) return exact;
 
   const ingredientKey = canonicalizeIngredient(product.activeIngredient);

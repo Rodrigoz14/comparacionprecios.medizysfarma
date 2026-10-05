@@ -7,7 +7,7 @@ import { searchCandidates, searchCandidatesByIngredientText } from "@/lib/matchi
 import { compareAttributes } from "@/lib/matching/compare-attributes";
 import { decideFromScore } from "@/lib/matching/decision";
 import { extractIngredientGuess, extractProductAttributes } from "@/lib/matching/extract-attributes";
-import { buildGenericKey } from "@/lib/matching/normalize";
+import { buildGenericKey, buildGenericKeyAliases } from "@/lib/matching/normalize";
 import { scoreComparison } from "@/lib/matching/score";
 import type { CandidateProduct, MatchResult, ScoredCandidate } from "@/lib/matching/types";
 
@@ -196,8 +196,12 @@ async function resolveProductMatchCore(rawText: string, sector?: Sector): Promis
     : null;
 
   const genericKey = buildGenericKey(extraction.attributes);
+  // Además de la clave exacta, se prueban sus variantes equivalentes en otra
+  // unidad ("1%" = "10MG/ML", "1000MG" = "1G") -- matemáticamente la MISMA
+  // concentración, solo escrita distinto (ver buildGenericKeyAliases).
+  const genericKeyAliases = buildGenericKeyAliases(extraction.attributes);
   const exactMatches = await prisma.product.findMany({
-    where: { genericKey, status: "ACTIVE", ...(sector ? { sector } : {}) },
+    where: { genericKey: { in: [genericKey, ...genericKeyAliases] }, status: "ACTIVE", ...(sector ? { sector } : {}) },
   });
   if (exactMatches.length > 0) {
     // Cuando el cliente pidió un tamaño de envase específico, se prefiere ese

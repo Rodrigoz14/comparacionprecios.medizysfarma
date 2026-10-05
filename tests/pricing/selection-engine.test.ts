@@ -442,6 +442,49 @@ describe("selectBestOffer (bodega descuenta aunque el ingrediente esté registra
   });
 });
 
+describe("selectBestOffer (bodega descuenta aunque este guardada en otra escala de unidad, 2026-10-05)", () => {
+  const productIds: string[] = [];
+  const laboratoryIds: string[] = [];
+  const supplierIds: string[] = [];
+
+  beforeAll(async () => {
+    // Catalogo/solicitud en MCG, bodega registrada en MG -- misma dosis real
+    // (50mcg = 0.05mg), sin ningun sinonimo de por medio.
+    const product = await createProduct("BODEGAUNIDAD TAB 50MCG X30", "TestLab Bodega Unidad");
+    productIds.push(product.id);
+    laboratoryIds.push(product.laboratoryId!);
+
+    const supplier = await prisma.supplier.create({ data: { name: "Proveedor Bodega Unidad Test" } });
+    supplierIds.push(supplier.id);
+    await prisma.supplierOffer.create({
+      data: { supplierId: supplier.id, productId: product.id, price: 1000, availability: "AVAILABLE", stockQuantity: 1000 },
+    });
+
+    await prisma.warehouseStock.create({
+      data: { genericKey: "bodegaunidad 0.05 mg tableta", quantity: 40 },
+    });
+  });
+
+  afterAll(async () => {
+    await prisma.warehouseStock.deleteMany({ where: { genericKey: "bodegaunidad 0.05 mg tableta" } });
+    await prisma.priceComparison.deleteMany({ where: { productId: { in: productIds } } });
+    await prisma.supplierOffer.deleteMany({ where: { productId: { in: productIds } } });
+    await prisma.supplier.deleteMany({ where: { id: { in: supplierIds } } });
+    await prisma.product.deleteMany({ where: { id: { in: productIds } } });
+    await prisma.laboratory.deleteMany({ where: { id: { in: laboratoryIds } } });
+  });
+
+  it("descuenta la existencia aunque bodega la haya registrado en otra unidad de escala (MG en vez de MCG) para la misma dosis real", async () => {
+    const { itemId } = await createRequestItem("BODEGAUNIDAD TAB 50MCG X30", 10);
+    await resolveCustomerRequestItem(itemId);
+
+    const result = await selectBestOffer(itemId);
+    expect(result.warehouseStock).toBe(40);
+    expect(result.status).toBe("COVERED_BY_STOCK");
+    expect(result.quantityToPurchase).toBe(0);
+  });
+});
+
 // Caso real reportado por el cliente: "Beta metildigoxina solucion inyectable"
 // y "Furosemida solucion inyectable" -- el sistema ofrecia una ampolla de
 // 100ml como si fuera intercambiable "1 a 1" con una de 2ml para la misma

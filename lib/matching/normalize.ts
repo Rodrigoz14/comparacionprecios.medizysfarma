@@ -1,5 +1,8 @@
 import type { ExtractedAttributes } from "@/lib/matching/types";
 
+/** Los únicos 4 campos que de verdad identifican el genérico (ver buildGenericKey) -- deja pasar cualquier objeto que los tenga, sin exigir presentación. */
+type GenericIdentity = Pick<ExtractedAttributes, "activeIngredient" | "concentration" | "concentrationUnit" | "dosageForm">;
+
 export function stripAccents(value: string): string {
   return value.normalize("NFD").replace(/[̀-ͯ]/g, "");
 }
@@ -58,7 +61,7 @@ export function canonicalizeIngredient(activeIngredient: string): string {
  * mismo medicamento — el precio se compara por unidad, no por presentación
  * (el laboratorio tampoco es criterio de selección, por la misma razón).
  */
-export function buildGenericKey(attributes: ExtractedAttributes): string {
+export function buildGenericKey(attributes: GenericIdentity): string {
   const raw = [
     canonicalizeIngredient(attributes.activeIngredient),
     attributes.concentration,
@@ -66,6 +69,70 @@ export function buildGenericKey(attributes: ExtractedAttributes): string {
     attributes.dosageForm,
   ].join(" ");
   return normalizeText(raw);
+}
+
+/**
+ * Variantes EQUIVALENTES de la clave genérica de un producto -- mismo
+ * principio activo y forma farmacéutica, pero la concentración convertida a
+ * otra unidad que significa exactamente lo mismo (p. ej. "1000MG" y "1G" son
+ * la misma dosis; "1%" y "10MG/ML" son la misma concentración real). A
+ * petición del cliente (2026-10-05): en vez de guardar varias claves por
+ * producto (requeriría migrar el esquema y mantenerlas sincronizadas en cada
+ * importación), se CALCULAN en el momento de buscar -- cubre lo mismo sin
+ * tocar la base de datos ni necesitar otro backfill cada vez que se agregue
+ * una unidad nueva.
+ *
+ * Nunca se aplica a concentraciones combinadas (dos principios activos,
+ * "500/125") ni a razones dosis/volumen de una forma sellada ("10/20" de
+ * Baclofeno 10mg/20ml) -- esas ya tienen un significado propio que depende
+ * del formato exacto (ver fix de Baclofeno/Enoxaparina/Dexmedetomidina,
+ * 2026-10-02): convertir esos números produciría alias que vuelven a
+ * fusionar presentaciones reales distintas, justo el bug que esos fixes
+ * corrigieron.
+ *
+ * A PROPÓSITO no convierte "%" <-> "MG": % siempre es una TASA (g por cada
+ * 100 mL o 100 g, independiente del tamaño del envase), mientras que un "MG"
+ * simple (sin razón "/ML") es el contenido TOTAL de ese envase puntual --
+ * convertir uno al otro sin saber el volumen real produciría alias
+ * matemáticamente incorrectos (p. ej. "500MG" en un frasco de 250ml NO es
+ * "5%": son 2 mg/ml = 0,2%, no 5%). La equivalencia %-a-mg/ml que SÍ es
+ * segura (cuando la razón completa está presente, "2G/10ML" = "20%") ya la
+ * resuelve `extractProductAttributes` al construir la clave principal, no
+ * hace falta repetirla aquí.
+ *
+ * La forma farmacéutica NUNCA cambia en un alias -- por eso una conversión de
+ * unidad nunca termina coincidiendo por accidente con otra presentación que
+ * tenga el mismo número pero una forma distinta: la clave siempre incluye la
+ * forma, así que ambas presentaciones nunca podrían colisionar.
+ */
+export function buildGenericKeyAliases(attributes: GenericIdentity): string[] {
+  if (attributes.concentration.includes("/")) return [];
+  const unit = attributes.concentrationUnit.toUpperCase();
+  const value = Number.parseFloat(attributes.concentration);
+  if (!Number.isFinite(value)) return [];
+
+  const aliases = new Set<string>();
+  const addVariant = (newValue: number, newUnit: string) => {
+    const rounded = Math.round(newValue * 1_000_000) / 1_000_000;
+    aliases.add(buildGenericKey({ ...attributes, concentration: String(rounded), concentrationUnit: newUnit }));
+  };
+
+  // Escala de masa: MCG <-> MG <-> G (1 g = 1.000 mg = 1.000.000 mcg) --
+  // siempre exacta, sin importar la forma farmacéutica ni el volumen.
+  if (unit === "MCG") {
+    addVariant(value / 1000, "MG");
+    addVariant(value / 1_000_000, "G");
+  } else if (unit === "MG") {
+    addVariant(value * 1000, "MCG");
+    addVariant(value / 1000, "G");
+  } else if (unit === "G") {
+    addVariant(value * 1000, "MG");
+    addVariant(value * 1_000_000, "MCG");
+  }
+
+  const primary = buildGenericKey(attributes);
+  aliases.delete(primary);
+  return [...aliases];
 }
 
 /**

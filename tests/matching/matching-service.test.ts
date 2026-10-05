@@ -533,3 +533,28 @@ describe("resolveProductMatch (filtrado por sector)", () => {
     expect(result.decision).not.toBe("MATCH");
   });
 });
+
+describe("resolveProductMatch (claves genericas equivalentes en otra unidad, 2026-10-05)", () => {
+  const productIds: string[] = [];
+  const laboratoryIds: string[] = [];
+
+  beforeAll(async () => {
+    // El catalogo guarda este producto en MCG; un cliente lo pide en MG --
+    // misma dosis real (100mcg = 0.1mg), debe homologar solo igual.
+    const producto = await createProduct("ZOLTRAUNIDAD TAB 100MCG X30", "TestLab Zoltraunidad");
+    productIds.push(producto.id);
+    laboratoryIds.push(producto.laboratoryId!);
+  });
+
+  afterAll(async () => {
+    await prisma.product.deleteMany({ where: { id: { in: productIds } } });
+    await prisma.laboratory.deleteMany({ where: { id: { in: laboratoryIds } } });
+  });
+
+  it("encuentra el producto aunque el cliente pida la dosis en una unidad de escala distinta (MG en vez de MCG)", async () => {
+    const result = await resolveProductMatch("ZOLTRAUNIDAD 0.1MG TABLETA");
+    expect(result.decision).toBe("MATCH");
+    expect(result.confidence).toBe(1);
+    expect(result.matchedProductIds).toEqual([productIds[0]]);
+  });
+});
