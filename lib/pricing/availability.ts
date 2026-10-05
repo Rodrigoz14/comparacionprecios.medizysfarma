@@ -30,3 +30,20 @@ export function checkAvailability(
   }
   return { eligible: true, reason: null };
 }
+
+/**
+ * Texto para mostrarle al cliente en el Excel del pedido (columna
+ * "Disponibilidad") -- a pedido del cliente (2026-10-05): cuando SÍ hay
+ * disponibilidad confirmada debe indicarse textual Y numéricamente
+ * ("Disponible: 150 unidades"), no solo un texto genérico. Una oferta
+ * elegible (la única que puede llegar a quedar `selected` en una hoja de
+ * proveedor) solo puede estar en uno de estos tres estados -- nunca "Sin
+ * existencias" ni "Existencia insuficiente", porque esas ya se descartan
+ * antes en `checkAvailability` (ver `selection-engine.ts`); se cubren aquí
+ * solo por completitud.
+ */
+export function formatAvailabilityLabel(availability: Availability, stockQuantity: number | null): string {
+  if (availability === "OUT_OF_STOCK") return "Sin existencias";
+  if (availability === "UNKNOWN") return "Disponibilidad no confirmada";
+  return stockQuantity !== null ? `Disponible: ${stockQuantity} unidades` : "Disponible";
+}

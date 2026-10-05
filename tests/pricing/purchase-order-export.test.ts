@@ -109,10 +109,13 @@ describe("buildPurchaseOrderWorkbook (integracion contra base de datos real)", (
 
     const disfarmaSheet = workbook.getWorksheet("Disfarma Test Pedido")!;
     // Fila 1 = encabezados, fila 2 = el producto. Piden 3 cajas x10 directamente.
-    // Columna 1 = Cliente, 2 = código proveedor, ... 6 = empaques a pedir.
+    // Columna 1 = Cliente, 2 = código proveedor, 3 = producto, 4 = disponibilidad,
+    // 5 = cubierto por bodega, 6 = laboratorio, 7 = presentación, 8 = empaques a pedir.
     expect(disfarmaSheet.getRow(2).getCell(1).value).toBe("Cliente Pedido Real"); // sin columna propia de cliente en el ítem, usa el de la solicitud
-    expect(disfarmaSheet.getRow(2).getCell(6).value).toBe(3); // empaques a pedir
+    expect(disfarmaSheet.getRow(2).getCell(8).value).toBe(3); // empaques a pedir
     expect(disfarmaSheet.getRow(2).getCell(2).value).toBe("DIS-001");
+    expect(disfarmaSheet.getRow(2).getCell(4).value).toBe("Disponible: 500 unidades"); // disponibilidad, textual y numérica
+    expect(disfarmaSheet.getRow(2).getCell(5).value).toBe(0); // nada cubierto por bodega en este caso
   });
 
   it("agrega una pestaña 'Bodega' con lo cubierto por existencia propia, completo o en parte", async () => {
@@ -140,10 +143,50 @@ describe("buildPurchaseOrderWorkbook (integracion contra base de datos real)", (
     expect(warehouseSheet.getRow(2).getCell(4).value).toBe(2); // cubierto por bodega
     expect(warehouseSheet.getRow(2).getCell(5).value).toBe(3); // pendiente por comprar
 
-    // Lo pendiente (3) sí debe seguir apareciendo en la hoja del proveedor.
+    // Lo pendiente (3) sí debe seguir apareciendo en la hoja del proveedor,
+    // con la cantidad cubierta por bodega repetida ahí tambien (columna 5).
     const disfarmaSheet = workbook.getWorksheet("Disfarma Test Pedido")!;
-    expect(disfarmaSheet.getRow(2).getCell(6).value).toBe(3);
+    expect(disfarmaSheet.getRow(2).getCell(8).value).toBe(3);
+    expect(disfarmaSheet.getRow(2).getCell(5).value).toBe(2);
 
     await prisma.warehouseStock.deleteMany({ where: { genericKey: genericKeys[0] } });
+  });
+
+  it("agrega una pestaña 'Sin disponibilidad' cuando ningun proveedor alcanza, con una fila por alternativa comparada", async () => {
+    const request = await prisma.customerRequest.create({ data: { customerName: "Cliente Pedido Insuficiente" } });
+    requestIds.push(request.id);
+
+    // Ambas ofertas de PEDIDOTEST2 (Ramedicas) quedan con stock insuficiente
+    // para las 20 unidades pedidas -- ninguna alternativa queda "selected".
+    await prisma.supplierOffer.updateMany({
+      where: { productId: productIds[1] },
+      data: { stockQuantity: 3 },
+    });
+
+    const itemB = await prisma.customerRequestItem.create({
+      data: { customerRequestId: request.id, originalText: "PEDIDOTEST2 JBE 100MG X1", requestedQuantity: 20 },
+    });
+    await resolveCustomerRequestItem(itemB.id);
+    const selection = await selectBestOffer(itemB.id);
+    expect(selection.status).toBe("NO_STOCK");
+
+    const result = await buildPurchaseOrderWorkbook(request.id);
+    expect(result).not.toBeNull();
+
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(result!.buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
+
+    // No debe aparecer ninguna hoja de proveedor para este producto -- nunca
+    // hubo nada "selected" que comprarle.
+    expect(workbook.worksheets.map((s) => s.name)).not.toContain("Ramedicas Test Pedido");
+
+    const unavailableSheet = workbook.getWorksheet("Sin disponibilidad")!;
+    expect(unavailableSheet).toBeDefined();
+    expect(unavailableSheet.getRow(2).getCell(1).value).toBe("Cliente Pedido Insuficiente");
+    expect(unavailableSheet.getRow(2).getCell(3).value).toBe("Ramedicas Test Pedido");
+    expect(unavailableSheet.getRow(2).getCell(4).value).toBe("Existencia insuficiente: 3 disponibles, se solicitan 20.");
+    expect(unavailableSheet.getRow(2).getCell(7).value).toBe(20); // pendiente por comprar
+
+    await prisma.supplierOffer.updateMany({ where: { productId: productIds[1] }, data: { stockQuantity: 500 } });
   });
 });
