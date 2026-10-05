@@ -2,7 +2,7 @@ import ExcelJS from "exceljs";
 import { prisma } from "@/lib/db/client";
 import { formatAvailabilityLabel } from "@/lib/pricing/availability";
 import { isSealedUnitForm } from "@/lib/pricing/measured-forms";
-import { calculateTotal, resolvePackagesNeeded } from "@/lib/pricing/price-calculator";
+import { calculateTotal, resolvePackagesNeeded, resolveUnitPrice } from "@/lib/pricing/price-calculator";
 
 const CURRENCY_FORMAT = '"$"#,##0';
 
@@ -142,18 +142,13 @@ export async function buildPurchaseOrderWorkbook(
       ? item.quantityToPurchase
       : resolvePackagesNeeded(item.quantityToPurchase, item.requestedPresentationQuantity, packageSize, comparison.product.presentationUnit);
     const packagePrice = Number(comparison.price);
-    // El precio unitario NUNCA se calcula cuando el proveedor ya lo reportó
-    // tal cual en su archivo (confirmado con el cliente, 2026-09-22) -- se
-    // usa ese valor exacto. Solo se deriva por división como respaldo (y,
-    // para ampollas/viales, nunca se divide: el precio ya es por unidad
-    // sellada, mismo criterio que selection-engine.ts).
     const unitPriceAsImported = comparison.supplierOffer.unitPriceAsImported;
-    const unitPrice =
-      unitPriceAsImported !== null
-        ? Number(unitPriceAsImported)
-        : isSealedUnit
-          ? packagePrice
-          : packagePrice / packageSize;
+    const unitPrice = resolveUnitPrice(
+      packagePrice,
+      packageSize,
+      isSealedUnit,
+      unitPriceAsImported !== null ? Number(unitPriceAsImported) : null,
+    );
 
     const line: SupplierOrderLine = {
       // El Excel que sube el cliente puede traer varios clientes mezclados

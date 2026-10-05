@@ -74,6 +74,39 @@ export function calculateTotal(packagePrice: number, packagesNeeded: number): nu
   return Math.round(packagePrice * packagesNeeded * 100) / 100;
 }
 
+/**
+ * Precio unitario de REFERENCIA (solo para comparar presentaciones entre
+ * sí, nunca el criterio de selección ni lo que se paga -- ver
+ * `calculateTotal`, que siempre usa `packagePrice` directo). Único punto de
+ * esta fórmula: estaba duplicada en 4 archivos (selection-engine.ts,
+ * suppliers/[id]/offers/route.ts, select-offer/route.ts,
+ * exclude-offer/route.ts) y dos de las copias se quedaron desactualizadas
+ * cuando esta lógica se corrigió -- bug real confirmado 2026-10-05: al
+ * elegir manualmente o excluir una oferta, una forma sellada (Inyectable/
+ * Ampolla) medida en ml mostraba un "precio unitario" dividido entre el
+ * volumen de LA CAJA sellada completa (p. ej. "/24" para una caja de 24ml),
+ * 24 veces menor al real -- el total seguía siendo correcto (se calcula
+ * aparte, directo de `packagePrice`), pero esa cifra de referencia no
+ * cuadraba con él, dando la impresión de que el precio se "multiplicaba por
+ * los ml".
+ *
+ * Orden de prioridad: (1) el precio unitario que el proveedor YA reportó en
+ * su archivo, tal cual, sin recalcular (confirmado con el cliente,
+ * 2026-09-22); (2) para una forma sellada, el precio del empaque completo
+ * (no se fracciona -- ver `isSealedUnitForm`); (3) el precio del empaque
+ * dividido entre su tamaño, como respaldo genérico.
+ */
+export function resolveUnitPrice(
+  packagePrice: number,
+  packageSize: number,
+  isSealedUnit: boolean,
+  unitPriceAsImported: number | null,
+): number {
+  if (unitPriceAsImported !== null) return unitPriceAsImported;
+  if (isSealedUnit) return packagePrice;
+  return Math.round((packagePrice / packageSize) * 10000) / 10000;
+}
+
 export function calculateSavings(selectedTotalCost: number, mostExpensiveTotalCost: number): number {
   return Math.round((mostExpensiveTotalCost - selectedTotalCost) * 100) / 100;
 }

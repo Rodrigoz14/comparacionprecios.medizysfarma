@@ -3,7 +3,7 @@ import { checkAvailability } from "@/lib/pricing/availability";
 import { capAlternatives } from "@/lib/pricing/cap-alternatives";
 import { filterCurrentOffers } from "@/lib/pricing/current-offers";
 import { formatCOP, formatUnitCOP } from "@/lib/pricing/format";
-import { calculateSavings, calculateTotal, resolvePackagesNeeded } from "@/lib/pricing/price-calculator";
+import { calculateSavings, calculateTotal, resolvePackagesNeeded, resolveUnitPrice } from "@/lib/pricing/price-calculator";
 import { isSafeExpirationLabel } from "@/lib/pricing/expiration";
 import { isSealedUnitForm } from "@/lib/pricing/measured-forms";
 import { DEFAULT_PRICING_RULES } from "@/lib/pricing/rules";
@@ -143,16 +143,12 @@ export async function selectBestOffer(
     // "empaque" ya es una sola unidad sellada, así que coincide con el
     // precio unitario sin necesidad de dividir.
     const packagePrice = Number(offer.price);
-    // El precio unitario NUNCA se calcula cuando el proveedor ya lo reportó
-    // tal cual en su archivo (confirmado con el cliente, 2026-09-22) -- se
-    // usa ese valor exacto. Solo se deriva por división como respaldo, para
-    // proveedores sin ese dato propio.
-    const unitPrice =
-      offer.unitPriceAsImported !== null
-        ? Number(offer.unitPriceAsImported)
-        : isSealedUnit
-          ? packagePrice
-          : Math.round((packagePrice / packageSize) * 10000) / 10000;
+    const unitPrice = resolveUnitPrice(
+      packagePrice,
+      packageSize,
+      isSealedUnit,
+      offer.unitPriceAsImported !== null ? Number(offer.unitPriceAsImported) : null,
+    );
     return {
       supplierOfferId: offer.id,
       supplierId: offer.supplierId,

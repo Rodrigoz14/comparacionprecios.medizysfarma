@@ -3,6 +3,7 @@ import { getVerifiedSession } from "@/lib/auth/dal";
 import { getLatestFilesBySupplier } from "@/lib/pricing/current-offers";
 import { isSafeExpirationLabel } from "@/lib/pricing/expiration";
 import { isMeasureUnit, isSealedUnitForm } from "@/lib/pricing/measured-forms";
+import { resolveUnitPrice } from "@/lib/pricing/price-calculator";
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
@@ -94,17 +95,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const packagePrice = Number(o.price);
     const packageSize = o.product.presentationQuantity;
     const isSealedUnit = isSealedUnitForm(o.product.dosageForm);
-    // El precio unitario NUNCA se calcula cuando el proveedor ya lo reportó
-    // tal cual en su archivo (confirmado con el cliente, 2026-09-22) -- se
-    // usa ese valor exacto, sin ninguna división. Solo se deriva por
-    // división para proveedores sin ese dato propio (detección genérica),
-    // como respaldo.
-    const unitPrice =
-      o.unitPriceAsImported !== null
-        ? Number(o.unitPriceAsImported)
-        : isSealedUnit
-          ? packagePrice
-          : packagePrice / packageSize;
+    const unitPrice = resolveUnitPrice(
+      packagePrice,
+      packageSize,
+      isSealedUnit,
+      o.unitPriceAsImported !== null ? Number(o.unitPriceAsImported) : null,
+    );
     const measureUnit = isMeasureUnit(o.product.presentationUnit);
     return {
       id: o.id,

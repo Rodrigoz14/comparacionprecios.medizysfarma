@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { calculatePackagesNeeded, calculateSavings, calculateTotal, resolvePackagesNeeded } from "@/lib/pricing/price-calculator";
+import {
+  calculatePackagesNeeded,
+  calculateSavings,
+  calculateTotal,
+  resolvePackagesNeeded,
+  resolveUnitPrice,
+} from "@/lib/pricing/price-calculator";
 
 describe("calculatePackagesNeeded", () => {
   it("redondea hacia arriba: no se compran unidades sueltas", () => {
@@ -41,6 +47,29 @@ describe("resolvePackagesNeeded", () => {
   it("con tamaño mencionado, una forma medida sigue comparando por volumen/peso total real", () => {
     // Pidió 2 frascos x30ml (= 60ml); una oferta de frascos de 15ml necesita 4.
     expect(resolvePackagesNeeded(2, 30, 15, "ml")).toBe(4);
+  });
+});
+
+describe("resolveUnitPrice", () => {
+  it("usa el precio que el proveedor ya reportó, sin recalcular, cuando viene", () => {
+    expect(resolveUnitPrice(141384, 24, true, 5891)).toBe(5891);
+    expect(resolveUnitPrice(141384, 24, false, 5891)).toBe(5891);
+  });
+
+  it("bug real (2026-10-05): una forma sellada (Inyectable/Ampolla) medida en ml NUNCA se divide entre el tamaño del empaque -- el precio ya es de la caja sellada completa", () => {
+    // Caja de 24ml a $141.384 -- el precio unitario de referencia debe ser
+    // el precio de LA CAJA completa, nunca "$141.384/24 = $5.891" (eso
+    // confundía una caja sellada con un jarabe fraccionable; ver
+    // selection-engine.ts, exclude-offer/route.ts, select-offer/route.ts).
+    expect(resolveUnitPrice(141384, 24, true, null)).toBe(141384);
+  });
+
+  it("una forma NO sellada (jarabe, solución...) sin precio unitario reportado sí se deriva por división", () => {
+    expect(resolveUnitPrice(141384, 24, false, null)).toBe(5891);
+  });
+
+  it("redondea la división a 4 decimales", () => {
+    expect(resolveUnitPrice(100, 3, false, null)).toBe(33.3333);
   });
 });
 

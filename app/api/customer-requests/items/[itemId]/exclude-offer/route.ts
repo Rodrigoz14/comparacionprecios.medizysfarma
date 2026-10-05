@@ -2,7 +2,7 @@ import { prisma } from "@/lib/db/client";
 import { getVerifiedSession } from "@/lib/auth/dal";
 import { capAlternatives } from "@/lib/pricing/cap-alternatives";
 import { isSealedUnitForm } from "@/lib/pricing/measured-forms";
-import { calculateTotal, resolvePackagesNeeded } from "@/lib/pricing/price-calculator";
+import { calculateTotal, resolvePackagesNeeded, resolveUnitPrice } from "@/lib/pricing/price-calculator";
 import type { OfferOption } from "@/lib/pricing/types";
 
 /**
@@ -29,7 +29,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ it
 
   const comparisons = await prisma.priceComparison.findMany({
     where: { customerRequestItemId: itemId },
-    include: { supplier: true, product: { include: { laboratory: true } } },
+    include: { supplier: true, product: { include: { laboratory: true } }, supplierOffer: true },
   });
   if (comparisons.length === 0) {
     return Response.json({ error: "Este ítem no tiene ninguna oferta comparada." }, { status: 400 });
@@ -47,6 +47,18 @@ export async function POST(_request: Request, { params }: { params: Promise<{ it
       ? quantity
       : resolvePackagesNeeded(quantity, item.requestedPresentationQuantity, packageSize, c.product.presentationUnit);
     const packagePrice = Number(c.price);
+    // Mismo criterio que selection-engine.ts (bug real confirmado
+    // 2026-10-05, ver select-offer/route.ts): sin esto, una forma sellada
+    // (Inyectable/Ampolla) medida en ml mostraba un "precio unitario" de
+    // referencia dividido por el volumen de LA CAJA sellada, 24 veces menor
+    // al real.
+    const unitPriceAsImported = c.supplierOffer.unitPriceAsImported;
+    const unitPrice = resolveUnitPrice(
+      packagePrice,
+      packageSize,
+      isSealedUnit,
+      unitPriceAsImported !== null ? Number(unitPriceAsImported) : null,
+    );
     return {
       supplierOfferId: c.supplierOfferId,
       supplierId: c.supplierId,
@@ -56,7 +68,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ it
       packageSize,
       presentationUnit: c.product.presentationUnit,
       packagePrice,
-      unitPrice: Math.round((packagePrice / packageSize) * 10000) / 10000,
+      unitPrice,
       packagesNeeded,
       totalCost: calculateTotal(packagePrice, packagesNeeded),
       availability: c.availability,

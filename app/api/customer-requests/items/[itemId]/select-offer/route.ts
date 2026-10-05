@@ -4,7 +4,7 @@ import { getVerifiedSession } from "@/lib/auth/dal";
 import { capAlternatives } from "@/lib/pricing/cap-alternatives";
 import { formatCOP, formatUnitCOP } from "@/lib/pricing/format";
 import { isSealedUnitForm } from "@/lib/pricing/measured-forms";
-import { calculateSavings, calculateTotal, resolvePackagesNeeded } from "@/lib/pricing/price-calculator";
+import { calculateSavings, calculateTotal, resolvePackagesNeeded, resolveUnitPrice } from "@/lib/pricing/price-calculator";
 import type { OfferOption } from "@/lib/pricing/types";
 
 const bodySchema = z.object({ supplierOfferId: z.string().min(1) });
@@ -39,7 +39,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ ite
 
   const comparisons = await prisma.priceComparison.findMany({
     where: { customerRequestItemId: itemId },
-    include: { supplier: true, product: { include: { laboratory: true } } },
+    include: { supplier: true, product: { include: { laboratory: true } }, supplierOffer: true },
   });
   const target = comparisons.find((c) => c.supplierOfferId === parsed.data.supplierOfferId);
   if (!target) {
@@ -60,6 +60,23 @@ export async function POST(request: Request, { params }: { params: Promise<{ ite
       ? item!.quantityToPurchase!
       : resolvePackagesNeeded(item!.quantityToPurchase!, item!.requestedPresentationQuantity, packageSize, c.product.presentationUnit);
     const packagePrice = Number(c.price);
+    // Mismo criterio que selection-engine.ts (bug real confirmado
+    // 2026-10-05): esta ruta reconstruye la oferta a partir de
+    // PriceComparison por separado, y había quedado sin este mismo ajuste --
+    // dividía SIEMPRE packagePrice entre packageSize, incluso para una forma
+    // sellada (Inyectable/Ampolla) medida en ml ("24ML" es el volumen de LA
+    // CAJA sellada, no una cantidad a fraccionar). El total mostrado seguía
+    // siendo correcto (se calcula aparte, directo de packagePrice), pero el
+    // "precio unitario" de referencia mostraba una cifra 24 veces menor a la
+    // real, dando la impresión de que el precio se había "multiplicado por
+    // los ml" al no cuadrar con el total.
+    const unitPriceAsImported = c.supplierOffer.unitPriceAsImported;
+    const unitPrice = resolveUnitPrice(
+      packagePrice,
+      packageSize,
+      isSealedUnit,
+      unitPriceAsImported !== null ? Number(unitPriceAsImported) : null,
+    );
     return {
       supplierOfferId: c.supplierOfferId,
       supplierId: c.supplierId,
@@ -69,7 +86,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ ite
       packageSize,
       presentationUnit: c.product.presentationUnit,
       packagePrice,
-      unitPrice: Math.round((packagePrice / packageSize) * 10000) / 10000,
+      unitPrice,
       packagesNeeded,
       totalCost: calculateTotal(packagePrice, packagesNeeded),
       availability: c.availability,
