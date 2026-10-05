@@ -663,6 +663,79 @@ describe("extractProductAttributes", () => {
     // catalogo ("polietilenglicol" a secas).
     expect(extractIngredientGuess("Polietilenglicol sobres")).toBe("POLIETILENGLICOL");
   });
+
+  describe("combinados escritos por un cliente con formatos reales encontrados en produccion (2026-10-05)", () => {
+    it("reparte un combinado de 3 principios con UNA sola unidad compartida al final ('4+4+0.4 G/100ML')", () => {
+      // Bug real: "HIDROXIDO DE ALUMINIO/HIDROXIDO DE MAGNESIO/SIMETICONA
+      // SUSPENSION ORAL 4+4+0.4 G/100ML" (como lo escribe un cliente) perdia
+      // los dos primeros valores por completo -- el regex normal de
+      // concentracion solo encontraba el ULTIMO numero antes de la unidad.
+      const result = extractProductAttributes(
+        "HIDROXIDO DE ALUMINIO/HIDROXIDO DE MAGNESIO/SIMETICONA SUSPENSION ORAL 4+4+0.4 G/100ML",
+        { requirePresentation: false },
+      );
+      expect(result).not.toBeNull();
+      expect(result?.attributes.activeIngredient).toBe("HIDROXIDO DE ALUMINIO + HIDROXIDO DE MAGNESIO + SIMETICONA");
+      expect(result?.attributes.concentration).toBe("4/4/0.4");
+      expect(result?.attributes.concentrationUnit).toBe("G");
+    });
+
+    it("reparte un combinado de 2 principios con unidad compartida ('0.25+0.5 MG/ML') y los ordena alfabeticamente", () => {
+      const result = extractProductAttributes(
+        "IPRATROPIO BROMURO/FENOTEROL SOLUCION PARA INHALACION 0.25+0.5 MG/ML/20 ML",
+        { requirePresentation: false },
+      );
+      expect(result).not.toBeNull();
+      expect(result?.attributes.activeIngredient).toBe("FENOTEROL + IPRATROPIO BROMURO");
+      expect(result?.attributes.concentration).toBe("0.5/0.25");
+      expect(result?.attributes.concentrationUnit).toBe("MG");
+    });
+
+    it("no confunde un combinado normal ('5MG+60MG', cada numero con su propia unidad) con el formato de unidad compartida", () => {
+      const result = extractProductAttributes("HIDROCORTISONA+LIDOCAINA 5MG+60MG", { requirePresentation: false });
+      expect(result).not.toBeNull();
+      expect(result?.attributes.concentration).toBe("5/60");
+    });
+
+    it("convierte una '/' real entre dos principios combinados en '+' ('PIPERACILINA/TAZOBACTAM')", () => {
+      const result = extractProductAttributes("PIPERACILINA/TAZOBACTAM POLVO PARA RECONSTITUIR 4.5 G VIAL", {
+        requirePresentation: false,
+      });
+      expect(result).not.toBeNull();
+      expect(result?.attributes.activeIngredient).toBe("PIPERACILINA + TAZOBACTAM");
+    });
+
+    it("NO convierte una '/' que es una abreviatura corta pegada a otra palabra ('LIDOCAINA C/EPINEFRINA')", () => {
+      // "C/EPINEFRINA" = "con epinefrina": la palabra pegada a la "/" es
+      // solo "C" (1 letra). 14 productos reales del catalogo (Lidocaina y
+      // Bupivacaina) usan este formato -- partirlo los habria roto.
+      const result = extractProductAttributes("LIDOCAINA C/EPINEFRINA (2%) SOLUCION INYECTABLE", {
+        requirePresentation: false,
+      });
+      expect(result).not.toBeNull();
+      expect(result?.attributes.activeIngredient).toBe("LIDOCAINA C/EPINEFRINA");
+    });
+
+    it("NO convierte una '/' de una conjuncion ('Y/O')", () => {
+      const result = extractProductAttributes("ALGO Y/O OTRO 500 MG TABLETA", { requirePresentation: false });
+      expect(result).not.toBeNull();
+      expect(result?.attributes.activeIngredient).toBe("ALGO Y/O OTRO");
+    });
+
+    it("reconoce 'SOLUCION INHALACION' (sin 'PARA') como la misma forma que 'SOLUCION PARA INHALACION'", () => {
+      // Bug real: "IPRATROPIO BROMURO SOLUCION INHALACION 20MCG" caia en la
+      // palabra suelta "SOLUCION" a secas (perdiendo la via de inhalacion) y
+      // nunca coincidia con el mismo producto del catalogo.
+      const sinPara = extractProductAttributes("IPRATROPIO BROMURO SOLUCION INHALACION 20MCG", {
+        requirePresentation: false,
+      });
+      const conPara = extractProductAttributes("IPRATROPIO BROMURO SOLUCION PARA INHALACION 20MCG", {
+        requirePresentation: false,
+      });
+      expect(sinPara?.attributes.dosageForm).toBe("Solución inhalada");
+      expect(buildGenericKey(sinPara!.attributes)).toBe(buildGenericKey(conPara!.attributes));
+    });
+  });
 });
 
 describe("normalizeDosageForm", () => {

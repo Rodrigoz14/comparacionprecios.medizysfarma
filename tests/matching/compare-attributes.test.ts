@@ -68,4 +68,59 @@ describe("compareAttributes", () => {
     );
     expect(comparison.concentrationMatch).toBe(false);
   });
+
+  it("bug real (2026-10-05): dos combinados con las mismas partes pero distinta cantidad de ceros decimales ('0.5/0.25' vs '0.50/0.25') coinciden", () => {
+    // Confirmado en datos reales: un cliente escribe "0.25+0.5 MG/ML" (sin
+    // comas, "0.5" sin cero final) y el catálogo lo guarda como "0,50MG+
+    // 0,25MG" (con coma colombiana, "0.50" con cero final tras el parseo) --
+    // mismo combinado real (Ipratropio + Fenoterol), comparando como texto
+    // nunca coincidían.
+    const comparison = compareAttributes(
+      attrs({ activeIngredient: "FENOTEROL + IPRATROPIO BROMURO", concentration: "0.5/0.25", concentrationUnit: "MG" }),
+      candidate({
+        activeIngredient: "FENOTEROL + IPRATROPIO BROMURO",
+        concentration: "0.50/0.25",
+        concentrationUnit: "MG",
+        standardName: "FENOTEROL + IPRATROPIO BROMURO (0,50MG+ 0,25MG) /ML SOLUCION PARA INHALACION",
+      }),
+    );
+    expect(comparison.concentrationMatch).toBe(true);
+  });
+
+  it("un combinado split-vs-split que de verdad es distinto sigue sin ser un match", () => {
+    const comparison = compareAttributes(
+      attrs({ activeIngredient: "FENOTEROL + IPRATROPIO BROMURO", concentration: "0.5/0.25", concentrationUnit: "MG" }),
+      candidate({
+        activeIngredient: "FENOTEROL + IPRATROPIO BROMURO",
+        concentration: "1/0.25",
+        concentrationUnit: "MG",
+        standardName: "FENOTEROL + IPRATROPIO BROMURO (1MG+0,25MG) /ML SOLUCION PARA INHALACION",
+      }),
+    );
+    expect(comparison.concentrationMatch).toBe(false);
+  });
+
+  it("bug real (2026-10-05): 'MG/ML' (razon ya reducida) cuenta como mg/ml para la conversion de '%', igual que 'MG' a secas", () => {
+    // Gentamicina oftálmica: un cliente escribe "3 MG/ML" (extractProductAttributes
+    // deja la unidad como "MG/ML" tras reducir la razón dosis/volumen) y el
+    // catálogo guarda la misma concentración real como "0,3%" -- antes esta
+    // función solo reconocía "MG" a secas, nunca "MG/ML", y la comparación
+    // fallaba aunque fuera exactamente la misma concentración (3mg/ml = 0.3%).
+    const comparison = compareAttributes(
+      attrs({
+        activeIngredient: "GENTAMICINA",
+        concentration: "3",
+        concentrationUnit: "MG/ML",
+        dosageForm: "Solución",
+      }),
+      candidate({
+        activeIngredient: "GENTAMICINA",
+        concentration: "0.3",
+        concentrationUnit: "%",
+        dosageForm: "Solución",
+        standardName: "GENTAMICINA 3MG/ML (0,3%) SOLUCION OFTALMICA",
+      }),
+    );
+    expect(comparison.concentrationMatch).toBe(true);
+  });
 });

@@ -56,6 +56,25 @@ function concentrationsMatch(target: ExtractedAttributes, candidate: CandidatePr
       const targetValue = Number.parseFloat(target.concentration);
       if (Number.isFinite(targetValue) && Math.abs(candidateSum - targetValue) < 0.01) return true;
     }
+
+    // Ambos son combinados de las mismas partes (mismo conteo, mismo orden --
+    // siempre se ordenan alfabéticamente por principio en extract-attributes.ts),
+    // pero un proveedor escribió un decimal con más o menos ceros que el otro
+    // ("0.5/0.25" vs "0.50/0.25", la MISMA dosis) -- confirmado en datos reales
+    // de cliente (2026-10-05, Ipratropio+Fenoterol): comparando como texto
+    // nunca coincidían aunque fueran exactamente el mismo combinado.
+    if (target.concentration.includes("/") && candidate.concentration.includes("/")) {
+      const targetParts = target.concentration.split("/").map(Number.parseFloat);
+      const candidateParts = candidate.concentration.split("/").map(Number.parseFloat);
+      if (
+        targetParts.length === candidateParts.length &&
+        targetParts.every(
+          (v, i) => Number.isFinite(v) && Number.isFinite(candidateParts[i]) && Math.abs(v - candidateParts[i]) < 0.01,
+        )
+      ) {
+        return true;
+      }
+    }
   }
 
   if (!PERCENT_TO_MG_PER_ML_FORMS.has(candidate.dosageForm)) return false;
@@ -63,7 +82,13 @@ function concentrationsMatch(target: ExtractedAttributes, candidate: CandidatePr
   const asMgPerMl = (value: string, unit: string): number | null => {
     const parsed = Number.parseFloat(value);
     if (Number.isNaN(parsed)) return null;
-    if (unit === "MG") return parsed;
+    // "MG/ML" es la unidad que extractProductAttributes() deja tras reducir
+    // una razón dosis/volumen ("3MG/ML" de una concentración con "/ML"
+    // explícito) -- ya es mg por ml, igual que un "MG" simple (bug real
+    // confirmado 2026-10-05: Gentamicina oftálmica "3 MG/ML" de un cliente
+    // nunca coincidía con "0,3%" del catálogo porque esta función solo
+    // reconocía la unidad "MG" a secas, no "MG/ML").
+    if (unit === "MG" || unit === "MG/ML") return parsed;
     if (unit === "%") return parsed * 10;
     return null;
   };

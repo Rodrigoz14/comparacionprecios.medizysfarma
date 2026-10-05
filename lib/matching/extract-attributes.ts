@@ -212,6 +212,12 @@ const COMPOUND_DOSAGE_FORM_MAP: [string, string][] = [
   ["SOLUCION PARA INHALACION NASAL", "Solución nasal"],
   ["SOLUCION PARA INHALACION", "Solución inhalada"],
   ["SUSPENSION PARA INHALACION", "Suspensión inhalada"],
+  // Mismo caso, sin el "PARA" -- forma real en que un cliente lo escribe
+  // (confirmado 2026-10-05: "IPRATROPIO BROMURO SOLUCION INHALACION 20MCG"
+  // caía en la palabra suelta "SOLUCION" a secas, perdiendo la distinción de
+  // vía y nunca coincidiendo con el mismo producto del catálogo).
+  ["SOLUCION INHALACION", "Solución inhalada"],
+  ["SUSPENSION INHALACION", "Suspensión inhalada"],
   ["SUSP NAS", "Suspensión nasal"],
   ["SUSPENSION NASAL", "Suspensión nasal"],
   // Vías tópica/oftálmica que igual se pierden si solo se mira la primera palabra.
@@ -417,6 +423,50 @@ function parsePresentationVolumeNumber(raw: string, upper: string): string {
 const INTERLEAVED_COMBO_RE =
   /^([A-ZÁÉÍÓÚÑ]+(?:\s+[A-ZÁÉÍÓÚÑ]+)*?)\s+(\d+(?:[.,]\d+)?)\s*(MG|MCG|UI|MEQ|GR|G|ML|%)\s*\+\s*([A-ZÁÉÍÓÚÑ]+(?:\s+[A-ZÁÉÍÓÚÑ]+)*?)\s+(\d+(?:[.,]\d+)?)\s*(MG|MCG|UI|MEQ|GR|G|ML|%)\b/i;
 
+// Tercera forma real de escribir un combinado: varios números separados por
+// "+" que comparten UNA sola unidad al final, en vez de que cada uno traiga
+// la suya repetida ("4G+4G+0,4G") -- "4+4+0.4 G/100ML" (Hidróxido de Aluminio
+// + Hidróxido de Magnesio + Simeticona), "0.25+0.5 MG/ML" (Ipratropio +
+// Fenoterol), "0.02+2.5 G/ML" (Hioscina N-Butil Bromuro + Dipirona): los tres
+// confirmados en texto real de clientes (2026-10-05). Sin esto,
+// CONCENTRATION_RE nunca encuentra unidad pegada al PRIMER número (la unidad
+// está después del ÚLTIMO), así que termina agarrando solo el último valor
+// ("0.5 MG") y PERDIENDO el resto del combinado por completo -- mucho peor
+// que solo no reducir la razón: el producto quedaba irreconocible. Debe
+// probarse ANTES que el camino normal, por ser más específico (2 a 4 dosis).
+const SHARED_UNIT_MULTI_DOSE_RE =
+  /(\d+(?:[.,]\d+)?(?:\s*\+\s*\d+(?:[.,]\d+)?){1,3})\s*(MG|MCG|UI|MEQ|GR|G|ML|%)\b/i;
+
+// Una "/" real entre dos principios activos combinados siempre separa
+// NOMBRES completos (3 letras o más a cada lado) -- nunca una abreviatura
+// corta como "C/EPINEFRINA" ("con epinefrina", 14 productos reales de
+// Lidocaína/Bupivacaína en el catálogo) o "Y/O" (conjunción, en nombres de
+// fórmulas infantiles). Si cualquier lado tiene menos de 3 letras, no se
+// toca: así "PIPERACILINA/TAZOBACTAM" o "IPRATROPIO BROMURO/FENOTEROL"
+// (formas reales en que un cliente escribe un combinado, confirmadas
+// 2026-10-05) se convierten a "+" y quedan identificados como combinado --
+// sin esto, la "/" quedaba pegada a una de las dos palabras (al no haber
+// espacio alrededor) y canonicalizeIngredient nunca las separaba, rompiendo
+// tanto la búsqueda por ingrediente como la clave genérica final.
+function normalizeIngredientSeparators(activeIngredient: string): string {
+  if (!activeIngredient.includes("/")) return activeIngredient;
+  const segments = activeIngredient.split("/").map((s) => s.trim());
+  // Se revisa solo la palabra ADYACENTE a cada "/" (última del segmento de
+  // la izquierda, primera del de la derecha) -- no el segmento completo.
+  // "LIDOCAINA C/EPINEFRINA" tiene un segmento izquierdo largo ("LIDOCAINA
+  // C"), pero la palabra pegada a la "/" es solo "C": mirar el segmento
+  // entero lo dejaba pasar por error (bug encontrado en pruebas,
+  // 2026-10-05) y partía el nombre real del catálogo en dos.
+  for (let i = 0; i < segments.length - 1; i++) {
+    const before = segments[i].split(/\s+/).pop() ?? "";
+    const after = segments[i + 1].split(/\s+/)[0] ?? "";
+    const beforeLetters = before.replace(/[^A-ZÁÉÍÓÚÑ]/gi, "").length;
+    const afterLetters = after.replace(/[^A-ZÁÉÍÓÚÑ]/gi, "").length;
+    if (beforeLetters < 3 || afterLetters < 3) return activeIngredient;
+  }
+  return segments.join(" + ");
+}
+
 export interface ExtractOptions {
   /**
    * Si es false, no exigir una cantidad de presentación explícita en el texto:
@@ -504,13 +554,17 @@ export function extractProductAttributes(
   // anterior, porque hay productos reales (formulas/suplementos) sin
   // concentracion farmacologica propia donde el peso del envase es el unico
   // dato disponible para construir la clave generica.
-  const concentrationCandidates = [...upper.matchAll(new RegExp(CONCENTRATION_RE.source, "gi"))];
-  const concentrationMatch =
-    concentrationCandidates.find((m) => {
-      const unit = m[2]?.toUpperCase();
-      if (unit !== "ML" && unit !== "L") return true;
-      return !/[X*]\s*$/.test(upper.slice(0, m.index));
-    }) ?? null;
+  const sharedUnitMatch = SHARED_UNIT_MULTI_DOSE_RE.exec(upper);
+  const concentrationCandidates = sharedUnitMatch
+    ? [sharedUnitMatch]
+    : [...upper.matchAll(new RegExp(CONCENTRATION_RE.source, "gi"))];
+  const concentrationMatch = sharedUnitMatch
+    ? sharedUnitMatch
+    : (concentrationCandidates.find((m) => {
+        const unit = m[2]?.toUpperCase();
+        if (unit !== "ML" && unit !== "L") return true;
+        return !/[X*]\s*$/.test(upper.slice(0, m.index));
+      }) ?? null);
   // Cuando alguien escribe "Esomeprazol x 40 mg" usando "x" como separador
   // antes de la dosis (no como multiplicador de empaque), PRESENTATION_QTY_RE
   // igual encuentra "X 40" ahí mismo, sin unidad propia (MG no es ML/L/G),
@@ -524,8 +578,22 @@ export function extractProductAttributes(
   // Si el combinado trae más dosis pegadas con "+" ("5MG+60MG"), el final
   // real de la concentración se corre hasta el final de la ÚLTIMA parte,
   // no solo la primera -- necesario para que lo que venga después (forma
-  // farmacéutica, presentación) no se confunda con parte de la dosis.
-  const doseParts = concentrationMatch ? extractDoseParts(upper, concentrationMatch) : null;
+  // farmacéutica, presentación) no se confunda con parte de la dosis. Un
+  // combinado de unidad compartida (SHARED_UNIT_MULTI_DOSE_RE) ya trae todas
+  // sus dosis en el propio match, así que se arma el mismo objeto DosePart[]
+  // directamente en vez de volver a buscar con EXTRA_DOSE_RE (que exige una
+  // unidad propia por cada número, justo lo que este formato no tiene).
+  const doseParts = sharedUnitMatch
+    ? {
+        parts: sharedUnitMatch[1].split("+").map((n) => ({
+          value: parseColombianNumber(n.trim()),
+          unit: normalizeConcentrationUnit(sharedUnitMatch[2].toUpperCase()),
+        })),
+        end: sharedUnitMatch.index + sharedUnitMatch[0].length,
+      }
+    : concentrationMatch
+      ? extractDoseParts(upper, concentrationMatch)
+      : null;
   const concentrationEnd = doseParts ? doseParts.end : -1;
   const presentationCandidates = [...upper.matchAll(PRESENTATION_QTY_RE)].filter((m) => {
     if (m[2]) return true;
@@ -665,6 +733,14 @@ export function extractProductAttributes(
   if (!activeIngredient) {
     return null;
   }
+
+  // Un combinado a veces se escribe con "/" entre los nombres de los
+  // principios ("PIPERACILINA/TAZOBACTAM", "IPRATROPIO BROMURO/FENOTEROL")
+  // en vez de "+" -- se normaliza a "+" aquí, antes del reordenamiento de
+  // abajo, para que tanto canonicalizeIngredient como el reparto de dosis
+  // por principio (más abajo) lo traten exactamente igual que el formato
+  // "+" ya soportado (ver normalizeIngredientSeparators).
+  activeIngredient = normalizeIngredientSeparators(activeIngredient);
 
   // Cuando el combinado trae varias dosis ("5MG+60MG"), el proveedor puede
   // listar los principios en cualquier orden -- confirmado con el cliente
