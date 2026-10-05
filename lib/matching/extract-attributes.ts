@@ -142,6 +142,9 @@ const DOSAGE_FORM_MAP: Record<string, string> = {
   // referirse a un colirio) nunca podía coincidir con nada — bug real
   // reportado por el cliente (Carboximetilcelulosa).
   GOTAS: "Solución",
+  // "Colirio" es la forma coloquial real de referirse a una solución
+  // oftálmica (igual que "Gotas" arriba) -- mismo criterio, mismo bucket.
+  COLIRIO: "Solución",
   GRAGEA: "Tableta",
   GRAGEAS: "Tableta",
   SUPOS: "Supositorio",
@@ -153,6 +156,13 @@ const DOSAGE_FORM_MAP: Record<string, string> = {
   SHAMP: "Shampoo",
   SHAMPOO: "Shampoo",
   INHALADOR: "Aerosol inhalador",
+  // Confirmado en datos reales de producción (2026-10-05): "Implante"
+  // (Goserelina, Levonorgestrel, Dexametasona intravítreo) no tenía ninguna
+  // categoría propia, así que quedaba sin forma farmacéutica reconocida.
+  IMPLANTE: "Implante",
+  IMPLANTES: "Implante",
+  JALEA: "Jalea",
+  ESPUMA: "Espuma",
 };
 
 /**
@@ -337,16 +347,28 @@ const CHANNEL_PREFIX_RE = /^(EPS|POS|NO[\s-]?POS|PBS)[\s-]+/i;
 const WITHOUT_EPINEPHRINE_RE = /\s*(SIN\s+EPINEFRINA|S\/\s*EPINEFRINA)\b/i;
 
 // Adjetivos de sal (concuerdan en género con el principio que modifican:
-// "Ampicilina SÓDICA", "Sulbactam SÓDICO", "Diclofenaco SÓDICO") -- la sal no
-// cambia la identidad del medicamento para homologar en este catálogo (mismo
-// criterio ya confirmado con "Dipirona"/"Dipirona Sódica"). Bug real
-// confirmado (2026-10-02): "AMPICILINA SODICA + SULBACTAM SODICO..." de un
-// cliente nunca coincidía con "AMPICILINA+SULBACTAM..." del catálogo porque
-// "SODICA"/"SODICO" quedaban como parte del nombre del principio activo. No
-// se quitan compuestos donde la palabra de sal SÍ es el núcleo del nombre
-// ("Sulfato de Sodio", "Cloruro de Sodio" ya usan "SODIO", sustantivo con DE,
-// nunca este adjetivo).
-const SALT_FORM_ADJECTIVE_RE = /\b(SODICA|SODICO|POTASICA|POTASICO|CALCICA|CALCICO)\b/gi;
+// "Ampicilina SÓDICA", "Sulbactam SÓDICO", "Diclofenaco SÓDICO",
+// "Pantoprazol MAGNÉSICO") -- la sal no cambia la identidad del medicamento
+// para homologar en este catálogo (mismo criterio ya confirmado con
+// "Dipirona"/"Dipirona Sódica"). Bug real confirmado (2026-10-02):
+// "AMPICILINA SODICA + SULBACTAM SODICO..." de un cliente nunca coincidía
+// con "AMPICILINA+SULBACTAM..." del catálogo porque "SODICA"/"SODICO"
+// quedaban como parte del nombre del principio activo. No se quitan
+// compuestos donde la palabra de sal SÍ es el núcleo del nombre ("Sulfato de
+// Sodio", "Cloruro de Sodio" ya usan "SODIO", sustantivo con DE, nunca este
+// adjetivo).
+//
+// A PROPÓSITO no incluye ésteres/sales orgánicas como CLORHIDRATO, TARTRATO,
+// SUCCINATO, FUMARATO, PROPIONATO, FUROATO, etc. -- investigado en datos
+// reales (2026-10-05): a diferencia de sódica/potásica/cálcica/magnésica
+// (simples contraiones intercambiables), varias de estas SÍ distinguen
+// formulaciones reales no intercambiables ("Metoprolol Tartrato" es de
+// liberación inmediata, "Metoprolol Succinato" de liberación prolongada; un
+// combinado real a veces lista el mismo corticoide en dos ésteres distintos
+// a propósito, "Betametasona Dipropionato + Betametasona Fosfato", por su
+// inicio/duración de acción diferente). Quitarlas fusionaría por error
+// productos clínicamente distintos.
+const SALT_FORM_ADJECTIVE_RE = /\b(SODICA|SODICO|POTASICA|POTASICO|CALCICA|CALCICO|MAGNESICA|MAGNESICO)\b/gi;
 
 // Marca real de jeringa precargada ("JER PREX0.4ML", "JERPREX1.750ML" --
 // "JER"+"PRE" a veces vienen pegados, a veces con espacio). Sirve para

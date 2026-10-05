@@ -435,6 +435,36 @@ describe("extractProductAttributes", () => {
     const sinSal = extractProductAttributes("DICLOFENACO 50MG TABLETA", { requirePresentation: false });
     expect(conSal?.attributes.activeIngredient).toBe("DICLOFENACO");
     expect(buildGenericKey(conSal!.attributes)).toBe(buildGenericKey(sinSal!.attributes));
+
+    // "MAGNESICO" tambien, mismo criterio (confirmado en datos reales: Pantoprazol Magnesico).
+    const magnesico = extractProductAttributes("PANTOPRAZOL MAGNESICO 40MG TABLETA", { requirePresentation: false });
+    const plano = extractProductAttributes("PANTOPRAZOL 40MG TABLETA", { requirePresentation: false });
+    expect(buildGenericKey(magnesico!.attributes)).toBe(buildGenericKey(plano!.attributes));
+  });
+
+  it("A PROPOSITO no se quitan esteres/sales organicas (CLORHIDRATO, TARTRATO, SUCCINATO...) -- algunas distinguen formulaciones reales no intercambiables", () => {
+    // Investigado en datos reales de produccion (2026-10-05): a diferencia de
+    // sodica/potasica/calcica/magnesica (contraiones intercambiables),
+    // "Metoprolol Tartrato" (liberacion inmediata) y "Metoprolol Succinato"
+    // (liberacion prolongada) son formulaciones reales DISTINTAS, no
+    // sustituibles entre si -- quitar el ester las fusionaria por error.
+    const tartrato = extractProductAttributes("METOPROLOL TARTRATO 100MG TABLETA", { requirePresentation: false });
+    const succinato = extractProductAttributes("METOPROLOL SUCCINATO 100MG TABLETA", { requirePresentation: false });
+    expect(tartrato?.attributes.activeIngredient).toBe("METOPROLOL TARTRATO");
+    expect(succinato?.attributes.activeIngredient).toBe("METOPROLOL SUCCINATO");
+    expect(buildGenericKey(tartrato!.attributes)).not.toBe(buildGenericKey(succinato!.attributes));
+  });
+
+  it("bug real (2026-10-05): formas farmaceuticas reales sin categoria -- Implante, Jalea, Espuma, Colirio", () => {
+    // Confirmado en datos reales de produccion: Goserelina/Levonorgestrel
+    // (implantes hormonales), Lidocaina jalea, Clobetasol espuma, y colirios
+    // de formula magistral quedaban sin forma farmaceutica reconocida en
+    // absoluto ("No especificada").
+    expect(extractProductAttributes("GOSERELINA 3,6MG IMPLANTE SUBCUTANEO", { requirePresentation: false })?.attributes.dosageForm).toBe("Implante");
+    expect(extractProductAttributes("LEVONORGESTREL 75MG IMPLANTE ANTICONCEPTIVO SUBDERMICO", { requirePresentation: false })?.attributes.dosageForm).toBe("Implante");
+    expect(extractProductAttributes("LIDOCAINA 2G/100G (2%) JALEA", { requirePresentation: false })?.attributes.dosageForm).toBe("Jalea");
+    expect(extractProductAttributes("CLOBETASOL 0,05G/100G (0,05%) ESPUMA TOPICA", { requirePresentation: false })?.attributes.dosageForm).toBe("Espuma");
+    expect(extractProductAttributes("VANCOMICINA COLIRIO 50MG/ML COLIRIO FORMULA MAGISTRAL", { requirePresentation: false })?.attributes.dosageForm).toBe("Solución");
   });
 
   it("bug real (2026-10-02): combinado con cada dosis pegada a su propio principio ('Ampicilina 1 g + Sulbactam 0.5 g') no pierde el segundo principio", () => {
