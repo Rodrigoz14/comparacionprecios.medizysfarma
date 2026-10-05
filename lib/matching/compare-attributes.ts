@@ -6,9 +6,18 @@ import type { AttributeComparison, CandidateProduct, ExtractedAttributes } from 
  * datos reales: Disfarma/Ramédicas escriben "5MG/ML (0.5%)" para el mismo
  * producto). No aplica a sólidos/semisólidos (cremas, geles), donde "X%"
  * significa peso/peso (X g por 100g) y por eso el catálogo ya lo guarda
- * directamente en G sin necesitar conversión.
+ * directamente en G sin necesitar conversión. "Inyectable"/"Ampolla" se
+ * agregaron por un bug real (2026-10-05): "CLINDAMICINA (15%) SOLUCION
+ * INYECTABLE 600 MG/4 ML" de un cliente nunca coincidía con "CLINDAMICINA
+ * 600MG/4ML (150MG/ML) SOLUCION INYECTABLE" del catálogo -- misma
+ * concentración real (600mg/4ml = 150mg/ml = 15%), solo que cada uno la
+ * escribió con su propio valor "equivalente". Es la misma conversión segura
+ * de tasa (tanto "%" como "MG/ML" ya son una RAZÓN, nunca el contenido
+ * TOTAL de una ampolla) -- no tiene nada que ver con la ambigüedad de
+ * Enoxaparina (eso es sobre REDUCIR una razón a "por 1 unidad", perdiendo el
+ * volumen real; esto es solo cambiar de unidad sin tocar el volumen).
  */
-const PERCENT_TO_MG_PER_ML_FORMS = new Set(["Solución", "Gotas", "Suspensión", "Jarabe"]);
+const PERCENT_TO_MG_PER_ML_FORMS = new Set(["Solución", "Gotas", "Suspensión", "Jarabe", "Inyectable", "Ampolla"]);
 
 /**
  * Un cliente a veces escribe la concentración en porcentaje ("0.5%") en vez
@@ -80,7 +89,18 @@ function concentrationsMatch(target: ExtractedAttributes, candidate: CandidatePr
   if (!PERCENT_TO_MG_PER_ML_FORMS.has(candidate.dosageForm)) return false;
 
   const asMgPerMl = (value: string, unit: string): number | null => {
-    const parsed = Number.parseFloat(value);
+    // Una forma sellada guarda el valor SIN reducir ("600/4", el contenido
+    // TOTAL de esa ampolla puntual, ver extract-attributes.ts) -- hay que
+    // dividir para obtener la tasa mg/ml antes de comparar, en vez de
+    // truncar en el "/" (Number.parseFloat("600/4") da 600, no 150).
+    const parsed = value.includes("/")
+      ? (() => {
+          const [numerator, denominator] = value.split("/").map((p) => Number.parseFloat(p));
+          return Number.isFinite(numerator) && Number.isFinite(denominator) && denominator !== 0
+            ? numerator / denominator
+            : NaN;
+        })()
+      : Number.parseFloat(value);
     if (Number.isNaN(parsed)) return null;
     // "MG/ML" es la unidad que extractProductAttributes() deja tras reducir
     // una razón dosis/volumen ("3MG/ML" de una concentración con "/ML"

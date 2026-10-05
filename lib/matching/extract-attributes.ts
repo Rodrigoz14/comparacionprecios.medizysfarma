@@ -38,11 +38,13 @@ function parseColombianNumber(raw: string): string {
 // reconocerlas, la concentración no se encontraba en absoluto, o el regex
 // terminaba agarrando por error otro número del texto (p. ej. el volumen del
 // envase) como si fuera la concentración.
-// "EMQ" es un typo real y recurrente de un cliente por "MEQ" (letras
-// invertidas) -- confirmado en producción (2026-10-05): "CLORURO DE POTASIO
-// 2EMQ/ML" se repitió igual en varias solicitudes distintas, siempre con las
-// mismas dos letras cambiadas de orden.
-const CONCENTRATION_RE = /(\d+(?:[.,]\d+)?(?:\s*\/\s*\d+(?:[.,]\d+)?)?)\s*(MG\b|MCG\b|UI\b|MEQ\b|EMQ\b|GR\b|G\b|ML\b|%)/i;
+// "EMQ" (letras invertidas) y "MQ" (falta la "E") son dos typos reales y
+// recurrentes de distintos clientes por "MEQ" -- confirmados en producción
+// (2026-10-05): "CLORURO DE POTASIO 2EMQ/ML" y, por separado, "POTASIO
+// CLORURO 20 MQ /10 ML" se repitieron igual en varias solicitudes distintas
+// cada uno.
+const CONCENTRATION_RE =
+  /(\d+(?:[.,]\d+)?(?:\s*\/\s*\d+(?:[.,]\d+)?)?)\s*(MG\b|MCG\b|UI\b|MEQ\b|EMQ\b|MQ\b|GR\b|G\b|ML\b|%)/i;
 // El símbolo de multiplicación varía por proveedor: "X100" (Ramédicas) o
 // "*30"/"C*1" (Disfarma). Cubre tanto conteos discretos ("X100" -> 100
 // tabletas) como volumen/peso por envase pegado a la unidad, sin espacio
@@ -65,15 +67,16 @@ const BARE_MEASURE_RE = /(\d+(?:[.,]\d+)?)\s*(ML|L|G)\b/gi;
 // anterior ("...5MG+60MG..."): cada principio activo trae su propia unidad
 // repetida, a diferencia del formato de razón fija ("500/125 MG") que
 // CONCENTRATION_RE ya captura como un solo valor.
-const EXTRA_DOSE_RE = /^\s*\+\s*(\d+(?:[.,]\d+)?)\s*(MG|MCG|UI|MEQ|EMQ|GR|G|ML|%)\b/i;
+const EXTRA_DOSE_RE = /^\s*\+\s*(\d+(?:[.,]\d+)?)\s*(MG|MCG|UI|MEQ|EMQ|MQ|GR|G|ML|%)\b/i;
 
 // "GR" es solo una forma distinta de escribir "G" (gramos), no una unidad
 // distinta -- se normaliza para que "1GR" y "1G" terminen en la misma clave
-// genérica. "EMQ" es el mismo typo de "MEQ" explicado arriba. "MEQ" sí es una
-// unidad real y distinta (miliequivalentes), no se normaliza a nada más.
+// genérica. "EMQ"/"MQ" son los mismos typos de "MEQ" explicados arriba.
+// "MEQ" sí es una unidad real y distinta (miliequivalentes), no se normaliza
+// a nada más.
 function normalizeConcentrationUnit(unit: string): string {
   if (unit === "GR") return "G";
-  if (unit === "EMQ") return "MEQ";
+  if (unit === "EMQ" || unit === "MQ") return "MEQ";
   return unit;
 }
 
@@ -259,7 +262,24 @@ const PRESENTATION_TYPE_MAP: Record<string, string> = {
   SOBRES: "Sobre",
   TUBO: "Tubo",
   TUBOS: "Tubo",
+  // Envase real de pomadas/ungüentos vendidos a granel ("VASELINA POTE X
+  // 500GR", "NITROFURAZONA ... POTE X 454GR") -- confirmado en datos reales
+  // de cliente (2026-10-05): sin esto, "POTE"/"TARRO" no se reconocía como
+  // palabra de empaque y quedaba pegada al nombre del ingrediente
+  // ("VASELINA POTE"), rompiendo la búsqueda (mismo bug que "sobres" ya
+  // corregido para extractIngredientGuess).
+  POTE: "Pote",
+  POTES: "Pote",
+  TARRO: "Frasco",
+  TARROS: "Frasco",
 };
+
+// Fuente compartida para reconocer un volumen/peso pegado DIRECTO a una
+// palabra de empaque, sin "X"/"*" de por medio ("FCO 360 ML", "POTE 500GR")
+// -- usada tanto por extractProductAttributes (para no confundirlo con la
+// concentración) como por extractIngredientGuess (para tolerarlo como
+// tamaño de envase, igual que ya tolera "X 360 ML").
+const PACKAGING_WORDS_RE_SOURCE = Object.keys(PRESENTATION_TYPE_MAP).join("|");
 
 const PRESENTATION_UNIT_BY_FORM: Record<string, string> = {
   Tableta: "tabletas",
@@ -531,7 +551,19 @@ export function extractIngredientGuess(rawText: string): string | null {
     .trim();
   if (!upper) return null;
 
-  const withoutPresentation = upper.replace(PRESENTATION_QTY_RE, " ").trim();
+  // Mismo tamaño de envase que arriba, pero SIN "X"/"*" de por medio, pegado
+  // directo a la palabra de empaque ("FCO 360 ML", "POTE 500GR") -- bug real
+  // confirmado 2026-10-05: "Hidroxido de aluminio + Magnesio + Simeticona
+  // susp FCO 360 ML" seguía descartándose por el "360" aunque fuera
+  // exactamente el mismo tamaño de envase que el caso "X 360 ML" ya tolerado.
+  const BARE_PACKAGING_MEASURE_RE = new RegExp(
+    `(${PACKAGING_WORDS_RE_SOURCE})\\s+\\d+(?:[.,]\\d+)?\\s*(?:ML|L|G)\\b`,
+    "i",
+  );
+  const withoutPresentation = upper
+    .replace(PRESENTATION_QTY_RE, " ")
+    .replace(BARE_PACKAGING_MEASURE_RE, "$1")
+    .trim();
   if (/\d/.test(withoutPresentation)) return null;
 
   const formMatch = matchDosageForm(withoutPresentation);
@@ -582,6 +614,28 @@ export function extractProductAttributes(
   // anterior, porque hay productos reales (formulas/suplementos) sin
   // concentracion farmacologica propia donde el peso del envase es el unico
   // dato disponible para construir la clave generica.
+  //
+  // El mismo volumen puede venir SIN "X"/"*", pegado directo a una palabra
+  // de envase ("SUSP FCO 360 ML", sin multiplicador) -- bug real confirmado
+  // 2026-10-05: "HIDROXIDO DE ALUMINIO + MAGNESIO + SIMETICONA SUSP FCO 360
+  // ML" tomaba igual el "360 ML" como concentración porque esta exclusión
+  // solo buscaba "X"/"*" justo antes, no una palabra de envase. PERO esto
+  // solo se aplica cuando el texto ANTES de la palabra de empaque tiene
+  // señal real de ser un combinado de 2+ principios nombrados ("+" entre dos
+  // palabras de 4+ letras) -- confirmado en datos reales de producción
+  // (2026-10-05): sin esta restricción, 42 productos reales ya importados de
+  // fórmulas líquidas nutricionales (Ensure, Glucerna, Pediasure...), que
+  // dependen del volumen del envase como ÚNICO dato para su clave genérica
+  // (no tienen concentración farmacológica propia, igual que las fórmulas en
+  // G ya exceptuadas más arriba), dejaban de reconocerse -- y, más grave,
+  // dejarían de poder volver a importarse (lib/excel/importer.ts descarta la
+  // fila entera cuando esta función devuelve null).
+  const PACKAGING_WORD_PREFIX_RE = new RegExp(`(?:${PACKAGING_WORDS_RE_SOURCE})\\s*$`, "i");
+  function looksLikeNamedIngredientCombo(precedingText: string): boolean {
+    return [...precedingText.matchAll(/([A-ZÁÉÍÓÚÑ]+)\s*\+\s*([A-ZÁÉÍÓÚÑ]+)/g)].some(
+      (m) => m[1].length >= 4 && m[2].length >= 4,
+    );
+  }
   const sharedUnitMatch = SHARED_UNIT_MULTI_DOSE_RE.exec(upper);
   const concentrationCandidates = sharedUnitMatch
     ? [sharedUnitMatch]
@@ -591,7 +645,12 @@ export function extractProductAttributes(
     : (concentrationCandidates.find((m) => {
         const unit = m[2]?.toUpperCase();
         if (unit !== "ML" && unit !== "L") return true;
-        return !/[X*]\s*$/.test(upper.slice(0, m.index));
+        const precedingText = upper.slice(0, m.index);
+        if (/[X*]\s*$/.test(precedingText)) return false;
+        if (PACKAGING_WORD_PREFIX_RE.test(precedingText)) {
+          return !looksLikeNamedIngredientCombo(precedingText);
+        }
+        return true;
       }) ?? null);
   // Cuando alguien escribe "Esomeprazol x 40 mg" usando "x" como separador
   // antes de la dosis (no como multiplicador de empaque), PRESENTATION_QTY_RE
@@ -708,10 +767,12 @@ export function extractProductAttributes(
   }
 
   let presentationType: string | null = null;
+  let packagingTokenIndex = -1;
   for (const token of tokens) {
     const mapped = PRESENTATION_TYPE_MAP[token];
     if (mapped) {
       presentationType = mapped;
+      packagingTokenIndex = upper.indexOf(token);
       break;
     }
   }
@@ -720,10 +781,15 @@ export function extractProductAttributes(
     warnings.push("No se pudo determinar el tipo de empaque; se asumió 'Caja'.");
   }
 
-  const cutIndex =
-    dosageFormTokenIndex >= 0
-      ? Math.min(dosageFormTokenIndex, concentrationMatch.index)
-      : concentrationMatch.index;
+  // Una palabra de empaque ("POTE", "FRASCO"...) corta el nombre del
+  // ingrediente igual que la forma farmacéutica o la concentración -- bug
+  // real confirmado 2026-10-05: "VASELINA POTE * 500GR" quedaba con
+  // "VASELINA POTE" como ingrediente completo (mismo bug ya corregido antes
+  // para extractIngredientGuess, aquí faltaba en la extracción principal).
+  const cutCandidates = [dosageFormTokenIndex, concentrationMatch.index, packagingTokenIndex].filter(
+    (i) => i >= 0,
+  );
+  const cutIndex = Math.min(...cutCandidates);
   // Cuando la concentración combinada de varios principios activos viene entre
   // paréntesis ("...SIMETICONA (4G+4G+0.4G)/100ML..."), cortar justo antes del
   // primer número dentro del paréntesis deja un "(" colgando al final. Se

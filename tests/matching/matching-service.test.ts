@@ -346,6 +346,89 @@ describe("resolveProductMatch (subconjunto de palabras: combinado con un compone
   });
 });
 
+// Bug real confirmado 2026-10-05: "Beclometasona inhalador x 250 mcg" no
+// encontraba nada porque el catálogo guarda "Beclometasona Dipropionato"
+// (una palabra de más que el cliente no mencionó) -- dirección contraria a
+// la del subconjunto de arriba (ahí sobraba una palabra en el CANDIDATO,
+// aquí sobra en el candidato también pero partiendo de una busqueda de UNA
+// sola palabra, antes bloqueada por el mínimo de 2).
+describe("resolveProductMatch (subconjunto de palabras: busqueda de una sola palabra)", () => {
+  const productIds: string[] = [];
+  const laboratoryIds: string[] = [];
+
+  beforeAll(async () => {
+    const product = await createProduct("ZOLTRAXINA DIPROPIONATO 250MCG SUSPENSION PARA INHALACION X200 DOSIS", "TestLab Zoltraxina Dipropionato");
+    productIds.push(product.id);
+    laboratoryIds.push(product.laboratoryId!);
+  });
+
+  afterAll(async () => {
+    await prisma.product.deleteMany({ where: { id: { in: productIds } } });
+    await prisma.laboratory.deleteMany({ where: { id: { in: laboratoryIds } } });
+  });
+
+  it("encuentra el producto aunque la busqueda sea una sola palabra y al catalogo le sobre una", async () => {
+    const result = await resolveProductMatch("Zoltraxina suspension para inhalacion 250 mcg");
+    const foundIds = result.candidates.map((c) => c.product.id);
+    expect(foundIds).toEqual(expect.arrayContaining([productIds[0]]));
+  });
+});
+
+// Bug real confirmado 2026-10-05: "Clorfeniramina MALEATO jarabe 2mg/5ml"
+// no encontraba nada porque el catálogo guarda solo "Clorfeniramina" (el
+// cliente agregó una palabra -- el éster/sal -- que el catálogo no incluye
+// en su nombre simple). Dirección contraria a los dos casos anteriores: acá
+// sobra una palabra en la BUSQUEDA, no en el candidato.
+describe("resolveProductMatch (subconjunto de palabras: la busqueda trae una palabra de mas)", () => {
+  const productIds: string[] = [];
+  const laboratoryIds: string[] = [];
+
+  beforeAll(async () => {
+    const product = await createProduct("ZOLTRAXINA 4MG TABLETA X30", "TestLab Zoltraxina Simple");
+    productIds.push(product.id);
+    laboratoryIds.push(product.laboratoryId!);
+  });
+
+  afterAll(async () => {
+    await prisma.product.deleteMany({ where: { id: { in: productIds } } });
+    await prisma.laboratory.deleteMany({ where: { id: { in: laboratoryIds } } });
+  });
+
+  it("encuentra el producto aunque la busqueda traiga un calificador que el catalogo no tiene", async () => {
+    const result = await resolveProductMatch("Zoltraxina maleato 4mg tableta");
+    const foundIds = result.candidates.map((c) => c.product.id);
+    expect(foundIds).toEqual(expect.arrayContaining([productIds[0]]));
+  });
+});
+
+// Bug real confirmado 2026-10-05 (caso real: "Penicilina Benzatinica" vs
+// "Penicilina G Benzatinica"): el mismo principio a veces existe en el
+// catálogo bajo dos nombres (con/sin un calificador), cada uno con una
+// dosis real distinta -- quedarse solo con el primero que coincidiera por
+// texto exacto escondía el candidato con la dosis correcta.
+describe("resolveProductMatch (subconjunto de palabras coexiste con un match exacto)", () => {
+  const productIds: string[] = [];
+  const laboratoryIds: string[] = [];
+
+  beforeAll(async () => {
+    const exact = await createProduct("ZOLTRAXINA FORTIUM 500MG VIAL X10", "TestLab Zoltraxina Fortium Exacto");
+    const withExtraWord = await createProduct("ZOLTRAXINA G FORTIUM 1000MG VIAL X10", "TestLab Zoltraxina G Fortium");
+    productIds.push(exact.id, withExtraWord.id);
+    laboratoryIds.push(exact.laboratoryId!, withExtraWord.laboratoryId!);
+  });
+
+  afterAll(async () => {
+    await prisma.product.deleteMany({ where: { id: { in: productIds } } });
+    await prisma.laboratory.deleteMany({ where: { id: { in: laboratoryIds } } });
+  });
+
+  it("muestra el candidato de subconjunto con la dosis correcta aunque ya exista un match exacto de ingrediente con otra dosis", async () => {
+    const result = await resolveProductMatch("Zoltraxina fortium 1000mg vial");
+    const foundIds = result.candidates.map((c) => c.product.id);
+    expect(foundIds).toContain(productIds[1]);
+  });
+});
+
 // Bug real reportado por el cliente: buscar "Verodual" no encontraba nada,
 // aunque el producto existe con el nombre comercial "BERODUAL" (confundido
 // por el mismo sonido de B/V en español) entre paréntesis en los datos de

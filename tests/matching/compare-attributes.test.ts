@@ -123,4 +123,39 @@ describe("compareAttributes", () => {
     );
     expect(comparison.concentrationMatch).toBe(true);
   });
+
+  it("bug real (2026-10-05): '%' tambien se compara contra una razon SIN reducir de una forma sellada ('600/4' Clindamicina)", () => {
+    // Confirmado en datos reales: "CLINDAMICINA (15%) SOLUCION INYECTABLE
+    // 600 MG/4 ML" de un cliente nunca coincidia con "CLINDAMICINA 600MG/4ML
+    // (150MG/ML) SOLUCION INYECTABLE" del catálogo -- misma concentración
+    // real (600mg/4ml = 150mg/ml = 15%), solo que Inyectable no estaba en la
+    // lista de formas donde se intenta esta conversión, y aunque lo
+    // estuviera, Number.parseFloat("600/4") trunca en el "/" (da 600, no
+    // 150) si no se divide explícitamente.
+    const comparison = compareAttributes(
+      attrs({ activeIngredient: "CLINDAMICINA", concentration: "15", concentrationUnit: "%", dosageForm: "Inyectable" }),
+      candidate({
+        activeIngredient: "CLINDAMICINA",
+        concentration: "600/4",
+        concentrationUnit: "MG/ML",
+        dosageForm: "Inyectable",
+        standardName: "CLINDAMICINA 600MG/4ML (150MG/ML) SOLUCION INYECTABLE",
+      }),
+    );
+    expect(comparison.concentrationMatch).toBe(true);
+  });
+
+  it("una razon sin reducir que NO corresponde al mismo % sigue sin ser un match", () => {
+    const comparison = compareAttributes(
+      attrs({ activeIngredient: "CLINDAMICINA", concentration: "15", concentrationUnit: "%", dosageForm: "Inyectable" }),
+      candidate({
+        activeIngredient: "CLINDAMICINA",
+        concentration: "100/4",
+        concentrationUnit: "MG/ML",
+        dosageForm: "Inyectable",
+        standardName: "CLINDAMICINA 100MG/4ML SOLUCION INYECTABLE",
+      }),
+    );
+    expect(comparison.concentrationMatch).toBe(false);
+  });
 });

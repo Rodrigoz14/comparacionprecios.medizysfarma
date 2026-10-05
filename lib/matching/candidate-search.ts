@@ -54,7 +54,7 @@ export async function searchCandidatesByIngredientText(
   // no importe si el proveedor escribió "ACIDO VALPROICO" o "VALPROICO ACIDO".
   const ingredientKeys = [...new Set(terms.map((term) => canonicalizeIngredient(term)))];
 
-  const products = await prisma.product.findMany({
+  const exactProducts = await prisma.product.findMany({
     where: {
       status: "ACTIVE",
       ingredientKey: { in: ingredientKeys },
@@ -62,62 +62,85 @@ export async function searchCandidatesByIngredientText(
     },
   });
 
-  if (products.length > 0) {
-    return products.map((product) => ({
-      product: toCandidateProduct(product),
-      // Solo cuenta como sinónimo si el ingrediente en sí es distinto (p. ej.
-      // paracetamol/acetaminofén); una variante de orden de palabras del mismo
-      // ingrediente ("ACIDO VALPROICO" vs "VALPROICO ACIDO") no lo es.
-      viaSynonym: canonicalizeIngredient(product.activeIngredient) !== canonicalizeIngredient(rawIngredient),
-      viaFuzzyMatch: false,
-      viaSubsetMatch: false,
-      viaBrandMatch: false,
-      viaAI: false,
-    }));
-  }
-
   const distinctIngredientKeys = await prisma.product.findMany({
     where: { status: "ACTIVE", ...(sector ? { sector } : {}) },
     distinct: ["ingredientKey"],
     select: { ingredientKey: true },
   });
 
-  // Nada por texto exacto ni sinónimo: un combinado real a veces se busca sin
-  // mencionar todos sus componentes (p. ej. "Hidroxido de aluminio +
-  // Simeticona" para un producto real que también lleva "Magnesio
-  // Hidroxido" — bug real reportado por el cliente). Si TODAS las palabras
-  // buscadas están contenidas en la clave de un candidato (nunca al revés:
-  // no se adivina un ingrediente que el cliente no mencionó), se ofrece para
-  // revisión humana, nunca como MATCH automático (matching-service.ts lo
-  // obliga a REVIEW igual que la tolerancia a typos). Se exige un mínimo de 2
-  // palabras en la búsqueda y un máximo de 2 palabras adicionales en el
-  // candidato para no disparar con un solo ingrediente común compartido por
-  // decenas de combinados no relacionados.
+  // Un combinado real a veces se busca sin mencionar todos sus componentes
+  // (p. ej. "Hidroxido de aluminio + Simeticona" para un producto real que
+  // también lleva "Magnesio Hidroxido" — bug real reportado por el cliente),
+  // o al revés, con un adjetivo/sal/éster de MÁS que el catálogo no incluye
+  // en su nombre simple (p. ej. "Clorfeniramina MALEATO" cuando el catálogo
+  // solo guarda "Clorfeniramina" -- bug real confirmado 2026-10-05). Ninguna
+  // de las dos direcciones es MATCH automático (matching-service.ts lo
+  // obliga a REVIEW igual que la tolerancia a typos), y ambas se limitan a
+  // máximo 2 palabras de diferencia para no disparar con un solo ingrediente
+  // común compartido por decenas de combinados no relacionados. Se calcula
+  // SIEMPRE, incluso cuando ya hubo match exacto (2026-10-05): el mismo
+  // principio a veces existe en el catálogo bajo dos nombres (con/sin un
+  // calificador, p. ej. "Penicilina Benzatinica" y "Penicilina G
+  // Benzatinica" en SKUs de distintos proveedores) y cada dosis real puede
+  // estar solo en uno de los dos -- quedarse solo con el primero que
+  // coincida le escondía al motor de precios candidatos reales con la dosis
+  // correcta.
   const queryWords = (ingredientKeys[0] ?? "").split(" ").filter(Boolean);
-  if (queryWords.length >= 2) {
-    const subsetKeys = distinctIngredientKeys
-      .map((row) => row.ingredientKey)
-      .filter((key) => {
-        if (!key) return false;
-        const candidateWords = key.split(" ").filter(Boolean);
-        if (candidateWords.length <= queryWords.length) return false;
-        if (candidateWords.length - queryWords.length > 2) return false;
-        return queryWords.every((word) => candidateWords.includes(word));
-      });
+  const subsetKeys = new Set<string>();
+  if (queryWords.length >= 1) {
+    for (const row of distinctIngredientKeys) {
+      const key = row.ingredientKey;
+      if (!key || ingredientKeys.includes(key)) continue;
+      const candidateWords = key.split(" ").filter(Boolean);
+      const clientOmittedWords =
+        candidateWords.length > queryWords.length &&
+        candidateWords.length - queryWords.length <= 2 &&
+        queryWords.every((word) => candidateWords.includes(word));
+      const clientAddedWords =
+        candidateWords.length < queryWords.length &&
+        queryWords.length - candidateWords.length <= 2 &&
+        candidateWords.every((word) => queryWords.includes(word));
+      if (clientOmittedWords || clientAddedWords) subsetKeys.add(key);
+    }
+  }
+  const subsetProducts =
+    subsetKeys.size > 0
+      ? await prisma.product.findMany({
+          where: { status: "ACTIVE", ingredientKey: { in: [...subsetKeys] }, ...(sector ? { sector } : {}) },
+        })
+      : [];
 
-    if (subsetKeys.length > 0) {
-      const subsetProducts = await prisma.product.findMany({
-        where: { status: "ACTIVE", ingredientKey: { in: subsetKeys }, ...(sector ? { sector } : {}) },
+  if (exactProducts.length > 0 || subsetProducts.length > 0) {
+    const seenIds = new Set<string>();
+    const results: CandidateSearchResult[] = [];
+    for (const product of exactProducts) {
+      if (seenIds.has(product.id)) continue;
+      seenIds.add(product.id);
+      results.push({
+        product: toCandidateProduct(product),
+        // Solo cuenta como sinónimo si el ingrediente en sí es distinto (p. ej.
+        // paracetamol/acetaminofén); una variante de orden de palabras del mismo
+        // ingrediente ("ACIDO VALPROICO" vs "VALPROICO ACIDO") no lo es.
+        viaSynonym: canonicalizeIngredient(product.activeIngredient) !== canonicalizeIngredient(rawIngredient),
+        viaFuzzyMatch: false,
+        viaSubsetMatch: false,
+        viaBrandMatch: false,
+        viaAI: false,
       });
-      return subsetProducts.map((product) => ({
+    }
+    for (const product of subsetProducts) {
+      if (seenIds.has(product.id)) continue;
+      seenIds.add(product.id);
+      results.push({
         product: toCandidateProduct(product),
         viaSynonym: false,
         viaFuzzyMatch: false,
         viaSubsetMatch: true,
         viaBrandMatch: false,
         viaAI: false,
-      }));
+      });
     }
+    return results;
   }
 
   // Tampoco hay coincidencia de subconjunto: se intenta con tolerancia a

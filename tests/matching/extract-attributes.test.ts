@@ -731,6 +731,32 @@ describe("extractProductAttributes", () => {
       expect(result?.attributes.concentrationUnit).toBe("MEQ");
     });
 
+    it("bug real (2026-10-05): reconoce 'MQ' como otro typo de 'MEQ' (falta la E, Potasio Cloruro de otro cliente)", () => {
+      const result = extractProductAttributes("POTASIO CLORURO 20 MQ /10 ML SOLUCION INYECTABLE", {
+        requirePresentation: false,
+      });
+      expect(result).not.toBeNull();
+      expect(result?.attributes.activeIngredient).toBe("POTASIO CLORURO");
+      expect(result?.attributes.concentration).toBe("20/10");
+      expect(result?.attributes.concentrationUnit).toBe("MEQ/ML");
+    });
+
+    it("bug real (2026-10-05): 'POTE'/'TARRO' cortan el nombre del ingrediente igual que 'frascos'/'sobres'", () => {
+      const result = extractProductAttributes("VASELINA POTE * 500GR", { requirePresentation: false });
+      expect(result).not.toBeNull();
+      expect(result?.attributes.activeIngredient).toBe("VASELINA");
+    });
+
+    it("bug real (2026-10-05): un volumen pegado a una palabra de envase SIN 'X'/'*' no se confunde con la concentración", () => {
+      // "SUSP FCO 360 ML" (sin "X"/"*") -- antes solo se excluía "X 360ML"
+      // con multiplicador explícito; sin esto, "360" quedaba como si fuera
+      // la concentración del combinado, y la búsqueda nunca encontraba nada.
+      const result = extractProductAttributes("HIDROXIDO ALUMINIO + MAGNESIO + SIMETICONA SUSP FCO 360 ML", {
+        requirePresentation: false,
+      });
+      expect(result).toBeNull();
+    });
+
     it("bug real (2026-10-05): infiere MG/ML en una razon dosis/volumen SIN unidad, pegada a 'JERINGA PRELLENADA' (Enoxaparina)", () => {
       const result = extractProductAttributes("ENOXAPARINA  40/0.4 JERINGA PRELLENADA SOLUCION INYECTABLE", {
         requirePresentation: false,
