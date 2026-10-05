@@ -38,7 +38,11 @@ function parseColombianNumber(raw: string): string {
 // reconocerlas, la concentración no se encontraba en absoluto, o el regex
 // terminaba agarrando por error otro número del texto (p. ej. el volumen del
 // envase) como si fuera la concentración.
-const CONCENTRATION_RE = /(\d+(?:[.,]\d+)?(?:\s*\/\s*\d+(?:[.,]\d+)?)?)\s*(MG\b|MCG\b|UI\b|MEQ\b|GR\b|G\b|ML\b|%)/i;
+// "EMQ" es un typo real y recurrente de un cliente por "MEQ" (letras
+// invertidas) -- confirmado en producción (2026-10-05): "CLORURO DE POTASIO
+// 2EMQ/ML" se repitió igual en varias solicitudes distintas, siempre con las
+// mismas dos letras cambiadas de orden.
+const CONCENTRATION_RE = /(\d+(?:[.,]\d+)?(?:\s*\/\s*\d+(?:[.,]\d+)?)?)\s*(MG\b|MCG\b|UI\b|MEQ\b|EMQ\b|GR\b|G\b|ML\b|%)/i;
 // El símbolo de multiplicación varía por proveedor: "X100" (Ramédicas) o
 // "*30"/"C*1" (Disfarma). Cubre tanto conteos discretos ("X100" -> 100
 // tabletas) como volumen/peso por envase pegado a la unidad, sin espacio
@@ -61,14 +65,16 @@ const BARE_MEASURE_RE = /(\d+(?:[.,]\d+)?)\s*(ML|L|G)\b/gi;
 // anterior ("...5MG+60MG..."): cada principio activo trae su propia unidad
 // repetida, a diferencia del formato de razón fija ("500/125 MG") que
 // CONCENTRATION_RE ya captura como un solo valor.
-const EXTRA_DOSE_RE = /^\s*\+\s*(\d+(?:[.,]\d+)?)\s*(MG|MCG|UI|MEQ|GR|G|ML|%)\b/i;
+const EXTRA_DOSE_RE = /^\s*\+\s*(\d+(?:[.,]\d+)?)\s*(MG|MCG|UI|MEQ|EMQ|GR|G|ML|%)\b/i;
 
 // "GR" es solo una forma distinta de escribir "G" (gramos), no una unidad
 // distinta -- se normaliza para que "1GR" y "1G" terminen en la misma clave
-// genérica. "MEQ" sí es una unidad real y distinta (miliequivalentes), no se
-// normaliza a nada más.
+// genérica. "EMQ" es el mismo typo de "MEQ" explicado arriba. "MEQ" sí es una
+// unidad real y distinta (miliequivalentes), no se normaliza a nada más.
 function normalizeConcentrationUnit(unit: string): string {
-  return unit === "GR" ? "G" : unit;
+  if (unit === "GR") return "G";
+  if (unit === "EMQ") return "MEQ";
+  return unit;
 }
 
 interface DosePart {
@@ -411,6 +417,26 @@ function parsePresentationVolumeNumber(raw: string, upper: string): string {
   return thousandsMatch ? thousandsMatch[1] + thousandsMatch[2] : raw;
 }
 
+// Un cliente a veces omite por completo las unidades de una jeringa
+// precargada o ampolla de un solo uso, escribiendo solo la razón desnuda
+// ("40/0.4 JERINGA PRELLENADA", "60/0.6 AMPOLLAS") -- confirmado en datos
+// reales de Enoxaparina (2026-10-05): "40/0.4" sin unidad es exactamente la
+// MISMA dosis real que "40MG/0,4ML" del catálogo (40mg en 0.4ml), la única
+// convención vista en estas presentaciones. Se reescribe el texto
+// insertando "MG"/"ML" ANTES de que corra el resto de la extracción, para
+// reutilizar toda la lógica de razón dosis/volumen ya probada (branch de
+// formas selladas) en vez de duplicarla. Solo se activa cuando el número NO
+// trae ya una unidad propia pegada (exige que justo después del "/" solo
+// haya el segundo número, nunca letras).
+const BARE_DOSE_VOLUME_RATIO_RE = new RegExp(
+  `(\\d+(?:[.,]\\d+)?)\\s*\\/\\s*(\\d+(?:[.,]\\d+)?)(\\s*(?:${JERINGA_PRELLENADA_RE.source}|AMPOLLAS?|AMP)\\b)`,
+  "i",
+);
+
+function insertImpliedDoseVolumeUnits(upper: string): string {
+  return upper.replace(BARE_DOSE_VOLUME_RATIO_RE, (_match, dose, volume, suffix) => `${dose}MG/${volume}ML${suffix}`);
+}
+
 // Segunda forma real de escribir un combinado, distinta de "INGREDIENTE1 +
 // INGREDIENTE2 DOSIS1+DOSIS2" (esa ya la maneja EXTRA_DOSE_RE más abajo):
 // aquí cada principio activo trae SU PROPIA dosis pegada antes del "+"
@@ -536,11 +562,13 @@ export function extractProductAttributes(
   options: ExtractOptions = {},
 ): { attributes: ExtractedAttributes; warnings: string[]; presentationSpecified: boolean } | null {
   const requirePresentation = options.requirePresentation ?? true;
-  const upper = stripAccents(rawName)
-    .toUpperCase()
-    .replace(CHANNEL_PREFIX_RE, "")
-    .replace(WITHOUT_EPINEPHRINE_RE, "")
-    .replace(SALT_FORM_ADJECTIVE_RE, "");
+  const upper = insertImpliedDoseVolumeUnits(
+    stripAccents(rawName)
+      .toUpperCase()
+      .replace(CHANNEL_PREFIX_RE, "")
+      .replace(WITHOUT_EPINEPHRINE_RE, "")
+      .replace(SALT_FORM_ADJECTIVE_RE, ""),
+  );
   const warnings: string[] = [];
 
   // Un volumen (ML/L) escrito justo despues de "X"/"*" es SIEMPRE tamaño de

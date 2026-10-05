@@ -722,6 +722,40 @@ describe("extractProductAttributes", () => {
       expect(result?.attributes.activeIngredient).toBe("ALGO Y/O OTRO");
     });
 
+    it("bug real (2026-10-05): reconoce 'EMQ' como el mismo typo de 'MEQ' (letras invertidas, Cloruro de Potasio)", () => {
+      const result = extractProductAttributes("CLORURO DE POTASIO 2EMQ/ML SOLUCION INYECTABLE", {
+        requirePresentation: false,
+      });
+      expect(result).not.toBeNull();
+      expect(result?.attributes.concentration).toBe("2");
+      expect(result?.attributes.concentrationUnit).toBe("MEQ");
+    });
+
+    it("bug real (2026-10-05): infiere MG/ML en una razon dosis/volumen SIN unidad, pegada a 'JERINGA PRELLENADA' (Enoxaparina)", () => {
+      const result = extractProductAttributes("ENOXAPARINA  40/0.4 JERINGA PRELLENADA SOLUCION INYECTABLE", {
+        requirePresentation: false,
+      });
+      expect(result).not.toBeNull();
+      expect(result?.attributes.concentration).toBe("40/0.4");
+      expect(result?.attributes.concentrationUnit).toBe("MG/ML");
+    });
+
+    it("mismo caso sin unidad, pegada a 'AMPOLLA(S)' en vez de jeringa", () => {
+      const result = extractProductAttributes("ENOXAPARINA  AMPOLLA 60/0.6 AMPOLLAS", { requirePresentation: false });
+      expect(result).not.toBeNull();
+      expect(result?.attributes.concentration).toBe("60/0.6");
+      expect(result?.attributes.concentrationUnit).toBe("MG/ML");
+    });
+
+    it("NO infiere unidad cuando la razon SI trae una unidad propia pegada (no se duplica ni se rompe el caso normal)", () => {
+      const result = extractProductAttributes("ENOXAPARINA 40MG/0,4ML JERINGA PRELLENADA SOLUCION INYECTABLE", {
+        requirePresentation: false,
+      });
+      expect(result).not.toBeNull();
+      expect(result?.attributes.concentration).toBe("40/0.4");
+      expect(result?.attributes.concentrationUnit).toBe("MG/ML");
+    });
+
     it("reconoce 'SOLUCION INHALACION' (sin 'PARA') como la misma forma que 'SOLUCION PARA INHALACION'", () => {
       // Bug real: "IPRATROPIO BROMURO SOLUCION INHALACION 20MCG" caia en la
       // palabra suelta "SOLUCION" a secas (perdiendo la via de inhalacion) y
