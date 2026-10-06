@@ -44,9 +44,10 @@ describe("resolvePackagesNeeded", () => {
     expect(resolvePackagesNeeded(3, 30, 100, "tabletas")).toBe(1);
   });
 
-  it("con tamaño mencionado, una forma medida sigue comparando por volumen/peso total real", () => {
-    // Pidió 2 frascos x30ml (= 60ml); una oferta de frascos de 15ml necesita 4.
-    expect(resolvePackagesNeeded(2, 30, 15, "ml")).toBe(4);
+  it("a pedido del cliente (2026-10-06): en presentaciones medidas (ml/g) la cantidad son envases, el volumen del envase NO entra al total", () => {
+    // Pidió 120 envases "x100 ml": son 120 envases, no 120 x 100 ml.
+    expect(resolvePackagesNeeded(120, 100, 100, "ml")).toBe(120);
+    expect(resolvePackagesNeeded(2, 30, 15, "ml")).toBe(2);
   });
 });
 
@@ -62,6 +63,12 @@ describe("resolveUnitPrice", () => {
     // confundía una caja sellada con un jarabe fraccionable; ver
     // selection-engine.ts, exclude-offer/route.ts, select-offer/route.ts).
     expect(resolveUnitPrice(141384, 24, true, null)).toBe(141384);
+  });
+
+  it("a pedido del cliente (2026-10-06): una presentación medida en ml (aunque no sea sellada) tampoco se divide -- el precio es por envase", () => {
+    // Acetaminofén 1g/100ml fco x12 a $7.470 por envase: el precio por
+    // envase es $7.470, no $7.470/100 ml.
+    expect(resolveUnitPrice(7470, 100, true, null)).toBe(7470);
   });
 
   it("una forma NO sellada (jarabe, solución...) sin precio unitario reportado sí se deriva por división", () => {

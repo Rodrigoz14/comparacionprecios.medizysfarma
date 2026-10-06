@@ -349,7 +349,7 @@ export async function confirmSupplierImport(input: ConfirmImportInput): Promise<
   for (const group of duplicateGroups) {
     warnings.push({
       rowNumber: group.kept.rowNumber,
-      message: `Producto duplicado en el archivo ("${group.kept.originalProductName}"): se conservó la última aparición${
+      message: `Producto duplicado en el archivo ("${group.kept.originalProductName}"): se unificó en una sola oferta (existencia sumada cuando el archivo la reporta)${
         group.priceConflict ? " (los precios entre duplicados no coincidían)" : ""
       }.`,
     });

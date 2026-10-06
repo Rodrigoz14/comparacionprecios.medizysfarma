@@ -1,7 +1,7 @@
 import ExcelJS from "exceljs";
 import { prisma } from "@/lib/db/client";
 import { formatAvailabilityLabel } from "@/lib/pricing/availability";
-import { isSealedUnitForm } from "@/lib/pricing/measured-forms";
+import { isPricedPerContainer } from "@/lib/pricing/measured-forms";
 import { calculateTotal, resolvePackagesNeeded, resolveUnitPrice } from "@/lib/pricing/price-calculator";
 
 const CURRENCY_FORMAT = '"$"#,##0';
@@ -134,11 +134,11 @@ export async function buildPurchaseOrderWorkbook(
     if (!comparison || item.quantityToPurchase === null) continue;
 
     const packageSize = comparison.product.presentationQuantity;
-    const isSealedUnit = isSealedUnitForm(comparison.product.dosageForm);
+    const perContainer = isPricedPerContainer(comparison.product.dosageForm, comparison.product.presentationUnit);
     // "Cantidad" es el número de empaques que pide el cliente, no unidades
     // sueltas -- mismo criterio que selection-engine.ts, para que el pedido a
     // proveedores coincida con lo que se mostró en pantalla al cotizar.
-    const packagesNeeded = isSealedUnit
+    const packagesNeeded = perContainer
       ? item.quantityToPurchase
       : resolvePackagesNeeded(item.quantityToPurchase, item.requestedPresentationQuantity, packageSize, comparison.product.presentationUnit);
     const packagePrice = Number(comparison.price);
@@ -146,7 +146,7 @@ export async function buildPurchaseOrderWorkbook(
     const unitPrice = resolveUnitPrice(
       packagePrice,
       packageSize,
-      isSealedUnit,
+      perContainer,
       unitPriceAsImported !== null ? Number(unitPriceAsImported) : null,
     );
 

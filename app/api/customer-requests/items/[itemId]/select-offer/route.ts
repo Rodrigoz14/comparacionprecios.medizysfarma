@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db/client";
 import { getVerifiedSession } from "@/lib/auth/dal";
 import { capAlternatives } from "@/lib/pricing/cap-alternatives";
 import { formatCOP, formatUnitCOP } from "@/lib/pricing/format";
-import { isSealedUnitForm } from "@/lib/pricing/measured-forms";
+import { isPricedPerContainer } from "@/lib/pricing/measured-forms";
 import { calculateSavings, calculateTotal, resolvePackagesNeeded, resolveUnitPrice } from "@/lib/pricing/price-calculator";
 import type { OfferOption } from "@/lib/pricing/types";
 
@@ -53,10 +53,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ ite
 
   const toOption = (c: (typeof comparisons)[number]): OfferOption => {
     const packageSize = c.product.presentationQuantity;
-    const isSealedUnit = isSealedUnitForm(c.product.dosageForm);
+    const perContainer = isPricedPerContainer(c.product.dosageForm, c.product.presentationUnit);
     // "Cantidad" es el número de empaques que pide el cliente, no unidades
     // sueltas -- ver el comentario en selection-engine.ts.
-    const packagesNeeded = isSealedUnit
+    const packagesNeeded = perContainer
       ? item!.quantityToPurchase!
       : resolvePackagesNeeded(item!.quantityToPurchase!, item!.requestedPresentationQuantity, packageSize, c.product.presentationUnit);
     const packagePrice = Number(c.price);
@@ -74,7 +74,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ ite
     const unitPrice = resolveUnitPrice(
       packagePrice,
       packageSize,
-      isSealedUnit,
+      perContainer,
       unitPriceAsImported !== null ? Number(unitPriceAsImported) : null,
     );
     return {

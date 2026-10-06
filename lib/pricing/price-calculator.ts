@@ -64,7 +64,13 @@ export function resolvePackagesNeeded(
   offerPackageSize: number,
   presentationUnit: string,
 ): number {
-  if (requestedPresentationQuantity === null && !isMeasureUnit(presentationUnit)) {
+  // Presentaciones en ml/g se cobran por envase (ver isPricedPerContainer):
+  // la cantidad pedida son envases, y el volumen o peso del envase no se
+  // convierte ni se multiplica -- a pedido del cliente (2026-10-06).
+  if (isMeasureUnit(presentationUnit)) {
+    return quantityToPurchase;
+  }
+  if (requestedPresentationQuantity === null) {
     return calculatePackagesNeeded(quantityToPurchase, offerPackageSize);
   }
   return calculatePackagesNeededMeasured(quantityToPurchase, requestedPresentationQuantity, offerPackageSize);
@@ -99,11 +105,11 @@ export function calculateTotal(packagePrice: number, packagesNeeded: number): nu
 export function resolveUnitPrice(
   packagePrice: number,
   packageSize: number,
-  isSealedUnit: boolean,
+  pricedPerContainer: boolean,
   unitPriceAsImported: number | null,
 ): number {
   if (unitPriceAsImported !== null) return unitPriceAsImported;
-  if (isSealedUnit) return packagePrice;
+  if (pricedPerContainer) return packagePrice;
   return Math.round((packagePrice / packageSize) * 10000) / 10000;
 }
 

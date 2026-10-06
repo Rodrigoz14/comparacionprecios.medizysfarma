@@ -5,7 +5,7 @@ import { filterCurrentOffers } from "@/lib/pricing/current-offers";
 import { formatCOP, formatUnitCOP } from "@/lib/pricing/format";
 import { calculateSavings, calculateTotal, resolvePackagesNeeded, resolveUnitPrice } from "@/lib/pricing/price-calculator";
 import { isSafeExpirationLabel } from "@/lib/pricing/expiration";
-import { isSealedUnitForm } from "@/lib/pricing/measured-forms";
+import { isPricedPerContainer } from "@/lib/pricing/measured-forms";
 import { DEFAULT_PRICING_RULES } from "@/lib/pricing/rules";
 import { rankOffers } from "@/lib/pricing/supplier-ranking";
 import { findWarehouseStock } from "@/lib/pricing/warehouse-lookup";
@@ -114,7 +114,7 @@ export async function selectBestOffer(
 
   const options: OfferOption[] = offers.map((offer) => {
     const packageSize = offer.product.presentationQuantity;
-    const isSealedUnit = isSealedUnitForm(offer.product.dosageForm);
+    const perContainer = isPricedPerContainer(offer.product.dosageForm, offer.product.presentationUnit);
     // "Cantidad" es el número de empaques que pide el cliente del tamaño que
     // mencionó (caja, frasco...), nunca unidades sueltas dentro de ellos --
     // confirmado con el cliente (Medizys compra y factura por empaque
@@ -125,7 +125,7 @@ export async function selectBestOffer(
     // unidad sellada = 1 empaque, sin conversión (el precio es por ampolla
     // individual, confirmado con el cliente, sin importar que el texto
     // mencione una caja de varias).
-    const packagesNeeded = isSealedUnit
+    const packagesNeeded = perContainer
       ? quantityToPurchase
       : resolvePackagesNeeded(quantityToPurchase, item.requestedPresentationQuantity, packageSize, offer.product.presentationUnit);
     const check = checkAvailability(offer.availability, offer.stockQuantity, packagesNeeded);
@@ -146,7 +146,7 @@ export async function selectBestOffer(
     const unitPrice = resolveUnitPrice(
       packagePrice,
       packageSize,
-      isSealedUnit,
+      perContainer,
       offer.unitPriceAsImported !== null ? Number(offer.unitPriceAsImported) : null,
     );
     return {

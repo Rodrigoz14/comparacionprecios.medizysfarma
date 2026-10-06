@@ -40,3 +40,15 @@ const MEASURE_UNITS = new Set(["ml", "g"]);
 export function isMeasureUnit(presentationUnit: string): boolean {
   return MEASURE_UNITS.has(presentationUnit);
 }
+
+/**
+ * Regla única: el precio que reporta el proveedor es por ENVASE completo (una
+ * ampolla, un frasco, un vial), y la cantidad pedida son envases. Aplica a
+ * formas selladas y a cualquier presentación medida en ml/g. El volumen o peso
+ * escrito ("x100 ml", "x 24ml") describe el envase, nunca se multiplica en el
+ * total ni se divide para dar un precio "por ml" -- confirmado con el cliente
+ * (2026-10-06): esa cantidad no debe tomarse en cuenta para el precio total.
+ */
+export function isPricedPerContainer(dosageForm: string, presentationUnit: string): boolean {
+  return isSealedUnitForm(dosageForm) || isMeasureUnit(presentationUnit);
+}

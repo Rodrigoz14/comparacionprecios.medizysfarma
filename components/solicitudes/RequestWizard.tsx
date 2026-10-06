@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { parsePastedList } from "@/lib/solicitudes/parse-pasted-list";
 import type { Sector } from "@/lib/generated/prisma/client";
 import { SECTOR_OPTIONS } from "@/lib/sectors";
+import { isMeasureUnit } from "@/lib/pricing/measured-forms";
 
 interface ItemLine {
   text: string;
@@ -705,7 +706,7 @@ export function RequestWizard() {
                     <span className="font-semibold">{formatCOP(r.pricing.totalPrice ?? 0)}</span>
                   </p>
                   <p className="mt-1 text-xs font-bold text-zinc-500">
-                    Referencia: {formatUnitCOP(r.pricing.selected.unitPrice)} por {r.pricing.selected.presentationUnit}
+                    Referencia: {formatUnitCOP(r.pricing.selected.unitPrice)} por {isMeasureUnit(r.pricing.selected.presentationUnit) ? "envase" : r.pricing.selected.presentationUnit}
                     {" "}(no es el precio del empaque completo, es solo para comparar entre presentaciones)
                   </p>
                   <p className="mt-1 text-xs text-zinc-500">{r.pricing.reason}</p>
@@ -794,7 +795,7 @@ export function RequestWizard() {
                               {formatCOP(a.totalCost)}
                             </span>{" "}
                             <span className="text-zinc-400 dark:text-zinc-500">
-                              ({formatUnitCOP(a.unitPrice)}/{a.presentationUnit})
+                              ({formatUnitCOP(a.unitPrice)}/{isMeasureUnit(a.presentationUnit) ? "envase" : a.presentationUnit})
                             </span>
                             {a.discardReason ? ` — ${a.discardReason}` : ""}
                           </span>

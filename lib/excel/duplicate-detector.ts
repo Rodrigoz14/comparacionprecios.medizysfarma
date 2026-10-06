@@ -45,7 +45,22 @@ export function detectDuplicates(rows: ParsedOfferRow[]): {
   const duplicateGroups: DuplicateGroup[] = [];
 
   for (const groupRows of groups.values()) {
-    const kept = groupRows[groupRows.length - 1];
+    const last = groupRows[groupRows.length - 1];
+    // Un proveedor puede reportar el mismo producto en varias líneas de
+    // inventario (mismo código, mismo lote): cada línea trae SU existencia, y
+    // el stock real del producto es la suma de todas -- no la última línea.
+    // Bug real confirmado (2026-10-06): Ofimedicas reportaba Acetaminofén
+    // 1g/100ml en dos líneas (2928 y 49 unidades) y solo se guardó la de 49,
+    // mostrando "insuficiente" para un pedido de 120 cuando había de sobra.
+    const numericStocks = groupRows.map((r) => r.stock).filter((s): s is number => s !== null);
+    const kept =
+      numericStocks.length > 1
+        ? {
+            ...last,
+            stock: numericStocks.reduce((sum, s) => sum + s, 0),
+            availability: numericStocks.some((s) => s > 0) ? ("AVAILABLE" as const) : last.availability,
+          }
+        : last;
     unique.push(kept);
 
     if (groupRows.length > 1) {

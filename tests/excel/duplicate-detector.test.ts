@@ -55,6 +55,18 @@ describe("detectDuplicates", () => {
     expect(duplicateGroups).toHaveLength(0);
   });
 
+  it("bug real (2026-10-06): líneas de inventario repetidas del mismo producto suman su existencia -- 2928 + 49 no es 49", () => {
+    const rows = [
+      row({ rowNumber: 2, supplierProductCode: "9996515", stock: 2928, availability: "AVAILABLE" }),
+      row({ rowNumber: 3, supplierProductCode: "9996515", stock: 49, availability: "AVAILABLE" }),
+    ];
+    const { unique } = detectDuplicates(rows);
+
+    expect(unique).toHaveLength(1);
+    expect(unique[0].stock).toBe(2977);
+    expect(unique[0].availability).toBe("AVAILABLE");
+  });
+
   it("agrupa filas sin ningún código como antes (mismo tratamiento que código igual)", () => {
     const rows = [
       row({ rowNumber: 1, supplierProductCode: null, price: 5000 }),

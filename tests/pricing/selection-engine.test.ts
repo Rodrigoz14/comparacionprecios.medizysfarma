@@ -584,9 +584,9 @@ describe("selectBestOffer (formas medidas: frascos de distinto tamaño)", () => 
     await prisma.laboratory.deleteMany({ where: { id: { in: laboratoryIds } } });
   });
 
-  it("con tamaño de frasco especificado, compara por costo total real (no 1 frasco de cada uno)", async () => {
-    // Pide 2 frascos de 30ml (= 60ml en total). B necesita 4 frascos de 15ml
-    // para cubrir lo mismo (no 2, que era el bug real reportado).
+  it("a pedido del cliente (2026-10-06): en presentaciones en ml, la cantidad son frascos -- el volumen del frasco no entra al total", async () => {
+    // Pide 2 frascos "x30ml". Cada oferta cobra por frasco: A a $5.000 c/u,
+    // B a $2.000 c/u. El tamaño del frasco (30 vs 15 ml) no se convierte.
     const { itemId } = await createRequestItem("JARABETEST 100MG/5ML JBE X30ML", 2);
     await resolveCustomerRequestItem(itemId);
 
@@ -595,14 +595,13 @@ describe("selectBestOffer (formas medidas: frascos de distinto tamaño)", () => 
 
     const optionA = result.alternatives.find((a) => a.supplierName === "Proveedor Jarabe A")!;
     const optionB = result.alternatives.find((a) => a.supplierName === "Proveedor Jarabe B")!;
-    expect(optionA.packagesNeeded).toBe(2); // 2 frascos de 30ml = 60ml
+    expect(optionA.packagesNeeded).toBe(2);
     expect(optionA.totalCost).toBe(10000);
-    expect(optionB.packagesNeeded).toBe(4); // 4 frascos de 15ml = 60ml (no 2)
-    expect(optionB.totalCost).toBe(8000);
+    expect(optionB.packagesNeeded).toBe(2);
+    expect(optionB.totalCost).toBe(4000);
 
-    // B gana por costo TOTAL real (8000 < 10000), no por precio de frasco a ciegas.
     expect(result.selected?.supplierName).toBe("Proveedor Jarabe B");
-    expect(result.totalPrice).toBe(8000);
+    expect(result.totalPrice).toBe(4000);
   });
 
   it("sin tamaño de frasco especificado, se piden esa cantidad de frascos tal cual venga cada oferta", async () => {

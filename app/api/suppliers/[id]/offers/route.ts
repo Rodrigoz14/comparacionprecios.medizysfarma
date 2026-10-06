@@ -2,7 +2,7 @@ import { prisma } from "@/lib/db/client";
 import { getVerifiedSession } from "@/lib/auth/dal";
 import { getLatestFilesBySupplier } from "@/lib/pricing/current-offers";
 import { isSafeExpirationLabel } from "@/lib/pricing/expiration";
-import { isMeasureUnit, isSealedUnitForm } from "@/lib/pricing/measured-forms";
+import { isMeasureUnit, isPricedPerContainer } from "@/lib/pricing/measured-forms";
 import { resolveUnitPrice } from "@/lib/pricing/price-calculator";
 
 const DEFAULT_LIMIT = 50;
@@ -94,11 +94,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const offers = matches.map((o) => {
     const packagePrice = Number(o.price);
     const packageSize = o.product.presentationQuantity;
-    const isSealedUnit = isSealedUnitForm(o.product.dosageForm);
+    const perContainer = isPricedPerContainer(o.product.dosageForm, o.product.presentationUnit);
     const unitPrice = resolveUnitPrice(
       packagePrice,
       packageSize,
-      isSealedUnit,
+      perContainer,
       o.unitPriceAsImported !== null ? Number(o.unitPriceAsImported) : null,
     );
     const measureUnit = isMeasureUnit(o.product.presentationUnit);
