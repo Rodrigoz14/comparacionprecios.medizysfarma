@@ -239,6 +239,8 @@ const COMPOUND_DOSAGE_FORM_MAP: [string, string][] = [
   ["POLVO PARA INHALACION", "Polvo inhalado"],
   ["POL INH", "Polvo inhalado"],
   ["SUSP INH BUC", "Suspensión inhalada"],
+  ["SOL INH NAS", "Solución nasal"],
+  ["SOL INH", "Solución inhalada"],
   ["INH BUC", "Aerosol inhalador"],
   ["SOLUCION PARA INHALACION NASAL", "Solución nasal"],
   ["SOLUCION PARA INHALACION", "Solución inhalada"],

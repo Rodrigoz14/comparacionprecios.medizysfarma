@@ -791,6 +791,15 @@ describe("extractProductAttributes", () => {
       expect(result?.attributes.concentrationUnit).toBe("G");
     });
 
+    it("bug real (2026-10-06): 'SOL INH' (abreviatura de bodega) es solución inhalada, y 'SOL INH NAS' es solución nasal", () => {
+      const inh = extractProductAttributes("BROMURO DE IPRATROPIO+FENOTEROL (0.25MG+0.50MG)/ML SOL INH FCO*20ML", {
+        requirePresentation: false,
+      });
+      const nasal = extractProductAttributes("BECLOMETASONA 50MCG SOL INH NAS FCO*200 DOSIS", { requirePresentation: false });
+      expect(inh?.attributes.dosageForm).toBe("Solución inhalada");
+      expect(nasal?.attributes.dosageForm).toBe("Solución nasal");
+    });
+
     it("bug real (2026-10-06): 'SUSP INH BUC' es suspensión inhalada, no aerosol", () => {
       const result = extractProductAttributes("SALBUTAMOL 100MCG/DOSIS SUSP INH BUC FCO*200 DOSIS", {
         requirePresentation: false,
