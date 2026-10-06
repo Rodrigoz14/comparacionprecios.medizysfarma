@@ -782,6 +782,22 @@ describe("extractProductAttributes", () => {
       expect(result?.attributes.concentrationUnit).toBe("MG/ML");
     });
 
+    it("bug real (2026-10-06): un combinado con unidades distintas por principio (2.5G + 20MG) se lleva a una sola unidad (2.5/0.02 G)", () => {
+      const result = extractProductAttributes(
+        "DIPIRONA SODICA+N-BUTILBROMURO DE HIOSCINA (2.5G+20MG)/5ML SOL INY AMPX5ML",
+        { requirePresentation: false },
+      );
+      expect(result?.attributes.concentration).toBe("2.5/0.02");
+      expect(result?.attributes.concentrationUnit).toBe("G");
+    });
+
+    it("bug real (2026-10-06): 'SUSP INH BUC' es suspensión inhalada, no aerosol", () => {
+      const result = extractProductAttributes("SALBUTAMOL 100MCG/DOSIS SUSP INH BUC FCO*200 DOSIS", {
+        requirePresentation: false,
+      });
+      expect(result?.attributes.dosageForm).toBe("Suspensión inhalada");
+    });
+
     it("reconoce 'SOLUCION INHALACION' (sin 'PARA') como la misma forma que 'SOLUCION PARA INHALACION'", () => {
       // Bug real: "IPRATROPIO BROMURO SOLUCION INHALACION 20MCG" caia en la
       // palabra suelta "SOLUCION" a secas (perdiendo la via de inhalacion) y

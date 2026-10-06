@@ -85,6 +85,27 @@ interface DosePart {
   unit: string;
 }
 
+const MASS_UNIT_IN_MCG: Record<string, number> = { MCG: 1, MG: 1_000, G: 1_000_000 };
+
+/**
+ * Un combinado a veces escribe cada principio con su propia unidad de masa
+ * distinta ("2.5G+20MG" -- dipirona y hioscina en el mismo producto). Sin
+ * convertir, el par queda como "2.5/20 G", que es un número distinto al real
+ * (20 mg = 0.02 g). Se lleva todo a la unidad mayor presente, así el valor
+ * queda como número simple y coincide con cómo el catálogo lo guarda
+ * ("2.5/0.02 G"). Bug real confirmado (2026-10-06): la bodega guardaba la
+ * dipirona+hioscina como "2.5/20 g" y nunca coincidía con el catálogo.
+ */
+function harmonizeMassParts(parts: DosePart[]): DosePart[] {
+  const units = new Set(parts.map((p) => p.unit));
+  if (units.size < 2 || [...units].some((u) => MASS_UNIT_IN_MCG[u] === undefined)) return parts;
+  const target = (["G", "MG", "MCG"] as const).find((u) => units.has(u))!;
+  return parts.map((p) => {
+    const converted = (Number.parseFloat(p.value) * MASS_UNIT_IN_MCG[p.unit]) / MASS_UNIT_IN_MCG[target];
+    return { value: String(Math.round(converted * 1_000_000) / 1_000_000), unit: target };
+  });
+}
+
 /**
  * A partir de la primera coincidencia de CONCENTRATION_RE, sigue buscando
  * dosis adicionales unidas con "+" inmediatamente después ("5MG+60MG",
@@ -217,6 +238,7 @@ const COMPOUND_DOSAGE_FORM_MAP: [string, string][] = [
   ["SOL INH BUC", "Solución inhalada"],
   ["POLVO PARA INHALACION", "Polvo inhalado"],
   ["POL INH", "Polvo inhalado"],
+  ["SUSP INH BUC", "Suspensión inhalada"],
   ["INH BUC", "Aerosol inhalador"],
   ["SOLUCION PARA INHALACION NASAL", "Solución nasal"],
   ["SOLUCION PARA INHALACION", "Solución inhalada"],
@@ -859,7 +881,7 @@ export function extractProductAttributes(
       .filter(Boolean);
     if (ingredientSegments.length === doseParts.parts.length) {
       const paired = ingredientSegments
-        .map((name, i) => ({ name, ...doseParts.parts[i] }))
+        .map((name, i) => ({ name, ...harmonizeMassParts(doseParts.parts)[i] }))
         .sort((a, b) => a.name.localeCompare(b.name));
       finalActiveIngredient = paired.map((p) => p.name).join(" + ");
       finalConcentration = paired.map((p) => p.value).join("/");
