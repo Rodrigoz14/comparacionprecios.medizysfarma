@@ -1,4 +1,4 @@
-import { stripAccents } from "@/lib/matching/normalize";
+import { canonicalizeIngredient, stripAccents } from "@/lib/matching/normalize";
 import { isSealedUnitForm } from "@/lib/pricing/measured-forms";
 import type { ExtractedAttributes } from "@/lib/matching/types";
 
@@ -884,7 +884,7 @@ export function extractProductAttributes(
     if (ingredientSegments.length === doseParts.parts.length) {
       const paired = ingredientSegments
         .map((name, i) => ({ name, ...harmonizeMassParts(doseParts.parts)[i] }))
-        .sort((a, b) => a.name.localeCompare(b.name));
+        .sort((a, b) => canonicalizeIngredient(a.name).localeCompare(canonicalizeIngredient(b.name)));
       finalActiveIngredient = paired.map((p) => p.name).join(" + ");
       finalConcentration = paired.map((p) => p.value).join("/");
       finalConcentrationUnit = paired[0].unit;
@@ -980,7 +980,7 @@ export function extractProductAttributes(
         const pair = [
           { name: interleaved[1].trim(), value: parseColombianNumber(interleaved[2]), unit: normalizeConcentrationUnit(interleaved[3].toUpperCase()) },
           { name: interleaved[4].trim(), value: parseColombianNumber(interleaved[5]), unit: normalizeConcentrationUnit(interleaved[6].toUpperCase()) },
-        ].sort((a, b) => a.name.localeCompare(b.name));
+        ].sort((a, b) => canonicalizeIngredient(a.name).localeCompare(canonicalizeIngredient(b.name)));
         finalActiveIngredient = pair.map((p) => p.name).join(" + ");
         finalConcentration = pair.map((p) => p.value).join("/");
         finalConcentrationUnit = pair[0].unit;

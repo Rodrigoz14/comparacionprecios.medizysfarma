@@ -686,8 +686,8 @@ describe("extractProductAttributes", () => {
         { requirePresentation: false },
       );
       expect(result).not.toBeNull();
-      expect(result?.attributes.activeIngredient).toBe("FENOTEROL + IPRATROPIO BROMURO");
-      expect(result?.attributes.concentration).toBe("0.5/0.25");
+      expect(result?.attributes.activeIngredient).toBe("IPRATROPIO BROMURO + FENOTEROL");
+      expect(result?.attributes.concentration).toBe("0.25/0.5");
       expect(result?.attributes.concentrationUnit).toBe("MG");
     });
 
