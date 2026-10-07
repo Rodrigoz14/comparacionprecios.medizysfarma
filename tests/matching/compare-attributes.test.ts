@@ -158,4 +158,53 @@ describe("compareAttributes", () => {
     );
     expect(comparison.concentrationMatch).toBe(false);
   });
+
+  it("bug real (2026-10-07): '2 MEQ' (denominador implicito) coincide con '20/10 MEQ/ML' (razon explicita, misma tasa) de otro proveedor", () => {
+    // Confirmado en datos reales: "CLORURO DE POTASIO 2EMQ/ML..." de un
+    // cliente solo encontraba Disfarma (coincidencia de texto exacto "2
+    // MEQ"), nunca Ramedicas/Ofimedicas (guardado como "20 mEq /10mL" --
+    // 20/10 = 2, la misma tasa real, hasta 30 veces mas barata).
+    const comparison = compareAttributes(
+      attrs({ activeIngredient: "CLORURO DE POTASIO", concentration: "2", concentrationUnit: "MEQ", dosageForm: "Inyectable" }),
+      candidate({
+        activeIngredient: "CLORURO DE POTASIO",
+        concentration: "20/10",
+        concentrationUnit: "MEQ/ML",
+        dosageForm: "Inyectable",
+        standardName: "Cloruro de Potasio 20 mEq /10mL solucion inyectable",
+      }),
+    );
+    expect(comparison.concentrationMatch).toBe(true);
+  });
+
+  it("una tasa de MEQ distinta sigue sin ser un match", () => {
+    const comparison = compareAttributes(
+      attrs({ activeIngredient: "CLORURO DE POTASIO", concentration: "2", concentrationUnit: "MEQ", dosageForm: "Inyectable" }),
+      candidate({
+        activeIngredient: "CLORURO DE POTASIO",
+        concentration: "10/10",
+        concentrationUnit: "MEQ/ML",
+        dosageForm: "Inyectable",
+        standardName: "Cloruro de Potasio 10 mEq /10mL solucion inyectable",
+      }),
+    );
+    expect(comparison.concentrationMatch).toBe(false);
+  });
+
+  it("NUNCA aplica esta conversion a 'UI' -- puede ser el contenido TOTAL de un vial, no una tasa (ver Penicilina Benzatinica)", () => {
+    const comparison = compareAttributes(
+      attrs({ activeIngredient: "PENICILINA", concentration: "1200", concentrationUnit: "UI", dosageForm: "Inyectable" }),
+      candidate({
+        activeIngredient: "PENICILINA",
+        concentration: "1200/1",
+        concentrationUnit: "UI/ML",
+        dosageForm: "Inyectable",
+        standardName: "Penicilina 1200 UI/1mL solucion inyectable",
+      }),
+    );
+    // Numericamente "coincidirian" (1200 == 1200/1), pero como UI no esta en
+    // la lista de unidades-tasa, no se intenta esta conversion -- cae al
+    // bloque de % (que tampoco aplica) y termina sin match.
+    expect(comparison.concentrationMatch).toBe(false);
+  });
 });
