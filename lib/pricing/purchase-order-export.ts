@@ -100,9 +100,20 @@ export async function buildPurchaseOrderWorkbook(
   // en código, no en el `where`, para no depender de combinar `some`/`none`
   // sobre la misma relación -- así se distingue de un ítem que de verdad no
   // tiene ninguna oferta de proveedor registrada (problema distinto, sin
-  // datos de precio en absoluto, no de disponibilidad).
+  // datos de precio en absoluto, no de disponibilidad). `excludedManually`
+  // se excluye aparte: sin este campo, un producto que el cliente decidió a
+  // propósito NO comprar ("Ninguna de las anteriores") queda IDÉNTICO en la
+  // base de datos a uno sin existencia suficiente (ambos sin ninguna
+  // comparación `selected`) -- aparecía aquí como si le hubiera faltado
+  // stock, cuando en realidad el cliente nunca quiso comprarlo (bug real,
+  // 2026-10-07).
   const noSelectionItems = await prisma.customerRequestItem.findMany({
-    where: { customerRequestId, quantityToPurchase: { gt: 0 }, priceComparisons: { none: { selected: true } } },
+    where: {
+      customerRequestId,
+      quantityToPurchase: { gt: 0 },
+      excludedManually: false,
+      priceComparisons: { none: { selected: true } },
+    },
     include: {
       matchedProduct: true,
       priceComparisons: {

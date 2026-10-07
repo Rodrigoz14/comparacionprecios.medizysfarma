@@ -35,7 +35,14 @@ export async function POST(_request: Request, { params }: { params: Promise<{ it
     return Response.json({ error: "Este ítem no tiene ninguna oferta comparada." }, { status: 400 });
   }
 
-  await prisma.priceComparison.updateMany({ where: { customerRequestItemId: itemId }, data: { selected: false } });
+  await prisma.$transaction([
+    prisma.priceComparison.updateMany({ where: { customerRequestItemId: itemId }, data: { selected: false } }),
+    // Sin esto, un ítem excluido a propósito queda idéntico en la base de
+    // datos a uno donde el motor automático no encontró ninguna oferta con
+    // existencia suficiente -- ambos sin ninguna comparación `selected` --
+    // y el Excel del pedido no podía distinguirlos (bug real, 2026-10-07).
+    prisma.customerRequestItem.update({ where: { id: itemId }, data: { excludedManually: true } }),
+  ]);
 
   const toOption = (c: (typeof comparisons)[number]): OfferOption => {
     const packageSize = c.product.presentationQuantity;

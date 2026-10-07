@@ -189,4 +189,32 @@ describe("buildPurchaseOrderWorkbook (integracion contra base de datos real)", (
 
     await prisma.supplierOffer.updateMany({ where: { productId: productIds[1] }, data: { stockQuantity: 500 } });
   });
+
+  it("un producto excluido manualmente no aparece en 'Sin disponibilidad' ni en ninguna hoja (bug real, 2026-10-07: antes era indistinguible de NO_STOCK)", async () => {
+    const request = await prisma.customerRequest.create({ data: { customerName: "Cliente Pedido Excluido" } });
+    requestIds.push(request.id);
+
+    // Mismo escenario sin existencia suficiente que la prueba anterior, pero
+    // esta vez el usuario decide explícitamente no comprarlo (equivalente a
+    // /exclude-offer), no es el motor el que descartó todas las ofertas.
+    await prisma.supplierOffer.updateMany({
+      where: { productId: productIds[1] },
+      data: { stockQuantity: 3 },
+    });
+
+    const itemB = await prisma.customerRequestItem.create({
+      data: { customerRequestId: request.id, originalText: "PEDIDOTEST2 JBE 100MG X1", requestedQuantity: 20 },
+    });
+    await resolveCustomerRequestItem(itemB.id);
+    const selection = await selectBestOffer(itemB.id);
+    expect(selection.status).toBe("NO_STOCK");
+    await prisma.customerRequestItem.update({ where: { id: itemB.id }, data: { excludedManually: true } });
+
+    const result = await buildPurchaseOrderWorkbook(request.id);
+    // Era el único ítem de esta solicitud y quedó excluido: no hay nada que
+    // mostrar, ni en una hoja de proveedor ni en "Sin disponibilidad".
+    expect(result).toBeNull();
+
+    await prisma.supplierOffer.updateMany({ where: { productId: productIds[1] }, data: { stockQuantity: 500 } });
+  });
 });

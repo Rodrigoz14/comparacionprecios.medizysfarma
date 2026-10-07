@@ -49,6 +49,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ ite
   await prisma.$transaction([
     prisma.priceComparison.updateMany({ where: { customerRequestItemId: itemId }, data: { selected: false } }),
     prisma.priceComparison.update({ where: { id: target.id }, data: { selected: true } }),
+    // Deshace una exclusión manual previa, si la había -- elegir una oferta
+    // es lo contrario de "no comprar este producto".
+    prisma.customerRequestItem.update({ where: { id: itemId }, data: { excludedManually: false } }),
   ]);
 
   const toOption = (c: (typeof comparisons)[number]): OfferOption => {

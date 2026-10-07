@@ -444,6 +444,17 @@ model CustomerRequestItem {
   /// se compara por costo total o si se pide esa cantidad de envases tal
   /// cual venga -- ver lib/pricing/selection-engine.ts.
   requestedPresentationQuantity Int? @map("requested_presentation_quantity")
+  /// true cuando el cliente eligió manualmente "Ninguna de las anteriores --
+  /// no comprar este producto" (app/api/customer-requests/items/[itemId]/exclude-offer).
+  /// Sin este campo, un ítem excluido a propósito queda IDÉNTICO en la base
+  /// de datos a uno donde el motor automático no encontró ninguna oferta con
+  /// existencia suficiente (ambos: quantityToPurchase > 0, ninguna
+  /// PriceComparison con selected=true) -- no hay forma de distinguirlos al
+  /// armar el Excel del pedido (bug real, 2026-10-07: un producto que el
+  /// cliente decidió NO comprar aparecía en la pestaña "Sin disponibilidad"
+  /// como si le hubiera faltado existencia). Se vuelve a poner en false al
+  /// elegir manualmente una oferta (select-offer) -- deshace la exclusión.
+  excludedManually Boolean @default(false) @map("excluded_manually")
 
   customerRequest CustomerRequest @relation(fields: [customerRequestId], references: [id])
   matchedProduct  Product?        @relation(fields: [matchedProductId], references: [id])
