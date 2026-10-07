@@ -7,7 +7,8 @@ import { searchCandidates, searchCandidatesByIngredientText } from "@/lib/matchi
 import { compareAttributes } from "@/lib/matching/compare-attributes";
 import { decideFromScore } from "@/lib/matching/decision";
 import { extractIngredientGuess, extractProductAttributes } from "@/lib/matching/extract-attributes";
-import { buildGenericKey, buildGenericKeyAliases } from "@/lib/matching/normalize";
+import { buildGenericKey, buildGenericKeyAliases, canonicalizeIngredient } from "@/lib/matching/normalize";
+import { findRateEquivalentProductIds } from "@/lib/matching/rate-equivalents";
 import { scoreComparison } from "@/lib/matching/score";
 import type { CandidateProduct, MatchResult, ScoredCandidate } from "@/lib/matching/types";
 
@@ -217,10 +218,18 @@ async function resolveProductMatchCore(rawText: string, sector?: Sector): Promis
             return aMatch - bMatch;
           })
         : exactMatches;
+    const rateEquivalentIds = await findRateEquivalentProductIds({
+      ingredientKey: canonicalizeIngredient(extraction.attributes.activeIngredient),
+      concentration: extraction.attributes.concentration,
+      concentrationUnit: extraction.attributes.concentrationUnit,
+      dosageForm: extraction.attributes.dosageForm,
+      excludeGenericKey: genericKey,
+      sector,
+    });
     return {
       decision: "MATCH",
       confidence: 1,
-      matchedProductIds: ordered.map((p) => p.id),
+      matchedProductIds: [...new Set([...ordered.map((p) => p.id), ...rateEquivalentIds])],
       candidates: [],
       reasons: ["Coincidencia exacta de ingrediente activo, concentración y forma farmacéutica."],
       source: "deterministic",

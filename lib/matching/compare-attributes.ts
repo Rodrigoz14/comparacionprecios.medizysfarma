@@ -40,6 +40,44 @@ function sumOfSplitDose(value: string): number | null {
   return Number.isFinite(sum) ? sum : null;
 }
 
+// "2 MEQ" (denominador implícito 1, ver extract-attributes.ts -- un
+// proveedor que solo pone "2MEQ" sin "/ML" explícito) y "20/10 MEQ/ML"
+// (razón explícita de otro proveedor, misma tasa real: 20/10 = 2) son la
+// MISMA concentración -- mismo razonamiento que %<->MG/ML más abajo, pero
+// para miliequivalentes. Bug real confirmado (2026-10-07): "CLORURO DE
+// POTASIO 2EMQ/ML..." de un cliente solo encontraba la oferta de Disfarma
+// que coincidía por texto exacto ("2 MEQ"), nunca la de Ramédicas/
+// Ofimédicas (guardada como "20 mEq /10mL", la MISMA tasa real pero hasta
+// 30 veces más barata), porque nunca se comparaban como número.
+//
+// A propósito NO se incluye "UI" en esta misma regla: a diferencia de MEQ
+// (siempre una tasa real en este catálogo), "UI" sí puede ser el contenido
+// TOTAL de un vial sin ninguna razón de volumen implícita (p. ej.
+// "Penicilina Benzatínica 1.200.000 UI", un polvo para reconstituir sin
+// tasa alguna) -- tratar ese total como "por 1 ml" sería la misma
+// ambigüedad de Enoxaparina que ya se investigó y se descartó.
+//
+// Exportada (no solo usada aquí): matching-service.ts también la necesita,
+// porque el camino de "coincidencia exacta de genericKey" corta ANTES de
+// llegar a compareAttributes -- sin fusionar ahí también la familia
+// equivalente en tasa, Disfarma (texto exacto) seguía ganando solo porque
+// llegaba primero, aunque Ramédicas/Ofimédicas fueran más baratos.
+const RATE_UNITS = new Set(["MEQ"]);
+export function computeRate(value: string, unitInput: string): { base: string; rate: number } | null {
+  const unit = unitInput.toUpperCase();
+  const isRatio = unit.endsWith("/ML");
+  const base = isRatio ? unit.slice(0, -3) : unit;
+  if (!RATE_UNITS.has(base)) return null;
+  if (!isRatio) {
+    const v = Number.parseFloat(value);
+    return Number.isFinite(v) ? { base, rate: v } : null;
+  }
+  const [rawNum, rawDen] = value.split("/");
+  const num = Number.parseFloat(rawNum);
+  const den = rawDen !== undefined ? Number.parseFloat(rawDen) : 1;
+  return Number.isFinite(num) && Number.isFinite(den) && den !== 0 ? { base, rate: num / den } : null;
+}
+
 function concentrationsMatch(target: ExtractedAttributes, candidate: CandidateProduct): boolean {
   const targetUnit = target.concentrationUnit.toUpperCase();
   const candidateUnit = candidate.concentrationUnit.toUpperCase();
@@ -86,38 +124,10 @@ function concentrationsMatch(target: ExtractedAttributes, candidate: CandidatePr
     }
   }
 
-  // "2 MEQ" (denominador implícito 1, ver extract-attributes.ts -- un
-  // proveedor que solo pone "2MEQ" sin "/ML" explícito) y "20/10 MEQ/ML"
-  // (razón explícita de otro proveedor, misma tasa real: 20/10 = 2) son la
-  // MISMA concentración -- mismo razonamiento que %<->MG/ML más abajo, pero
-  // para miliequivalentes. Bug real confirmado (2026-10-07): "CLORURO DE
-  // POTASIO 2EMQ/ML..." de un cliente solo encontraba la oferta de Disfarma
-  // que coincidía por texto exacto ("2 MEQ"), nunca la de Ramédicas/
-  // Ofimédicas (guardada como "20 mEq /10mL", la MISMA tasa real pero hasta
-  // 30 veces más barata), porque nunca se comparaban como número.
-  //
-  // A propósito NO se incluye "UI" en esta misma regla: a diferencia de MEQ
-  // (siempre una tasa real en este catálogo), "UI" sí puede ser el
-  // contenido TOTAL de un vial sin ninguna razón de volumen implícita (p.
-  // ej. "Penicilina Benzatínica 1.200.000 UI", un polvo para reconstituir
-  // sin tasa alguna) -- tratar ese total como "por 1 ml" sería la misma
-  // ambigüedad de Enoxaparina que ya se investigó y se descartó.
-  const RATE_UNITS = new Set(["MEQ"]);
-  const asRatePerMl = (value: string, unit: string): { base: string; rate: number } | null => {
-    const isRatio = unit.endsWith("/ML");
-    const base = isRatio ? unit.slice(0, -3) : unit;
-    if (!RATE_UNITS.has(base)) return null;
-    if (!isRatio) {
-      const v = Number.parseFloat(value);
-      return Number.isFinite(v) ? { base, rate: v } : null;
-    }
-    const [rawNum, rawDen] = value.split("/");
-    const num = Number.parseFloat(rawNum);
-    const den = rawDen !== undefined ? Number.parseFloat(rawDen) : 1;
-    return Number.isFinite(num) && Number.isFinite(den) && den !== 0 ? { base, rate: num / den } : null;
-  };
-  const targetRate = asRatePerMl(target.concentration, targetUnit);
-  const candidateRate = asRatePerMl(candidate.concentration, candidateUnit);
+  // Ver computeRate() más arriba -- "2 MEQ" y "20/10 MEQ/ML" son la misma
+  // tasa real.
+  const targetRate = computeRate(target.concentration, targetUnit);
+  const candidateRate = computeRate(candidate.concentration, candidateUnit);
   if (targetRate && candidateRate && targetRate.base === candidateRate.base) {
     return Math.abs(targetRate.rate - candidateRate.rate) < 0.001;
   }

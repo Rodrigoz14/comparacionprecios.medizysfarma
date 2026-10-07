@@ -485,6 +485,54 @@ describe("selectBestOffer (bodega descuenta aunque este guardada en otra escala 
   });
 });
 
+// Bug real confirmado (2026-10-07): "CLORURO DE POTASIO 2EMQ/ML..." de un
+// cliente solo cotizaba contra el proveedor que coincidía por texto exacto
+// ("2 MEQ"), nunca contra el que guarda la MISMA tasa real como razón
+// explícita ("20/10 MEQ/ML", 20/10 = 2) -- aunque fuera hasta 30 veces más
+// barato. Se usa un principio activo ficticio para no depender de datos
+// reales ni de ediciones futuras del catálogo.
+describe("selectBestOffer (tasa equivalente en mEq con razon explicita de otro proveedor, 2026-10-07)", () => {
+  const productIds: string[] = [];
+  const laboratoryIds: string[] = [];
+  const supplierIds: string[] = [];
+
+  beforeAll(async () => {
+    const caro = await createProduct("ZOLTRAXIO 2MEQ/ML SOLUCION INYECTABLE X40", "TestLab Zoltraxio Caro");
+    const barato = await createProduct("ZOLTRAXIO 20 MEQ /10ML SOLUCION INYECTABLE X40", "TestLab Zoltraxio Barato");
+    productIds.push(caro.id, barato.id);
+    laboratoryIds.push(caro.laboratoryId!, barato.laboratoryId!);
+
+    const proveedorCaro = await prisma.supplier.create({ data: { name: "Proveedor Zoltraxio Caro" } });
+    const proveedorBarato = await prisma.supplier.create({ data: { name: "Proveedor Zoltraxio Barato" } });
+    supplierIds.push(proveedorCaro.id, proveedorBarato.id);
+    await prisma.supplierOffer.create({
+      data: { supplierId: proveedorCaro.id, productId: caro.id, price: 57200, availability: "AVAILABLE", stockQuantity: 1000 },
+    });
+    await prisma.supplierOffer.create({
+      data: { supplierId: proveedorBarato.id, productId: barato.id, price: 736, availability: "AVAILABLE", stockQuantity: 1000 },
+    });
+  });
+
+  afterAll(async () => {
+    await prisma.priceComparison.deleteMany({ where: { productId: { in: productIds } } });
+    await prisma.supplierOffer.deleteMany({ where: { productId: { in: productIds } } });
+    await prisma.supplier.deleteMany({ where: { id: { in: supplierIds } } });
+    await prisma.product.deleteMany({ where: { id: { in: productIds } } });
+    await prisma.laboratory.deleteMany({ where: { id: { in: laboratoryIds } } });
+  });
+
+  it("compara contra la oferta con razon explicita de la misma tasa, no solo contra la de texto exacto", async () => {
+    const { itemId } = await createRequestItem("ZOLTRAXIO 2MEQ/ML SOLUCION INYECTABLE", 10);
+    await resolveCustomerRequestItem(itemId);
+
+    const result = await selectBestOffer(itemId);
+    expect(result.status).toBe("SELECTED");
+    expect(result.selected?.supplierName).toBe("Proveedor Zoltraxio Barato");
+    expect(result.selected?.unitPrice).toBe(736);
+    expect(result.totalPrice).toBe(7360);
+  });
+});
+
 // Caso real reportado por el cliente: "Beta metildigoxina solucion inyectable"
 // y "Furosemida solucion inyectable" -- el sistema ofrecia una ampolla de
 // 100ml como si fuera intercambiable "1 a 1" con una de 2ml para la misma

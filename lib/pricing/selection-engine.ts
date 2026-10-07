@@ -6,6 +6,7 @@ import { formatCOP, formatUnitCOP } from "@/lib/pricing/format";
 import { calculateSavings, calculateTotal, resolvePackagesNeeded, resolveUnitPrice } from "@/lib/pricing/price-calculator";
 import { isSafeExpirationLabel } from "@/lib/pricing/expiration";
 import { isPricedPerContainer } from "@/lib/pricing/measured-forms";
+import { findRateEquivalentProductIds } from "@/lib/matching/rate-equivalents";
 import { DEFAULT_PRICING_RULES } from "@/lib/pricing/rules";
 import { rankOffers } from "@/lib/pricing/supplier-ranking";
 import { findWarehouseStock } from "@/lib/pricing/warehouse-lookup";
@@ -88,8 +89,24 @@ export async function selectBestOffer(
     };
   }
 
+  // Además de la familia exacta por genericKey, se agregan productos del
+  // mismo ingrediente+forma cuya concentración es la MISMA tasa real escrita
+  // distinto (p. ej. "2 MEQ" y "20/10 MEQ/ML") -- ver rate-equivalents.ts.
+  // Bug real confirmado (2026-10-07): sin esto, Cloruro de Potasio solo
+  // comparaba contra Disfarma (coincidencia de texto exacto) y nunca contra
+  // Ramédicas/Ofimédicas, hasta 30 veces más baratos.
+  const rateEquivalentIds = await findRateEquivalentProductIds({
+    ingredientKey: matchedProduct.ingredientKey,
+    concentration: matchedProduct.concentration,
+    concentrationUnit: matchedProduct.concentrationUnit,
+    dosageForm: matchedProduct.dosageForm,
+    excludeGenericKey: matchedProduct.genericKey,
+  });
   const genericFamily = await prisma.product.findMany({
-    where: { genericKey: matchedProduct.genericKey, status: "ACTIVE" },
+    where: {
+      status: "ACTIVE",
+      OR: [{ genericKey: matchedProduct.genericKey }, { id: { in: rateEquivalentIds } }],
+    },
     select: { id: true },
   });
   const productIds = genericFamily.map((p) => p.id);
